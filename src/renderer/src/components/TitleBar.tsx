@@ -5,6 +5,7 @@ import { panes, findPane } from '../layout'
 import { api } from '../api'
 import { SC, isMac } from '../platform'
 import logo from '../assets/logo.png'
+import { GitSyncIndicator } from './GitSyncIndicator'
 
 function tabInfo(t: Tab): { title: string; color?: string; state: string; count: number; activity: boolean } {
   const st = useApp.getState()
@@ -82,6 +83,7 @@ export function TitleBar(): JSX.Element {
       <button className="ibtn tab-new" title={`새 연결 (${SC.quick})`} onClick={() => useApp.setState({ dialog: { kind: 'quick' } })}><Plus size={16} /></button>
       <div className="tb-fill" />
       <div className="tb-right">
+        <GitSyncIndicator />
         {tabs.length > 1 && <button className="ibtn" title="모든 탭을 그리드로 모으기" onClick={() => st().gatherAll()}><LayoutGrid size={15} /></button>}
         <button className="ibtn" title={`SFTP 패널 (${SC.sftp})`} onClick={() => useApp.setState((s) => ({ rightPanel: s.rightPanel ? null : 'sftp' }))}><FolderTree size={15} /></button>
         {vault.unlocked && <button className="ibtn" title="지금 잠그기" onClick={() => api.vault.lock()}><Lock size={15} /></button>}

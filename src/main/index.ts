@@ -13,7 +13,8 @@ import { hasTmux, listShells } from './transports/local'
 import { initialBounds, resetWindow, trackWindow } from './windowState'
 import { scanAws } from './aws'
 import { checkUpdate, startUpdateCheck, updateInfo } from './update'
-import type { AdhocTarget, CredentialInput, Group, Host, ImportCandidate, StoreData } from '@shared/types'
+import { gitSync } from './gitSync'
+import type { AdhocTarget, CredentialInput, GitSyncConfig, Group, Host, ImportCandidate, StoreData } from '@shared/types'
 
 let win: BrowserWindow | null = null
 
@@ -98,6 +99,13 @@ function registerIpc(): void {
   // store
   handle('store:get', () => store.get())
   handle('store:patch', (p: Partial<StoreData>) => store.patch(p))
+  handle('git-sync:status', () => gitSync.status())
+  handle('git-sync:configure', (config: GitSyncConfig) => gitSync.configure(config))
+  handle('git-sync:now', () => gitSync.sync())
+  handle('git-sync:resolve', (choice: 'local' | 'remote', password?: string) => {
+    if (!['local', 'remote'].includes(choice)) throw new Error('올바른 동기화 선택이 아닙니다')
+    return gitSync.sync(choice, password)
+  })
 
   // vault
   handle('vault:status', () => vault.status())
@@ -417,14 +425,20 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(process.platform === 'darwin' ? buildMacMenu() : null)
   store.load()
   vault.init()
-  vault.onLockChange = (u) => send('vault:changed', u)
+  gitSync.init()
+  vault.onLockChange = (u) => {
+    send('vault:changed', u)
+    if (u) gitSync.schedule(0)
+  }
   registerIpc()
   createWindow()
   startAutoLock()
   startUpdateCheck()
+  gitSync.schedule(0)
 })
 
 app.on('before-quit', () => {
+  gitSync.stop()
   sessions.closeAll()
   store.flush()
 })

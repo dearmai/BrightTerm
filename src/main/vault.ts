@@ -27,6 +27,30 @@ interface VaultFile {
   items: VaultItem[]
 }
 
+export interface VaultSyncEnvelope {
+  format: 'brightterm-git-v1'
+  kdf: Kdf
+  wrapped: Enc
+  payload: Enc
+}
+
+function validEnc(e: Enc): boolean {
+  return !!e && typeof e.iv === 'string' && Buffer.from(e.iv, 'base64').length === 12 &&
+    typeof e.tag === 'string' && Buffer.from(e.tag, 'base64').length === 16 && typeof e.ct === 'string'
+}
+
+function validKdf(k: Kdf): boolean {
+  return !!k && k.alg === 'scrypt' && k.N === 1 << 17 && k.r === 8 && k.p === 1 &&
+    typeof k.salt === 'string' && Buffer.from(k.salt, 'base64').length === 16
+}
+
+export function validateVaultFile(v: VaultFile): void {
+  if (!v || v.version !== 1 || !validKdf(v.kdf) || !validEnc(v.wrapped) || !Array.isArray(v.items) || v.items.length > 10000 ||
+    (v.recoveryKdf && !validKdf(v.recoveryKdf)) || (v.recoveryWrapped && !validEnc(v.recoveryWrapped)) ||
+    v.items.some((i) => !validEnc(i) || typeof i.id !== 'string' || typeof i.name !== 'string' || !['password', 'key'].includes(i.kind)) ||
+    new Set(v.items.map((i) => i.id)).size !== v.items.length) throw new Error('올바른 동기화 볼트가 아닙니다')
+}
+
 // Linux basic_text uses a hardcoded password, not an OS-protected secret.
 function osEncryptionAvailable(): boolean {
   return safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' ||
@@ -74,6 +98,7 @@ class Vault {
   private v: VaultFile | null = null
   private key: Buffer | null = null
   onLockChange: (unlocked: boolean) => void = () => {}
+  onSyncChange: () => void = () => {}
 
   init(): void {
     this.file = join(dataDir(), 'vault.json')
@@ -92,6 +117,7 @@ class Vault {
 
   private save(): void {
     if (this.v) writeJsonAtomicSync(this.file, this.v)
+    this.onSyncChange()
   }
 
   setup(password: string): { recoveryCode: string } {
@@ -243,6 +269,47 @@ class Vault {
 
   exportRaw(): VaultFile | null {
     return this.v
+  }
+
+  exportPortable(): VaultFile | null {
+    if (!this.v) return null
+    const { osWrapped: _localOnly, ...portable } = this.v
+    return structuredClone(portable)
+  }
+
+  encryptSync(plain: string): VaultSyncEnvelope {
+    this.requireKey()
+    if (!this.v) throw new Error('볼트 없음')
+    return { format: 'brightterm-git-v1', kdf: this.v.kdf, wrapped: this.v.wrapped,
+      payload: seal(this.key!, Buffer.from(plain), 'brightterm-git-v1') }
+  }
+
+  decryptSync(e: VaultSyncEnvelope, password?: string): { plain: string; key: Buffer } {
+    if (!e || e.format !== 'brightterm-git-v1' || !validKdf(e.kdf) || !validEnc(e.wrapped) || !validEnc(e.payload)) {
+      throw new Error('지원하지 않거나 손상된 Git 동기화 파일입니다')
+    }
+    let key: Buffer | null = null
+    try {
+      key = password ? open(derive(password, e.kdf), e.wrapped, 'vault-key') : this.key && Buffer.from(this.key)
+      if (!key || key.length !== 32) throw new Error()
+      return { plain: open(key, e.payload, 'brightterm-git-v1').toString('utf8'), key }
+    } catch {
+      key?.fill(0)
+      throw new Error('원격 볼트의 마스터 비밀번호가 필요하거나 동기화 파일이 손상되었습니다')
+    }
+  }
+
+  applySync(v: VaultFile, key: Buffer): void {
+    validateVaultFile(v)
+    // Authenticate every credential before changing either the key or the file.
+    for (const item of v.items) open(key, item, item.id)
+    const osWrapped = this.key?.equals(key) ? this.v?.osWrapped : undefined
+    this.key?.fill(0)
+    this.key = Buffer.from(key)
+    const { osWrapped: _foreign, ...portable } = v
+    this.v = { ...portable, ...(osWrapped ? { osWrapped } : {}) }
+    this.save()
+    this.onLockChange(true)
   }
 
   importRaw(v: VaultFile): void {

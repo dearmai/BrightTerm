@@ -37,6 +37,7 @@ export function readJson<T>(file: string): T | null {
 }
 
 class Store {
+  onSyncChange: () => void = () => {}
   private data!: StoreData
   private file = ''
   private timer: NodeJS.Timeout | null = null
@@ -63,11 +64,13 @@ class Store {
   patch(p: Partial<StoreData>): void {
     this.data = { ...this.data, ...p }
     this.scheduleSave()
+    if (p.hosts !== undefined || p.groups !== undefined) this.onSyncChange()
   }
 
   replaceAll(d: StoreData): void {
     this.data = { ...d, settings: withDefaults(d.settings) }
     this.flush()
+    this.onSyncChange()
   }
 
   findKnownHost(hostPort: string): KnownHost | undefined {

@@ -1,5 +1,5 @@
 import type {
-  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, ImportCandidate, SessionInfo, SftpEntry, StoreData, Transfer, UiRequest, UpdateInfo, VaultStatus
+  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, ImportCandidate, SessionInfo, SftpEntry, StoreData, Transfer, UiRequest, UpdateInfo, VaultStatus
 } from '@shared/types'
 
 interface Bt {
@@ -25,6 +25,7 @@ export const api = {
   respond: bt.respond,
   pathForFile: bt.pathForFile,
   on: {
+    gitSync: (cb: (s: GitSyncStatus) => void) => bt.on('git-sync:changed', cb as never),
     data: (cb: (id: string, data: string) => void) => bt.on('session:data', cb as never),
     state: (cb: (info: SessionInfo) => void) => bt.on('session:state', cb as never),
     request: (cb: (r: UiRequest) => void) => bt.on('ui:request', cb as never),
@@ -38,6 +39,12 @@ export const api = {
   store: {
     get: () => bt.call<StoreData>('store:get'),
     patch: (p: Partial<StoreData>) => bt.call<void>('store:patch', p)
+  },
+  gitSync: {
+    status: () => bt.call<GitSyncStatus>('git-sync:status'),
+    configure: (c: GitSyncConfig) => bt.call<GitSyncStatus>('git-sync:configure', c),
+    sync: () => bt.call<GitSyncStatus>('git-sync:now'),
+    resolve: (choice: 'local' | 'remote', password?: string) => bt.call<GitSyncStatus>('git-sync:resolve', choice, password)
   },
   vault: {
     status: () => bt.call<VaultStatus>('vault:status'),

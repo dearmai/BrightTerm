@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Palette, Keyboard, ImageUp, Plug, Shield, Archive, Info, Trash2, FolderOpen } from 'lucide-react'
+import { Palette, Keyboard, ImageUp, Plug, Shield, Archive, Info, Trash2, FolderOpen, GitBranch } from 'lucide-react'
+import { GitSyncSettings } from './GitSyncSettings'
 import { useApp } from '../state'
 import { api } from '../api'
 import { Modal, Field, Toggle, Seg } from './ui'
@@ -8,7 +9,7 @@ import { SHORTCUTS } from './Welcome'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { isMac, SC, osUnlockText } from '../platform'
 
-type Sec = 'look' | 'input' | 'image' | 'conn' | 'security' | 'backup' | 'about'
+type Sec = 'look' | 'input' | 'image' | 'conn' | 'security' | 'backup' | 'git-sync' | 'about'
 
 export function SettingsDialog({ section }: { section?: string }): JSX.Element {
   const { settings, vault, creds, hosts } = useApp()
@@ -28,6 +29,7 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
     ['conn', '연결', <Plug size={15} key="d" />],
     ['security', '보안·계정', <Shield size={15} key="e" />],
     ['backup', '백업', <Archive size={15} key="f" />],
+    ['git-sync', 'Git 동기화', <GitBranch size={15} key="sync" />],
     ['about', '정보·단축키', <Info size={15} key="g" />]
   ]
 
@@ -38,6 +40,7 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
           {nav.map(([k, l, i]) => <button key={k} className={sec === k ? 'on' : ''} onClick={() => setSec(k)}>{i}{l}</button>)}
         </nav>
         <div className="s-body">
+          {sec === 'git-sync' && <GitSyncSettings />}
           {sec === 'look' && (
             <>
               <div className="card">

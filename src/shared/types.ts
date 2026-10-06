@@ -131,6 +131,14 @@ export interface Settings {
 /** 지금 쓰는 것보다 새 버전 — url 은 GitHub 릴리스 페이지 */
 export interface UpdateInfo { version: string; url: string }
 
+export interface GitSyncConfig { enabled: boolean; remote: string; branch: string }
+export interface GitSyncStatus {
+  config: GitSyncConfig
+  state: 'disabled' | 'idle' | 'syncing' | 'synced' | 'locked' | 'conflict' | 'password-required' | 'error'
+  message: string
+  lastSync?: number
+}
+
 /** 앱을 다시 켤 때 복원할 탭·분할 — 창마다 서버 id 또는 로컬 시작 폴더만 기억한다 */
 export type SavedPane = { hostId: string } | { local: { cwd?: string } }
 export type SavedLayout =

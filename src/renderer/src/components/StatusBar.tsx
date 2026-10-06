@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Lock, Unlock, ImageUp, Radio, Download, X } from 'lucide-react'
+import { Lock, Unlock, ImageUp, Radio, Download, X, GitBranch } from 'lucide-react'
 import { useApp } from '../state'
 import { api } from '../api'
 import { focusedEntry } from '../terms'
 import { SC } from '../platform'
-import type { UpdateInfo } from '@shared/types'
+import type { GitSyncStatus, UpdateInfo } from '@shared/types'
 
 function dur(ms: number): string {
   const s = Math.floor(ms / 1000)
@@ -33,6 +33,11 @@ export function StatusBar(): JSX.Element {
   const hosts = useApp((st) => st.hosts)
   const checkUpdates = useApp((st) => st.settings.checkUpdates)
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
+  const [sync, setSync] = useState<GitSyncStatus | null>(null)
+  useEffect(() => {
+    api.gitSync.status().then(setSync).catch(() => undefined)
+    return api.on.gitSync(setSync)
+  }, [])
   const [dismissed, setDismissed] = useState(readDismissed)
   const [, tick] = useState(0)
   useEffect(() => {
@@ -72,6 +77,11 @@ export function StatusBar(): JSX.Element {
         <span className="sb-item muted">연결된 세션 없음</span>
       )}
       <span className="sb-fill" />
+      {sync?.config.enabled && <span className="sb-item sb-btn" title={sync.message}
+        style={{ color: ['error', 'conflict', 'password-required'].includes(sync.state) ? 'var(--danger)' : undefined }}
+        onClick={() => useApp.setState({ dialog: { kind: 'settings', section: 'git-sync' } })}>
+        <GitBranch size={12} />{sync.state === 'syncing' ? 'Git 동기화 중' : sync.state === 'synced' ? 'Git 동기화됨' : sync.state === 'locked' ? 'Git 잠금 해제 대기' : ['conflict', 'password-required'].includes(sync.state) ? 'Git 확인 필요' : sync.state === 'error' ? 'Git 동기화 실패' : 'Git 동기화 대기'}
+      </span>}
       {checkUpdates && update && update.version !== dismissed && (
         <span className="sb-item sb-update">
           <span className="sb-btn" title="릴리스 페이지를 브라우저로 엽니다" onClick={() => api.app.openExternal(update.url)}><Download size={12} />새 버전 {update.version}</span>

@@ -22,7 +22,8 @@
     "dist:linux": "npm run notices && electron-vite build && electron-builder --linux",
     "dist:linux:deb": "npm run notices && electron-vite build && electron-builder --linux deb",
     "dist:linux:dir": "npm run notices && electron-vite build && electron-builder --linux --dir",
-    "test:linux": "npm run build && node test/e2e-linux.mjs"
+    "test:linux": "npm run build && node test/e2e-linux.mjs",
+    "test:git-sync": "npm run build && node test/e2e-git-sync.mjs"
   },
   "dependencies": {
     "iconv-lite": "^0.7.3",
