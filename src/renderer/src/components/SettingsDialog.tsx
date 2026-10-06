@@ -87,6 +87,8 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
                 <Toggle label="오른쪽 클릭으로 붙여넣기" desc="끄면 오른쪽 클릭 시 메뉴가 나옵니다 (켜져 있어도 Shift+오른쪽 클릭은 메뉴)" value={settings.rightClickPaste} onChange={(v) => set({ rightClickPaste: v })} />
                 {!isMac && <Toggle label="Ctrl+V로 붙여넣기" desc="끄면 Ctrl+V가 서버로 전달되고, 붙여넣기는 Ctrl+Shift+V" value={settings.ctrlVPaste} onChange={(v) => set({ ctrlVPaste: v })} />}
                 <Toggle label="여러 줄 붙여넣기 확인" desc="여러 줄을 붙여넣으면 실행 전에 한 번 확인합니다" value={settings.confirmMultilinePaste} onChange={(v) => set({ confirmMultilinePaste: v })} />
+                <Toggle label="Shift+Enter로 줄바꿈" desc="Claude Code·Codex CLI 등에서 실행하지 않고 다음 줄로 넘어갑니다 (Ctrl+J 전송, 일반 셸에서는 Enter와 같음)" value={settings.shiftEnterNewline} onChange={(v) => set({ shiftEnterNewline: v })} />
+                <Toggle label="서버 프로그램의 클립보드 복사 허용" desc="tmux·vim·Claude Code 등이 OSC 52로 보낸 내용을 이 PC 클립보드에 복사합니다 (읽기는 허용하지 않음)" value={settings.osc52Clipboard} onChange={(v) => set({ osc52Clipboard: v })} />
                 <Toggle label="운영 서버 위험 명령 확인" desc="'운영' 환경 서버에서 아래 패턴의 명령을 실행하거나 붙여넣을 때 확인 창을 띄웁니다" value={settings.guardDangerousOnProd} onChange={(v) => set({ guardDangerousOnProd: v })} />
               </div>
               <Field label="위험 명령 패턴 (정규식, 한 줄에 하나)">

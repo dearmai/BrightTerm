@@ -109,6 +109,10 @@ export interface Settings {
   rightClickPaste: boolean
   ctrlVPaste: boolean
   confirmMultilinePaste: boolean
+  /** Shift+Enter → LF(Ctrl+J): Claude Code·Codex CLI 등에서 줄바꿈 */
+  shiftEnterNewline: boolean
+  /** OSC 52: 서버 프로그램(tmux, vim, Claude Code 등)이 클립보드에 복사 */
+  osc52Clipboard: boolean
   guardDangerousOnProd: boolean
   dangerousPatterns: string[]
   autoReconnect: boolean
@@ -278,6 +282,8 @@ export const DEFAULT_SETTINGS: Settings = {
   rightClickPaste: true,
   ctrlVPaste: true,
   confirmMultilinePaste: true,
+  shiftEnterNewline: true,
+  osc52Clipboard: true,
   guardDangerousOnProd: true,
   dangerousPatterns: ['rm\\s+-[a-zA-Z]*r[a-zA-Z]*f', 'rm\\s+-[a-zA-Z]*f[a-zA-Z]*r', '\\breboot\\b', '\\bshutdown\\b', '\\bhalt\\b', '\\bpoweroff\\b', 'mkfs', 'dd\\s+if=', '\\bDROP\\s+(TABLE|DATABASE)\\b', '\\bTRUNCATE\\b', 'systemctl\\s+(stop|restart)'],
   autoReconnect: true,

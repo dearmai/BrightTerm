@@ -98,6 +98,7 @@ export function ensureEntry(sessionId: string): TermEntry {
   term.onBell(() => {
     if (useApp.getState().settings.bell) new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=').play().catch(() => {})
   })
+  term.parser.registerOscHandler(52, (data) => handleOsc52(data))
   term.attachCustomKeyEventHandler((ev) => keyHandler(entry, ev))
   if (isMac) {
     // ⌘V arrives as a native menu paste: route it through smartPaste (image/file upload, multi-line guard)
@@ -109,6 +110,21 @@ export function ensureEntry(sessionId: string): TermEntry {
   }
   entries.set(sessionId, e)
   return e
+}
+
+/** OSC 52 ; Pc ; Pd — Pd is base64 text to copy. Reading the clipboard ('?') is never answered. */
+function handleOsc52(data: string): boolean {
+  if (!useApp.getState().settings.osc52Clipboard) return true
+  const i = data.indexOf(';')
+  if (i < 0) return true
+  const payload = data.slice(i + 1)
+  if (!payload || payload === '?') return true
+  try {
+    const bin = atob(payload)
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
+    api.clip.writeText(new TextDecoder().decode(bytes))
+  } catch { /* invalid base64 */ }
+  return true
 }
 
 export function attach(sessionId: string, container: HTMLElement): TermEntry {
@@ -204,7 +220,8 @@ function handleInput(e: TermEntry, d: string): void {
   const id = e.sessionId
   // Track the current command line for dangerous-command guard (best effort)
   if (guardEnabled(id) && e.term.buffer.active.type === 'normal') {
-    if (d === '\r') {
+    // LF (Shift+Enter) also runs the line in a shell, so it's guarded like Enter
+    if (d === '\r' || d === '\n') {
       const line = e.line
       const hit = !e.lineUnknown && line ? isDangerous(line) : null
       e.line = ''
@@ -220,7 +237,7 @@ function handleInput(e: TermEntry, d: string): void {
           danger: true
         }).then((ok) => {
           confirming = false
-          if (ok) sendAll(id, '\r')
+          if (ok) sendAll(id, d)
           e.term.focus()
         })
         return
@@ -259,6 +276,13 @@ function macKeyHandler(e: TermEntry, ev: KeyboardEvent): boolean {
 
 function keyHandler(e: TermEntry, ev: KeyboardEvent): boolean {
   if (ev.type !== 'keydown') return true
+  // Shift+Enter → LF (Ctrl+J): Claude Code / Codex CLI insert a newline instead of submitting.
+  // xterm.js would otherwise send a plain CR, indistinguishable from Enter.
+  if (ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.isComposing && useApp.getState().settings.shiftEnterNewline) {
+    ev.preventDefault()
+    handleInput(e, '\n')
+    return false
+  }
   if (isMac) return macKeyHandler(e, ev)
   const st = useApp.getState()
   const k = ev.key.toLowerCase()
