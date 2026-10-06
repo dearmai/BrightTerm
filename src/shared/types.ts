@@ -175,7 +175,7 @@ export interface VaultStatus {
   unlocked: boolean
   osUnlockAvailable: boolean
   osUnlockEnabled: boolean
-  osUnlockKind?: 'windows' | 'touchid' | 'keychain'
+  osUnlockKind?: 'windows' | 'touchid' | 'keychain' | 'linux'
 }
 
 export type SessionState = 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'error'
@@ -253,6 +253,8 @@ export interface ClipboardInfo {
   imageSize?: { width: number; height: number }
 }
 
+export const LINUX_FONT_FAMILY = "'DejaVu Sans Mono', 'Noto Sans Mono', 'D2Coding', 'Noto Sans CJK KR', monospace"
+
 export const MAC_FONT_FAMILY = "Menlo, 'D2Coding', 'Apple SD Gothic Neo', monospace"
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -301,21 +303,3 @@ export const ENV_LABELS: Record<Env, string> = {
 }
 
 export const PALETTE = ['#ef4444', '#f97316', '#f59e0b', '#eab308', '#22c55e', '#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899', '#64748b']
-
-// ---------- banners (광고) ----------
-
-export type BannerSlot = 'welcome' | 'sidebar'
-
-/** 원격 피드의 배너 한 건. image 는 https URL(메인이 받아 data: URL 로 바꿔 넘긴다), link 는 https 만. */
-export interface Banner {
-  id: string
-  slot: BannerSlot
-  image: string
-  link: string
-  alt: string
-  /** 같은 슬롯 안 노출 비중 (기본 1) */
-  weight?: number
-  /** ISO 날짜. 이 기간 밖이면 숨긴다 */
-  start?: string
-  end?: string
-}

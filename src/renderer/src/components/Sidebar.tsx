@@ -4,7 +4,6 @@ import { useApp, newHost } from '../state'
 import { ENV_COLORS, ENV_LABELS, type Group, type Host } from '@shared/types'
 import { panes } from '../layout'
 import { isMac, modKey } from '../platform'
-import { AdBanner } from './AdBanner'
 import { focusSession } from '../terms'
 
 export function hostColor(h: Host, groups: Group[]): string | undefined {
@@ -286,7 +285,6 @@ export function Sidebar(): JSX.Element {
         )}
         {hosts.length > 0 && q && visibleHosts.length === 0 && <div className="empty">"{q}"와 일치하는 서버가 없습니다</div>}
       </div>
-      <AdBanner slot="sidebar" />
       <div className={`sb-resize ${dragging.current ? 'drag' : ''}`} onMouseDown={startResize} />
     </aside>
   )

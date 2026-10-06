@@ -4,10 +4,10 @@ import { useApp, newHost } from '../state'
 import { api } from '../api'
 import { Modal, Field, Seg, ColorPick, Switch } from './ui'
 import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJump, type SerialOptions } from '@shared/types'
-import { isMac } from '../platform'
+import { isMac, isWindows } from '../platform'
 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
-const DEFAULT_SERIAL: SerialOptions = { path: isMac ? '' : 'COM1', baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none', enterSends: 'CR', localEcho: false }
+const DEFAULT_SERIAL: SerialOptions = { path: isWindows ? 'COM1' : '', baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none', enterSends: 'CR', localEcho: false }
 const BAUDS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
 
 function groupPath(groups: Group[], id: string | null): string {
@@ -157,7 +157,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
           <>
             <Field label="프로토콜">
               <Seg value={h.protocol} onChange={(v) => { set('protocol', v); if (v === 'telnet' && h.port === 22) set('port', 23); if (v === 'ssh' && h.port === 23) set('port', 22); if (v === 'serial' && !h.serial) set('serial', DEFAULT_SERIAL); if (v === 'serial' && (!h.env || h.env === 'none')) set('env', 'device'); if (v !== 'local' && h.port === 0) set('port', v === 'telnet' ? 23 : 22); if (v === 'local' && isNew && h.persist === undefined) api.local.hasTmux().then((ok) => ok && setH((x) => (x.persist === undefined ? { ...x, persist: true } : x))) }}
-                options={[{ value: 'ssh', label: 'SSH' }, { value: 'telnet', label: 'Telnet' }, { value: 'serial', label: isMac ? '시리얼 (USB/RS-485)' : '시리얼 (COM/RS-485)' }, { value: 'local', label: '로컬 (이 PC)' }]} />
+                options={[{ value: 'ssh', label: 'SSH' }, { value: 'telnet', label: 'Telnet' }, { value: 'serial', label: isWindows ? '시리얼 (COM/RS-485)' : '시리얼 (USB/RS-485)' }, { value: 'local', label: '로컬 (이 PC)' }]} />
             </Field>
             <Field label="별칭 (탭·목록에 표시될 이름)">
               <input className="input" autoFocus value={h.alias} onChange={(e) => set('alias', e.target.value)} placeholder="예: 운영-WEB01" />
@@ -166,7 +166,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
               <div className="grid2">
                 <Field label="시작 폴더" hint="비워 두면 홈 폴더에서 열립니다">
                   <div className="row">
-                    <input className="input mono grow" value={h.local?.cwd ?? ''} onChange={(e) => setLocal({ cwd: e.target.value })} placeholder={isMac ? '~/Work/프로젝트' : 'C:\\Work\\프로젝트'} />
+                    <input className="input mono grow" value={h.local?.cwd ?? ''} onChange={(e) => setLocal({ cwd: e.target.value })} placeholder={isWindows ? 'C:\\Work\\프로젝트' : '~/Work/프로젝트'} />
                     <button className="btn" onClick={pickDir} title="폴더 선택"><FolderOpen size={14} /></button>
                   </div>
                 </Field>
@@ -193,7 +193,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
               <>
                 <div className="grid2">
                   <Field label={<span className="row">포트 <button className="link" onClick={refreshPorts}><RefreshCw size={11} /> 새로고침</button></span>}>
-                    <input className="input mono" list="serial-ports" value={serial.path} onChange={(e) => setSerial({ path: e.target.value })} placeholder={isMac ? '/dev/cu.usbserial-XXXX' : 'COM3'} />
+                    <input className="input mono" list="serial-ports" value={serial.path} onChange={(e) => setSerial({ path: e.target.value })} placeholder={isWindows ? 'COM3' : isMac ? '/dev/cu.usbserial-XXXX' : '/dev/ttyUSB0'} />
                     <datalist id="serial-ports">{ports.map((p) => <option key={p.path} value={p.path}>{p.label}</option>)}</datalist>
                   </Field>
                   <Field label="속도 (baud)">
@@ -341,7 +341,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                 <div className="muted" style={{ fontSize: 12 }}>이 서버에 접속할 때 위 베스천을 먼저 거칩니다. 베스천은 서버 목록에 따로 생기지 않습니다.</div>
               </div>
             )}
-            {(h.protocol === 'ssh' || (h.protocol === 'local' && (isMac || /wsl(\.exe)?$/i.test(h.local?.shell ?? '')))) && (
+            {(h.protocol === 'ssh' || (h.protocol === 'local' && (!isWindows || /wsl(\.exe)?$/i.test(h.local?.shell ?? '')))) && (
               <div className="persist-box">
                 <div className="toggle">
                   <div className="t-label">

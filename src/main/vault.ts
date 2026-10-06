@@ -27,6 +27,12 @@ interface VaultFile {
   items: VaultItem[]
 }
 
+// Linux basic_text uses a hardcoded password, not an OS-protected secret.
+function osEncryptionAvailable(): boolean {
+  return safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' ||
+    ['gnome_libsecret', 'kwallet', 'kwallet5', 'kwallet6'].includes(safeStorage.getSelectedStorageBackend()))
+}
+
 const SCRYPT = { N: 1 << 17, r: 8, p: 1 }
 
 function derive(secret: string, kdf: Kdf): Buffer {
@@ -78,9 +84,9 @@ class Vault {
     return {
       initialized: !!this.v,
       unlocked: !!this.key,
-      osUnlockAvailable: safeStorage.isEncryptionAvailable(),
+      osUnlockAvailable: osEncryptionAvailable(),
       osUnlockEnabled: !!this.v?.osWrapped,
-      osUnlockKind: process.platform === 'darwin' ? (systemPreferences.canPromptTouchID() ? 'touchid' : 'keychain') : 'windows'
+      osUnlockKind: process.platform === 'darwin' ? (systemPreferences.canPromptTouchID() ? 'touchid' : 'keychain') : process.platform === 'linux' ? 'linux' : 'windows'
     }
   }
 
@@ -121,7 +127,7 @@ class Vault {
   }
 
   async tryOsUnlock(win?: BrowserWindow | null): Promise<boolean> {
-    if (!this.v?.osWrapped || !safeStorage.isEncryptionAvailable()) return false
+    if (!this.v?.osWrapped || !osEncryptionAvailable()) return false
     if (process.platform === 'darwin' && systemPreferences.canPromptTouchID()) {
       try {
         if (win && !win.isFocused()) win.focus()
@@ -146,7 +152,8 @@ class Vault {
   setOsUnlock(enabled: boolean): void {
     this.requireKey()
     if (!this.v) return
-    if (enabled && safeStorage.isEncryptionAvailable()) {
+    if (enabled && !osEncryptionAvailable()) throw new Error('사용 가능한 OS 보안 저장소가 없습니다')
+    if (enabled) {
       this.v.osWrapped = safeStorage.encryptString(this.key!.toString('hex')).toString('base64')
     } else {
       delete this.v.osWrapped

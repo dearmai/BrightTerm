@@ -4,14 +4,14 @@ import { useApp } from '../state'
 import { api } from '../api'
 import { Modal, Field } from './ui'
 import type { ImportCandidate } from '@shared/types'
-import { isMac } from '../platform'
+import { isWindows } from '../platform'
 
 export function ImportDialog(): JSX.Element {
   const hosts = useApp((s) => s.hosts)
   const vault = useApp((s) => s.vault)
   const [cands, setCands] = useState<ImportCandidate[] | null>(null)
   const [sel, setSel] = useState<Set<number>>(new Set())
-  const [group, setGroup] = useState(isMac ? '가져온 서버' : 'PuTTY 가져오기')
+  const [group, setGroup] = useState(!isWindows ? '가져온 서버' : 'PuTTY 가져오기')
   const [busy, setBusy] = useState(false)
   const close = (): void => useApp.setState({ dialog: null })
   const st = useApp.getState
@@ -70,8 +70,8 @@ export function ImportDialog(): JSX.Element {
       </>}>
       <div className="modal-body">
         <div className="notice">
-          {isMac ? <>PuTTY 세션(<span className="kbd">~/.putty/sessions</span>)</> : 'PuTTY 저장 세션(레지스트리)'}과 <span className="kbd">~/.ssh/config</span>를 읽어 옵니다. 호스트·포트·사용자·키 파일·포트 포워딩·시리얼 설정·인코딩이 옮겨집니다.
-          {isMac && 'Windows에서 쓰던 서버·비밀번호를 그대로 옮기려면 Windows의 BrightTerm에서 설정 → 백업 내보내기 후 여기서 백업 가져오기를 쓰세요. '}
+          {!isWindows ? <>PuTTY 세션(<span className="kbd">~/.putty/sessions</span>)</> : 'PuTTY 저장 세션(레지스트리)'}과 <span className="kbd">~/.ssh/config</span>를 읽어 옵니다. 호스트·포트·사용자·키 파일·포트 포워딩·시리얼 설정·인코딩이 옮겨집니다.
+          {!isWindows && 'Windows에서 쓰던 서버·비밀번호를 그대로 옮기려면 Windows의 BrightTerm에서 설정 → 백업 내보내기 후 여기서 백업 가져오기를 쓰세요. '}
           PuTTY는 비밀번호를 저장하지 않으므로, 비밀번호는 처음 접속할 때 한 번 입력하면 저장됩니다.
           {!vault.unlocked && ' (볼트가 잠겨 있으면 키 파일은 볼트에 복사되지 않습니다)'}
         </div>

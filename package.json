@@ -18,7 +18,11 @@
     "dist:dir": "npm run notices && electron-vite build && electron-builder --win --x64 --dir",
     "dist:mac": "npm run notices && electron-vite build && electron-builder --mac",
     "dist:mac:dir": "npm run notices && electron-vite build && electron-builder --mac --dir",
-    "dist:mac:signed": "npm run notices && electron-vite build && electron-builder --mac -c electron-builder.signed.yml"
+    "dist:mac:signed": "npm run notices && electron-vite build && electron-builder --mac -c electron-builder.signed.yml",
+    "dist:linux": "npm run notices && electron-vite build && electron-builder --linux",
+    "dist:linux:deb": "npm run notices && electron-vite build && electron-builder --linux deb",
+    "dist:linux:dir": "npm run notices && electron-vite build && electron-builder --linux --dir",
+    "test:linux": "npm run build && node test/e2e-linux.mjs"
   },
   "dependencies": {
     "iconv-lite": "^0.7.3",
@@ -48,5 +52,6 @@
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "zustand": "^5.0.15"
-  }
+  },
+  "desktopName": "kr.balkeunter.brightterm.desktop"
 }

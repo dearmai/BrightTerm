@@ -6,6 +6,7 @@ import { api } from './api'
  * Windows: app shortcuts live on Ctrl(+Shift); the terminal only gets what is left.
  * macOS:   app shortcuts live on ⌘ so every Ctrl chord (Ctrl+C/K/V/W …) reaches the shell untouched.
  */
+export const isWindows = api.platform === 'win32'
 export const isMac = api.platform === 'darwin'
 
 export type Action =
@@ -101,7 +102,8 @@ export const SC = {
   settings: L('', '⌘,')
 }
 
-export function osUnlockText(kind: 'windows' | 'touchid' | 'keychain' | undefined): { button: string; toggle: string; desc: string; fail: string } {
+export function osUnlockText(kind: 'windows' | 'touchid' | 'keychain' | 'linux' | undefined): { button: string; toggle: string; desc: string; fail: string } {
+  if (kind === 'linux') return { button: 'Linux 키링으로 잠금 해제', toggle: 'Linux 키링으로 잠금 해제', desc: '볼트 키를 GNOME Keyring 또는 KWallet에 보관합니다. 사용 가능한 키링이 있어야 합니다', fail: 'Linux 키링 잠금 해제에 실패했습니다' }
   if (kind === 'touchid') return { button: 'Touch ID로 잠금 해제', toggle: 'Touch ID로 잠금 해제', desc: '잠금 화면에서 마스터 비밀번호 대신 Touch ID로 열 수 있습니다. 볼트 키는 macOS 키체인에 보관됩니다', fail: 'Touch ID 잠금 해제를 취소했거나 실패했습니다' }
   if (kind === 'keychain') return { button: 'macOS 키체인으로 잠금 해제', toggle: 'macOS 키체인으로 잠금 해제', desc: '잠금 화면에서 마스터 비밀번호 대신 macOS 로그인 키체인으로 열 수 있습니다', fail: '키체인 잠금 해제에 실패했습니다' }
   return { button: 'Windows 계정으로 잠금 해제', toggle: 'Windows 계정으로 잠금 해제', desc: '잠금 화면에서 마스터 비밀번호 대신 Windows 로그인(DPAPI)으로 열 수 있습니다', fail: 'Windows 자동 잠금해제에 실패했습니다' }

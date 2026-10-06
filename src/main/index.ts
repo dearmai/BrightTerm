@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, powerMonitor, clipboard, Menu, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, powerMonitor, clipboard, Menu, nativeTheme, nativeImage } from 'electron'
 import { join } from 'path'
 import { promises as fs } from 'fs'
 import { randomUUID } from 'crypto'
@@ -12,7 +12,6 @@ import { listSerialPorts } from './transports/serial'
 import { hasTmux, listShells } from './transports/local'
 import { initialBounds, resetWindow, trackWindow } from './windowState'
 import { scanAws } from './aws'
-import { cachedBanners, refreshBanners } from './ads'
 import { checkUpdate, startUpdateCheck, updateInfo } from './update'
 import type { AdhocTarget, CredentialInput, Group, Host, ImportCandidate, StoreData } from '@shared/types'
 
@@ -35,6 +34,7 @@ app.on('second-instance', () => {
 function createWindow(): void {
   const dark = store.get().settings.theme !== 'light'
   const init = initialBounds(store.get().settings.rememberWindow)
+  const iconPath = join(__dirname, '../../resources/icon.png')
   win = new BrowserWindow({
     ...init.bounds,
     minWidth: 900,
@@ -42,7 +42,8 @@ function createWindow(): void {
     show: false,
     backgroundColor: dark ? '#0f1115' : '#f5f6f8',
     title: 'BrightTerm',
-    icon: join(__dirname, '../../resources/icon.png'),
+    // Keep the X11 window icon small enough for the window manager's icon property.
+    icon: process.platform === 'linux' ? nativeImage.createFromPath(iconPath).resize({ width: 256, height: 256 }) : iconPath,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     titleBarOverlay: process.platform === 'darwin' ? undefined : { color: dark ? '#0f1115' : '#f5f6f8', symbolColor: dark ? '#c9d1d9' : '#334155', height: 38 },
     webPreferences: {
@@ -230,10 +231,8 @@ function registerIpc(): void {
     if (err) throw new Error(err)
   })
   handle('app:openExternal', (url: string) => { if (/^https?:\/\//.test(url)) shell.openExternal(url) })
-  handle('ads:get', () => cachedBanners())
   handle('update:get', () => updateInfo())
   handle('update:check', () => checkUpdate())
-  handle('app:openBanner', (url: string) => { if (/^https:\/\//.test(url)) shell.openExternal(url) })
   handle('app:toggleFullScreen', () => win?.setFullScreen(!win.isFullScreen()))
   handle('app:resetWindow', () => { if (win) resetWindow(win) })
 }
@@ -422,7 +421,6 @@ app.whenReady().then(() => {
   registerIpc()
   createWindow()
   startAutoLock()
-  setTimeout(() => void refreshBanners(), 3000)
   startUpdateCheck()
 })
 

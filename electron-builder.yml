@@ -67,6 +67,10 @@ mac:
 dmg:
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
 linux:
-  target: AppImage
-  icon: build/icon.png
+  syncDesktopName: true
+  target: [AppImage, deb]
+  icon: build/icons
+  category: TerminalEmulator
+  maintainer: Dany Kim
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
 publish: null

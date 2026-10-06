@@ -56,7 +56,8 @@ export function hasTmux(): boolean {
 
 function defaultShell(): string {
   if (isWin) return 'powershell.exe'
-  return process.env.SHELL && existsSync(process.env.SHELL) ? process.env.SHELL : '/bin/zsh'
+  const candidates = [process.env.SHELL, process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash', '/bin/sh']
+  return candidates.find((p): p is string => !!p && existsSync(p)) || '/bin/sh'
 }
 
 export function expandHome(p: string): string {
@@ -78,7 +79,7 @@ function shellEnv(termType: string): Record<string, string> {
   env.TERM_PROGRAM = 'BrightTerm'
   env.TERM_PROGRAM_VERSION = app.getVersion()
   // Finder·Dock 으로 켜면 LANG 이 비어 한글이 깨진다 — macOS 터미널처럼 채운다
-  if (!isWin && !env.LANG && !env.LC_ALL && !env.LC_CTYPE) env.LANG = app.getLocale().startsWith('ko') ? 'ko_KR.UTF-8' : 'en_US.UTF-8'
+  if (!isWin && !env.LANG && !env.LC_ALL && !env.LC_CTYPE) env.LANG = process.platform === 'linux' ? 'C.UTF-8' : app.getLocale().startsWith('ko') ? 'ko_KR.UTF-8' : 'en_US.UTF-8'
   return env
 }
 

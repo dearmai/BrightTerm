@@ -1,12 +1,13 @@
 import { app } from 'electron'
 import { promises as fs, existsSync, readFileSync, mkdirSync, writeFileSync, renameSync } from 'fs'
 import { join } from 'path'
-import { DEFAULT_SETTINGS, MAC_FONT_FAMILY, StoreData, KnownHost, Settings } from '@shared/types'
+import { DEFAULT_SETTINGS, MAC_FONT_FAMILY, LINUX_FONT_FAMILY, StoreData, KnownHost, Settings } from '@shared/types'
 
 /** Defaults + saved values, with the Windows font stack swapped out on macOS (fresh install or a Windows backup). */
 function withDefaults(saved: Partial<Settings> | undefined): Settings {
   const s = { ...DEFAULT_SETTINGS, ...(saved ?? {}) }
   if (process.platform === 'darwin' && s.fontFamily === DEFAULT_SETTINGS.fontFamily) s.fontFamily = MAC_FONT_FAMILY
+  if (process.platform === 'linux' && s.fontFamily === DEFAULT_SETTINGS.fontFamily) s.fontFamily = LINUX_FONT_FAMILY
   return s
 }
 

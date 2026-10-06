@@ -124,7 +124,7 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
           )}
           {sec === 'security' && (
             <>
-              <Field label="자동 잠금 (분)" hint={(isMac ? 'Mac을 이 시간 동안 사용하지 않거나, 화면을 잠그거나 잠자기에 들어가면' : 'PC를 이 시간 동안 사용하지 않거나, Windows를 잠그거나 절전하면') + ' 볼트를 잠급니다. 열린 세션은 유지됩니다. 0 = 사용 안 함'}>
+              <Field label="자동 잠금 (분)" hint={(isMac ? 'Mac을 이 시간 동안 사용하지 않거나, 화면을 잠그거나 잠자기에 들어가면' : 'PC를 이 시간 동안 사용하지 않거나 절전하면') + ' 볼트를 잠급니다. 열린 세션은 유지됩니다. 0 = 사용 안 함'}>
                 <input className="input" type="number" min={0} value={settings.autoLockMinutes} onChange={(e) => set({ autoLockMinutes: Math.max(0, +e.target.value || 0) })} />
               </Field>
               {vault.osUnlockAvailable && (

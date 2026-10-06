@@ -1,6 +1,6 @@
 # BrightTerm
 
-PuTTY를 대신할 **Windows·macOS용 SSH / Telnet / 시리얼 / 로컬 터미널**입니다. 서버를 10대 넘게 동시에 띄워도 어느 창이 어느 서버인지 바로 알아볼 수 있게 만드는 것이 목표입니다.
+PuTTY를 대신할 **Windows·macOS·Linux용 SSH / Telnet / 시리얼 / 로컬 터미널**입니다. 서버를 10대 넘게 동시에 띄워도 어느 창이 어느 서버인지 바로 알아볼 수 있게 만드는 것이 목표입니다.
 
 ![BrightTerm](./docs/screenshot.png)
 
@@ -25,7 +25,35 @@ PuTTY를 대신할 **Windows·macOS용 SSH / Telnet / 시리얼 / 로컬 터미�
 
 처음 실행하면 **마스터 비밀번호**를 정합니다. 서버 비밀번호와 키는 이 비밀번호로 암호화되어 이 PC에만 저장됩니다. 이때 나오는 **복구 코드 24자리**는 꼭 따로 보관하세요. 마스터 비밀번호를 잊으면 이 코드로만 복구할 수 있습니다.
 
-### Windows ↔ macOS 옮기기
+### Linux (Ubuntu / HamoniKR)
+
+Node.js 22.12 이상(권장 24 LTS)을 설치한 뒤, 프로젝트 폴더에서 `make install`로 빌드와 설치를 한 번에 실행할 수 있습니다. 현재 PC와 같은 아키텍처로 생성됩니다.
+
+```bash
+sudo apt install build-essential python3 libsecret-1-0
+make install
+```
+
+`make install`은 npm 의존성을 준비하고 deb 패키지를 빌드한 뒤 apt로 설치합니다. 일반 사용자로 실행하세요. 관리자 권한은 마지막 설치 단계에서만 sudo로 요청합니다. 같은 버전을 수정한 경우에도 다시 설치됩니다.
+
+설치 후 앱 메뉴 또는 `brightterm` 명령으로 실행합니다. 삭제는 `sudo apt remove brightterm`입니다. `make build`는 실행 폴더만, `make deb`는 설치 패키지만 만들고 `make test`는 리눅스 실행 테스트를 수행합니다.
+
+설치 없이 실행하려면 `npm run dist:linux`로 AppImage를 생성하고 실행 권한을 부여하세요:
+
+```bash
+chmod +x dist/BrightTerm-1.2.3-linux-*.AppImage
+./dist/BrightTerm-1.2.3-linux-*.AppImage
+```
+
+FUSE가 없는 환경에서는 AppImage의 `--appimage-extract-and-run` 옵션을 사용할 수 있습니다. 개발 실행은 `npm run dev`, 폴더 빌드는 `npm run dist:linux:dir`입니다.
+
+- 로컬 셸은 `$SHELL`을 우선 사용하고, 없으면 `/bin/bash`, `/bin/sh` 순으로 선택합니다.
+- 로컬 세션 유지 기능에는 `tmux`가 필요합니다(`sudo apt install tmux`). 데스크톱에서 Ctrl+Alt+T를 가로채면 앱의 빠른 접속 → 로컬을 사용하세요.
+- 시리얼 포트는 `/dev/ttyUSB0`, `/dev/ttyACM0` 등입니다. 권한 오류가 있으면 장치의 소유 그룹을 확인하세요. Ubuntu/HamoniKR의 `dialout` 장치라면 `sudo usermod -aG dialout "$USER"` 후 다시 로그인합니다.
+- OS 잠금 해제는 GNOME Keyring/KWallet이 사용 가능할 때만 켤 수 있습니다. 키링이 없는 환경에서도 마스터 비밀번호로 사용할 수 있습니다.
+- Linux에서는 유휴 시간과 절전 진입으로 자동 잠금을 처리합니다. 화면 잠금 이벤트 지원은 데스크톱 환경에 따라 다릅니다.
+
+### Windows ↔ macOS ↔ Linux 옮기기
 
 쓰던 PC에서 `설정 → 백업 → 백업 내보내기`로 만든 `.btbackup` 파일을 새 PC에서 `백업 가져오기` 하면 서버 목록·저장된 비밀번호·설정이 그대로 옮겨집니다. 같은 마스터 비밀번호로 열립니다. (OS 계정 잠금 해제 설정은 옮겨지지 않으니 새 PC에서 다시 켜세요.)
 
@@ -33,8 +61,8 @@ PuTTY를 대신할 **Windows·macOS용 SSH / Telnet / 시리얼 / 로컬 터미�
 
 | 기능 | 사용법 |
 | --- | --- |
-| 로컬 터미널 | 내 PC의 셸(macOS: zsh 등, Windows: PowerShell·cmd·WSL)을 엽니다. 바로 열려면 ⇧⌘T / Ctrl+Alt+T 또는 빠른 접속에서 "로컬". 자주 쓰는 폴더는 `+ 서버 → 프로토콜: 로컬`에서 **시작 폴더**와 셸을 정해 저장합니다. 예: `Work` 폴더에 프로젝트마다 하나씩 만들고 폴더 ▶로 4분할. 캡처를 붙여넣으면 `~/.brightterm/uploads/`에 저장하고 경로를 입력합니다. `exit` 후 Enter를 누르면 새 셸을 엽니다. |
-| 서버 가져오기 | `가져오기` 버튼. **PuTTY 세션**(Windows 레지스트리, macOS `~/.putty/sessions`)과 **`~/.ssh/config`**를 읽습니다. 호스트·포트·사용자·키·포트 포워딩(`LocalForward`/`RemoteForward`)·점프 호스트(`ProxyJump`)·시리얼·인코딩이 옮겨집니다. 처음 실행할 때 자동으로 제안합니다. |
+| 로컬 터미널 | 내 PC의 셸(Linux: bash·zsh 등, macOS: zsh 등, Windows: PowerShell·cmd·WSL)을 엽니다. 바로 열려면 ⇧⌘T / Ctrl+Alt+T 또는 빠른 접속에서 "로컬". 자주 쓰는 폴더는 `+ 서버 → 프로토콜: 로컬`에서 **시작 폴더**와 셸을 정해 저장합니다. 예: `Work` 폴더에 프로젝트마다 하나씩 만들고 폴더 ▶로 4분할. 캡처를 붙여넣으면 `~/.brightterm/uploads/`에 저장하고 경로를 입력합니다. `exit` 후 Enter를 누르면 새 셸을 엽니다. |
+| 서버 가져오기 | `가져오기` 버튼. **PuTTY 세션**(Windows 레지스트리, macOS/Linux `~/.putty/sessions`)과 **`~/.ssh/config`**를 읽습니다. 호스트·포트·사용자·키·포트 포워딩(`LocalForward`/`RemoteForward`)·점프 호스트(`ProxyJump`)·시리얼·인코딩이 옮겨집니다. 처음 실행할 때 자동으로 제안합니다. |
 | AWS EC2 가져오기 | `가져오기 → AWS EC2 불러오기`. 설치된 **aws CLI의 자격 증명**(`aws configure`)으로 모든 리전의 인스턴스를 읽습니다. 공인 IP가 없는 서버는 같은 VPC의 배스천(이름 앞부분이 같은 것 우선, 예: `shop-app` → `shop-bastion`)을 점프 호스트로 자동 연결합니다. 접속 계정은 AMI로 고르고(ubuntu/ec2-user 등), 키는 `~/.ssh/<키 페어 이름>.pem`에서 찾아 볼트에 넣습니다. |
 | 점프 호스트 (배스천 경유) | 서버 편집 → 고급 → 점프 호스트에서 먼저 거쳐 갈 서버를 고릅니다. 여러 단계도 됩니다. 베스천을 따로 등록하기 싫으면 **직접 입력**을 골라 베스천 주소·사용자·키를 그 자리에 적습니다(키는 볼트에 암호화). 서버를 더블클릭하면 베스천을 거쳐 한 번에 접속하고, 이 서버에 건 포트 포워딩(예: RDS 터널)도 같이 열립니다. |
 | 포트 포워딩 (터널링) | 서버 편집 → 고급 → 포트 포워딩. **L**(로컬: 내 PC 포트 → 서버 쪽 주소)과 **R**(원격: 서버 포트 → 내 PC 쪽 주소). 접속해 있는 동안 유지됩니다. 예: `L 127.0.0.1:9090 → 127.0.0.1:9090` 후 브라우저에서 `https://localhost:9090` |
@@ -97,7 +125,7 @@ claude --continue || claude
 
 macOS에서는 앱 단축키가 모두 **⌘** 에 있어서 Ctrl+C/K/U/V/W 같은 Ctrl 조합은 전부 셸로 그대로 갑니다.
 
-| 동작 | Windows | macOS |
+| 동작 | Windows / Linux | macOS |
 | --- | --- | --- |
 | 빠른 접속 / 새 연결 | Ctrl+K, Ctrl+Shift+T | ⌘K, ⌘T |
 | 새 로컬 터미널 | Ctrl+Alt+T | ⇧⌘T |
@@ -116,42 +144,15 @@ macOS에서는 앱 단축키가 모두 **⌘** 에 있어서 Ctrl+C/K/U/V/W 같�
 | 글자 크기 | Ctrl+휠, Ctrl+= / Ctrl+- / Ctrl+0 | ⌘= / ⌘- / ⌘0, 트랙패드 핀치 |
 | 설정 / 전체 화면 | — / F11 | ⌘, / ⌃⌘F |
 
-Windows에서 `vim` 등에 Ctrl+V를 보내야 한다면 설정 → 입력에서 "Ctrl+V로 붙여넣기"를 끄세요. 그러면 붙여넣기는 Ctrl+Shift+V로 합니다.
+Windows/Linux에서 `vim` 등에 Ctrl+V를 보내야 한다면 설정 → 입력에서 "Ctrl+V로 붙여넣기"를 끄세요. 그러면 붙여넣기는 Ctrl+Shift+V로 합니다.
 
 ## 보안 구조
 
 - 마스터 비밀번호는 scrypt(N=2^17)로 키 암호화 키가 됩니다. 이 키로 무작위 256비트 볼트 키를 AES-256-GCM으로 감쌉니다. 각 계정은 그 볼트 키로 AES-256-GCM 암호화됩니다.
-- 볼트 파일: Windows `%APPDATA%\BrightTerm\data\vault.json`, macOS `~/Library/Application Support/BrightTerm/data/vault.json`. 서버 목록은 같은 폴더의 `store.json`에 있습니다.
+- 볼트 파일: Windows `%APPDATA%\BrightTerm\data\vault.json`, macOS `~/Library/Application Support/BrightTerm/data/vault.json`. Linux는 `${XDG_CONFIG_HOME:-~/.config}/BrightTerm/data/vault.json`입니다. 서버 목록은 같은 폴더의 `store.json`에 있습니다.
 - 처음 접속하는 서버는 호스트 키 지문을 보여 주고 승인을 받습니다. 키가 바뀌면 빨간 경고와 함께 접속을 막습니다.
 - 복호화된 비밀번호는 화면(렌더러) 쪽으로 넘어가지 않습니다. 렌더러는 Node 접근이 없고 context isolation이 켜져 있습니다.
-- 앱이 스스로 보내는 네트워크 요청은 **배너 목록 가져오기**와 **새 버전 확인**(GitHub 릴리스, 시작할 때와 12시간마다) 두 가지뿐이며, 서버 목록·IP·계정 등 어떤 정보도 담지 않습니다. 새 버전 확인은 설정 → 정보에서 끌 수 있습니다.
-
-## 배너
-
-환영 화면과 서버 목록 아래에 배너가 하나씩 표시됩니다(`광고` 표시). 터미널 작업 영역에는 넣지 않습니다. 한 칸에 배너가 여럿이면 8초마다 바뀌고, 마우스를 올려 두거나 창이 뒤에 있으면 멈춥니다(1.2.2부터).
-
-- 앱에 기본 배너가 들어 있어 오프라인·사내망에서도 그대로 보입니다.
-- 원격 목록은 모두의 앱(`https://moduapp.kr/api/banners/brightterm`)에서 받습니다. 관리 화면에서 바꾸면 앱을 다시 배포하지 않아도 배너가 바뀝니다(1.0.0 은 이 저장소의 [`banners/feed.json`](./banners/feed.json)을 읽습니다). 앱은 시작할 때 한 번 받아 캐시합니다(다른 주소를 쓰려면 `BRIGHTTERM_BANNER_FEED` 환경 변수, 빈 값이면 끔). 실패하면 캐시 → 기본 배너 순으로 조용히 넘어갑니다.
-- 목록 형식:
-
-```json
-{
-  "banners": [
-    {
-      "id": "moduapp-2026q4",
-      "slot": "welcome",
-      "image": "https://example.com/banner-wide.png",
-      "link": "https://moduapp.kr/?utm_source=brightterm&utm_medium=app_banner",
-      "alt": "모두의 앱",
-      "weight": 1,
-      "start": "2026-10-01",
-      "end": "2026-12-31"
-    }
-  ]
-}
-```
-
-- `slot`: `welcome`(권장 1280×320) 또는 `sidebar`(권장 720×240). 이미지는 png/jpeg/webp/gif, 768KB 이하, **https만**. 링크도 https만 받고 외부 브라우저로 엽니다. HTML·스크립트는 받지 않습니다.
+- 앱이 스스로 보내는 네트워크 요청은 **새 버전 확인**(GitHub 릴리스, 시작할 때와 12시간마다)뿐이며, 서버 목록·IP·계정 등 어떤 정보도 담지 않습니다. 새 버전 확인은 설정 → 정보에서 끌 수 있습니다.
 
 ## 개발
 
@@ -161,13 +162,17 @@ npm run dev          # 개발 실행
 npm run build        # 빌드
 npm run typecheck
 npm run dist:win     # Windows 설치형 + 포터블 (dist/)
+npm run dist:linux   # Linux AppImage + deb (dist/) — 빌드한 PC의 아키텍처
+npm run dist:linux:dir # Linux 실행 폴더 (dist/linux-unpacked/)
 npm run dist:mac     # macOS dmg x64 + arm64 (dist/) — ad-hoc 서명(인증서 없이)
 APPLE_KEYCHAIN_PROFILE=<notarytool 프로필> npm run dist:mac:signed  # Developer ID 서명 + 공증 (electron-builder.signed.yml)
 ```
 
-- 구조: `src/main`(Electron 메인: SSH/시리얼/텔넷, 볼트, SFTP, 가져오기, AWS, 배너), `src/preload`, `src/renderer`(React + xterm.js UI, 키 판정은 `platform.ts`), `src/shared`(공용 타입).
+- Linux 아이콘: `build/icons/`의 16~512px PNG를 패키지에 포함합니다. 원본 `build/icon.png`를 바꾸면 ImageMagick 설치 후 `bash scripts/gen-linux-icons.sh`로 다시 생성하세요. 일반 빌드에는 ImageMagick이 필요하지 않습니다.
+- 구조: `src/main`(Electron 메인: SSH/시리얼/텔넷, 볼트, SFTP, 가져오기, AWS), `src/preload`, `src/renderer`(React + xterm.js UI, 키 판정은 `platform.ts`), `src/shared`(공용 타입).
+- Linux 실행 검증: `npm run test:linux` (그래픽 세션 필요). 패키지 검증: `BT_EXECUTABLE=dist/linux-unpacked/brightterm node test/e2e-linux.mjs`. 셸 대체 경로, PTY 입출력, 키링 미지원 시 볼트 동작, 시리얼 포트 열거를 확인합니다.
 - 테스트: `test/e2e.mjs`(Linux sshd 시나리오), `test/e2e-mac.mjs`(macOS 키 모델·붙여넣기·이미지 업로드 — 파일 머리 주석 참고), `test/importers.test.mjs`(가져오기 파서).
-- 요구 사항: Node 20+, Electron 43.
+- 요구 사항: Node 22.12+ (권장 24 LTS), Electron 43. Linux에서는 node-pty 빌드에 Python 3, make, C++ 컴파일러가 필요합니다.
 
 ## 개인정보
 
