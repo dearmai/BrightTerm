@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { CredentialMeta, Group, Host, SessionInfo, Settings, Snippet, StoreData, Transfer, UiRequest, VaultStatus, AdhocTarget } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { api } from './api'
-import { LayoutNode, PaneNode, uid, panes, splitPane, removePane, grid, Dir, findPane } from './layout'
+import { LayoutNode, PaneNode, uid, panes, splitPane, removePane, grid, Dir, findPane, setPaneColor } from './layout'
 
 export interface Tab {
   id: string
@@ -10,6 +10,8 @@ export interface Tab {
   focused: string // pane id
   broadcast: boolean
   title?: string
+  /** 사용자가 탭에 직접 지정한 색 — 없으면 포커스된 패널 색을 따른다 */
+  color?: string
   zoomed?: string | null
 }
 
@@ -19,6 +21,8 @@ export interface MenuItem {
   danger?: boolean
   disabled?: boolean
   separator?: boolean
+  /** 색 고르기 줄 — value 가 지금 색, undefined 는 자동 */
+  colors?: { value?: string; onPick: (c?: string) => void }
   onClick?: () => void
 }
 
@@ -87,6 +91,7 @@ interface State {
   focusPane(tabId: string, paneId: string): void
   setActiveTab(id: string): void
   updateTab(id: string, p: Partial<Tab>): void
+  setPaneColor(tabId: string, paneId: string, color?: string): void
   moveTab(from: number, to: number): void
   gatherAll(): void
   splitToTabs(tabId: string): void
@@ -293,6 +298,10 @@ export const useApp = create<State>((set, get) => ({
 
   updateTab(id, p) {
     set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, ...p } : t)) }))
+  },
+
+  setPaneColor(tabId, paneId, color) {
+    set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, root: setPaneColor(t.root, paneId, color) } : t)) }))
   },
 
   moveTab(from, to) {

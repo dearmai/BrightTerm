@@ -16,7 +16,7 @@ function tabInfo(t: Tab): { title: string; color?: string; state: string; count:
   const state = states.includes('connected') ? (states.every((x) => x === 'connected') ? 'connected' : 'reconnecting') : states.includes('connecting') || states.includes('reconnecting') ? 'connecting' : states.includes('error') ? 'error' : 'closed'
   return {
     title: t.title || s?.title || '세션',
-    color: s?.color,
+    color: t.color ?? fp.color ?? s?.color,
     state,
     count: ps.length,
     activity: ps.some((p) => st.activity[p.sessionId])
@@ -36,6 +36,8 @@ export function TitleBar(): JSX.Element {
     const n = panes(t.root).length
     st().showMenu(e, [
       { label: '탭 이름 바꾸기', onClick: async () => { const name = await st().prompt('탭 이름 바꾸기', tabInfo(t).title); if (name !== null) st().updateTab(t.id, { title: name || undefined }) } },
+      { label: '탭 색상', colors: { value: t.color, onPick: (c) => st().updateTab(t.id, { color: c }) } },
+      { separator: true },
       { label: t.broadcast ? '동시 입력 끄기' : '이 탭의 모든 패널에 동시 입력', shortcut: SC.broadcast, disabled: n < 2, onClick: () => st().updateTab(t.id, { broadcast: !t.broadcast }) },
       { label: '패널을 각각 탭으로 분리', disabled: n < 2, onClick: () => st().splitToTabs(t.id) },
       { label: '모든 탭을 이 창 그리드로 모으기', onClick: () => st().gatherAll() },

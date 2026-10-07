@@ -1,5 +1,6 @@
 export type Dir = 'row' | 'col'
-export interface PaneNode { type: 'pane'; id: string; sessionId: string }
+/** color: 사용자가 이 패널에 직접 지정한 색 — 서버/폴더 색보다 우선 */
+export interface PaneNode { type: 'pane'; id: string; sessionId: string; color?: string }
 export interface SplitNode { type: 'split'; id: string; dir: Dir; children: LayoutNode[]; sizes: number[] }
 export type LayoutNode = PaneNode | SplitNode
 
@@ -49,6 +50,11 @@ export function removePane(root: LayoutNode, paneId: string): LayoutNode | null 
     return { ...n, children: kept, sizes: sizes.map((s) => (s / total) * 100) }
   }
   return rec(root)
+}
+
+export function setPaneColor(root: LayoutNode, paneId: string, color?: string): LayoutNode {
+  if (root.type === 'pane') return root.id === paneId ? { ...root, color } : root
+  return { ...root, children: root.children.map((c) => setPaneColor(c, paneId, color)) }
 }
 
 export function setSizes(root: LayoutNode, splitId: string, sizes: number[]): LayoutNode {

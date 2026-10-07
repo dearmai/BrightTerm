@@ -102,7 +102,17 @@ export function ContextMenu(): JSX.Element | null {
   return (
     <div className="ctx" ref={ref} style={{ left: pos.x || menu.x, top: pos.y || menu.y }} onMouseDown={(e) => e.stopPropagation()}>
       {menu.items.map((it, i) =>
-        it.separator ? <hr key={i} /> : (
+        it.separator ? <hr key={i} /> : it.colors ? (
+          <div key={i} className="ctx-colors">
+            {it.label && <div className="ctx-label">{it.label}</div>}
+            <div className="swatches">
+              <div className={`swatch none ${!it.colors.value ? 'on' : ''}`} title="자동(서버/폴더 색)" onClick={() => { useApp.setState({ menu: null }); it.colors!.onPick(undefined) }} />
+              {PALETTE.map((c) => (
+                <div key={c} className={`swatch ${it.colors!.value === c ? 'on' : ''}`} style={{ background: c }} onClick={() => { useApp.setState({ menu: null }); it.colors!.onPick(c) }} />
+              ))}
+            </div>
+          </div>
+        ) : (
           <button key={i} className={it.danger ? 'danger' : ''} disabled={it.disabled} onClick={() => { useApp.setState({ menu: null }); it.onClick?.() }}>
             <span>{it.label}</span>
             {it.shortcut && <span className="sc">{it.shortcut}</span>}

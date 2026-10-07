@@ -142,15 +142,16 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
     return () => window.removeEventListener('bt:find', h)
   }, [pane.sessionId])
 
-  const color = info?.color
+  const color = pane.color ?? info?.color
   const env = info?.env && info.env !== 'none' ? info.env : null
   const termBg = TERMINAL_THEMES[settings.terminalTheme]?.background ?? '#0d1117'
 
-  const onContext = (e: React.MouseEvent): void => {
+  // fromHead: 패널 머리말에서 연 메뉴 — 우클릭 붙여넣기 설정과 상관없이 항상 메뉴를 띄운다
+  const onContext = (e: React.MouseEvent, fromHead = false): void => {
     e.preventDefault()
     const entry = getEntry(pane.sessionId)
     const hasSel = !!entry?.term.hasSelection()
-    if (settings.rightClickPaste && !e.shiftKey) {
+    if (!fromHead && settings.rightClickPaste && !e.shiftKey) {
       if (hasSel && !settings.copyOnSelect) {
         api.clip.writeText(entry!.term.getSelection())
         entry!.term.clearSelection()
@@ -172,6 +173,8 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
       { label: '아래로 분할 (같은 서버)', shortcut: SC.splitDown, onClick: () => st().duplicatePane('col') },
       { label: 'SFTP 열기', shortcut: SC.sftp, disabled: !info?.canSftp, onClick: () => useApp.setState({ rightPanel: 'sftp' }) },
       { label: '다시 접속', disabled: info?.state === 'connected', onClick: () => api.session.reconnect(pane.sessionId) },
+      { separator: true },
+      { label: '터미널 색상', colors: { value: pane.color, onPick: (c) => st().setPaneColor(tab.id, pane.id, c) } },
       { separator: true },
       { label: '패널 닫기', danger: true, onClick: () => st().closePane(pane.id, tab.id) }
     ])
@@ -201,7 +204,7 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
       }}
     >
       {(
-        <div className="pane-head" style={color ? { background: `color-mix(in srgb, ${color} ${focused ? 22 : 12}%, var(--bg-3))`, borderBottomColor: color } : undefined}>
+        <div className="pane-head" onContextMenu={(e) => onContext(e, true)} style={color ? { background: `color-mix(in srgb, ${color} ${focused ? 22 : 12}%, var(--bg-3))`, borderBottomColor: color } : undefined}>
           <span className={`dot ${info?.state ?? 'closed'}`} />
           {env && <span className="env-tag" style={{ background: ENV_COLORS[env] }}>{ENV_LABELS[env]}</span>}
           <span className="ph-title">{info?.title ?? '세션'}</span>
@@ -224,7 +227,7 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
           </span>
         </div>
       )}
-      <div className="pane-body" ref={bodyRef} onContextMenu={onContext} />
+      <div className="pane-body" ref={bodyRef} onContextMenu={(e) => onContext(e)} />
       {multi && info && <div className="watermark" style={{ color: color ?? 'var(--text)' }}>{info.title}</div>}
       {find !== null && (
         <div className="findbar" onMouseDown={(e) => e.stopPropagation()}>

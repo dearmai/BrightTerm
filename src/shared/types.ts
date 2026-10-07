@@ -146,9 +146,9 @@ export interface GitSyncStatus {
 /** 앱을 다시 켤 때 복원할 탭·분할 — 창마다 서버 id 또는 로컬 시작 폴더만 기억한다 */
 export type SavedPane = { hostId: string } | { local: { cwd?: string } }
 export type SavedLayout =
-  | { type: 'pane'; pane: SavedPane }
+  | { type: 'pane'; pane: SavedPane; color?: string }
   | { type: 'split'; dir: 'row' | 'col'; sizes: number[]; children: SavedLayout[] }
-export interface SavedTab { title?: string; root: SavedLayout; focused: number; zoomed?: number | null }
+export interface SavedTab { title?: string; color?: string; root: SavedLayout; focused: number; zoomed?: number | null }
 export interface SavedWorkspace { tabs: SavedTab[]; active: number; savedAt: number }
 
 export interface StoreData {
