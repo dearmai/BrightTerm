@@ -185,7 +185,7 @@ npm run dist:mac     # macOS dmg x64 + arm64 (dist/) — ad-hoc 서명(인증서
 APPLE_KEYCHAIN_PROFILE=<notarytool 프로필> npm run dist:mac:signed  # Developer ID 서명 + 공증 (electron-builder.signed.yml)
 ```
 
-- Linux 아이콘: `build/icons/`의 16~512px PNG를 패키지에 포함합니다. 원본 `build/icon.png`를 바꾸면 ImageMagick 설치 후 `bash scripts/gen-linux-icons.sh`로 다시 생성하세요. 일반 빌드에는 ImageMagick이 필요하지 않습니다.
+- 앱 아이콘: 원본은 `docs/logo/icon.svg`입니다. 수정 후 `npm run icons`로 `build/icon.png`, `resources/icon.png`, `src/renderer/src/assets/logo.png`, `build/icons/`(Linux 16~512px)를 다시 생성하세요. 일반 빌드에는 별도 이미지 도구가 필요하지 않습니다.
 - 구조: `src/main`(Electron 메인: SSH/시리얼/텔넷, 볼트, SFTP, 가져오기, AWS), `src/preload`, `src/renderer`(React + xterm.js UI, 키 판정은 `platform.ts`), `src/shared`(공용 타입).
 - Linux 실행 검증: `npm run test:linux` (그래픽 세션 필요). 패키지 검증: `BT_EXECUTABLE=dist/linux-unpacked/brightterm node test/e2e-linux.mjs`. 셸 대체 경로, PTY 입출력, 키링 미지원 시 볼트 동작, 시리얼 포트 열거를 확인합니다.
 - Git 동기화 검증: `npm run test:git-sync` (그래픽 세션 및 Git 필요). 임시 bare 저장소와 독립 앱 2개로 암호화, 설정 저장, 시작/변경 동기화, 충돌, 오프라인, 데이터 손상·중단 복구를 검증하며 실제 사용자 저장소를 사용하지 않습니다.

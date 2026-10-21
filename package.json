@@ -10,6 +10,7 @@
   "scripts": {
     "postinstall": "node scripts/fix-node-pty.mjs",
     "notices": "node scripts/gen-notices.mjs",
+    "icons": "electron scripts/gen-icons.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
