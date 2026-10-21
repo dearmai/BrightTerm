@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOpen } from 'lucide-react'
+import { KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOpen, Search, Check, Copy, SquareTerminal } from 'lucide-react'
 import { useApp, newHost } from '../state'
 import { api } from '../api'
 import { Modal, Field, Seg, ColorPick, Switch } from './ui'
-import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJump, type SerialOptions } from '@shared/types'
+import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJump, type SerialOptions, type TmuxCheck } from '@shared/types'
 import { isMac, isWindows } from '../platform'
 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
@@ -61,7 +61,24 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
 
   const close = (): void => useApp.setState({ dialog: null })
 
-  const save = async (connect = false): Promise<void> => {
+  const [check, setCheck] = useState<TmuxCheck | null>(null)
+  const [checkErr, setCheckErr] = useState('')
+  const [checking, setChecking] = useState(false)
+  const checkServer = async (): Promise<void> => {
+    setChecking(true)
+    setCheck(null)
+    setCheckErr('')
+    try {
+      setCheck(await api.persist.check({ ...h, host: h.host.trim(), username: h.username.trim(), alias: h.alias.trim() || h.host.trim() }))
+    } catch (e) {
+      setCheckErr(`확인 실패: ${(e as Error).message}`)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  /** run: 저장 뒤 새 탭에서 접속해 그 명령을 입력(tmux 설치) */
+  const save = async (connect = false, run?: string): Promise<void> => {
     setErr('')
     const localName = h.local?.cwd?.trim().replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '로컬 터미널'
     const out = { ...h, alias: h.alias.trim() || (h.protocol === 'serial' ? h.serial?.path ?? 'Serial' : h.protocol === 'local' ? localName : h.host.trim()), host: h.host.trim(), username: h.username.trim() }
@@ -113,7 +130,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
       }
       st().upsertHost(out)
       close()
-      if (connect) st().openHost(out.id)
+      if (connect || run) st().openHost(out.id, 'tab', run)
     } catch (e) {
       setErr((e as Error).message)
     }
@@ -217,6 +234,44 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                 </div>
                 <div className="toggle"><div className="t-label"><span>로컬 에코</span><small>장비가 입력한 글자를 돌려주지 않을 때 켜세요</small></div><Switch value={serial.localEcho} onChange={(v) => setSerial({ localEcho: v })} /></div>
               </>
+            )}
+            {(h.protocol === 'ssh' || (h.protocol === 'local' && (!isWindows || /wsl(\.exe)?$/i.test(h.local?.shell ?? '')))) && (
+              <div className="persist-box">
+                <div className="toggle">
+                  <div className="t-label">
+                    <span>세션 유지 (tmux)</span>
+                    <small>창을 닫거나 앱을 꺼도 안에서 돌던 프로그램(Claude Code 등)이 계속 돕니다. 다시 열면 그 화면에 그대로 붙습니다{h.protocol === 'ssh' ? ' — 이전 세션이 있으면 이어 쓸 세션을 고르거나 새 세션을 열 수 있습니다' : ''}. {h.protocol === 'ssh' ? '서버에' : '이 PC에'} tmux 가 있어야 합니다{h.protocol === 'local' && isMac ? ' (brew install tmux)' : ''}.</small>
+                  </div>
+                  <Switch value={!!h.persist} onChange={(v) => set('persist', v)} />
+                </div>
+                {h.persist && h.protocol === 'ssh' && (
+                  <div className="row">
+                    <button className="btn sm" disabled={checking || !h.host.trim()} onClick={checkServer}><Search size={13} />{checking ? '확인 중...' : '서버 확인'}</button>
+                    {!check && !checkErr && <span className="muted" style={{ fontSize: 12 }}>서버에 접속해 tmux 가 있는지 보고, 없으면 설치 명령을 알려 줍니다</span>}
+                    {check?.installed && <span style={{ fontSize: 12.5, color: 'var(--ok)' }}><Check size={13} style={{ verticalAlign: -2 }} /> {check.version} 설치됨{check.os ? ` · ${check.os}` : ''}</span>}
+                    {checkErr && <span className="err" style={{ fontSize: 12 }}>{checkErr}</span>}
+                  </div>
+                )}
+                {h.persist && h.protocol === 'ssh' && check && !check.installed && (
+                  <div className="notice warn" style={{ flexDirection: 'column' }}>
+                    <div>서버에 tmux 가 없습니다{check.os ? ` (${check.os})` : ''}. {check.installCommand ? '아래 명령으로 설치하세요.' : '패키지 관리자를 찾지 못했습니다 — 서버 배포판에 맞게 tmux 를 설치하세요.'}</div>
+                    {check.installCommand && <div className="code">{check.installCommand}</div>}
+                    {check.needsAdmin && <div>이 계정은 root 가 아니고 sudo 도 없습니다. 서버 관리자에게 위 명령 실행을 요청하세요.</div>}
+                    {check.installCommand && !check.needsAdmin && (
+                      <div className="row">
+                        <button className="btn sm primary" onClick={() => save(false, check.installCommand)}><SquareTerminal size={13} />저장하고 터미널에서 설치</button>
+                        <button className="btn sm" onClick={() => { navigator.clipboard.writeText(check.installCommand!); st().toast('ok', '설치 명령을 복사했습니다') }}><Copy size={13} />복사</button>
+                        <span className="muted" style={{ fontSize: 12 }}>새 탭에서 접속해 명령을 입력합니다. sudo 비밀번호는 터미널에서 직접 입력하세요.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {h.persist && (
+                  <Field label="tmux 세션 이름 (선택)" hint={h.protocol === 'ssh' ? '비우면 별칭으로 만듭니다. 새 세션은 이름 뒤에 -2, -3 … 이 붙습니다. 완전히 끝내려면 그 창에서 exit' : '비우면 별칭·폴더 이름으로 만듭니다. 완전히 끝내려면 그 창에서 exit'}>
+                    <input className="input mono" value={h.persistName ?? ''} onChange={(e) => set('persistName', e.target.value || undefined)} placeholder="자동" />
+                  </Field>
+                )}
+              </div>
             )}
             <div className="grid2">
               <Field label="폴더">
@@ -341,23 +396,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                 <div className="muted" style={{ fontSize: 12 }}>이 서버에 접속할 때 위 베스천을 먼저 거칩니다. 베스천은 서버 목록에 따로 생기지 않습니다.</div>
               </div>
             )}
-            {(h.protocol === 'ssh' || (h.protocol === 'local' && (!isWindows || /wsl(\.exe)?$/i.test(h.local?.shell ?? '')))) && (
-              <div className="persist-box">
-                <div className="toggle">
-                  <div className="t-label">
-                    <span>세션 유지 (tmux)</span>
-                    <small>창을 닫거나 앱을 꺼도 안에서 돌던 프로그램(Claude Code 등)이 계속 돕니다. 다시 열면 그 화면에 그대로 붙습니다. {h.protocol === 'ssh' ? '서버에' : '이 PC에'} tmux 가 있어야 합니다{h.protocol === 'local' && isMac ? ' (brew install tmux)' : h.protocol === 'ssh' ? ' (Ubuntu: sudo apt install tmux)' : ''}.</small>
-                  </div>
-                  <Switch value={!!h.persist} onChange={(v) => set('persist', v)} />
-                </div>
-                {h.persist && (
-                  <Field label="tmux 세션 이름 (선택)" hint="비우면 별칭·폴더 이름으로 만듭니다. 완전히 끝내려면 그 창에서 exit">
-                    <input className="input mono" value={h.persistName ?? ''} onChange={(e) => set('persistName', e.target.value || undefined)} placeholder="자동" />
-                  </Field>
-                )}
-              </div>
-            )}
-            <Field label={h.protocol === 'local' ? '셸 시작 후 자동 실행 명령' : '접속 후 자동 실행 명령'} hint={h.protocol === 'local' ? (h.persist ? '세션 유지가 켜져 있으면 tmux 세션을 처음 만들 때만 실행됩니다 — 다시 붙을 때는 돌던 프로그램에 그대로 붙습니다' : '창을 열 때마다 실행됩니다. 예: nvm use && claude') : '예: cd /var/www && sudo -i'}>
+            <Field label={h.protocol === 'local' ? '셸 시작 후 자동 실행 명령' : '접속 후 자동 실행 명령'} hint={h.persist && h.protocol !== 'telnet' && h.protocol !== 'serial' ? '세션 유지가 켜져 있으면 tmux 세션을 처음 만들 때만 실행됩니다 — 다시 붙을 때는 돌던 프로그램에 그대로 붙습니다' : h.protocol === 'local' ? '창을 열 때마다 실행됩니다. 예: nvm use && claude' : '예: cd /var/www && sudo -i'}>
               <input className="input mono" value={h.startupCommand ?? ''} onChange={(e) => set('startupCommand', e.target.value)} placeholder={h.protocol === 'local' ? 'claude --continue' : 'cd /var/www && sudo -i'} />
             </Field>
             {h.protocol === 'local' ? (

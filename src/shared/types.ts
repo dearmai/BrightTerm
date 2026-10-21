@@ -144,7 +144,7 @@ export interface GitSyncStatus {
 }
 
 /** 앱을 다시 켤 때 복원할 탭·분할 — 창마다 서버 id 또는 로컬 시작 폴더만 기억한다 */
-export type SavedPane = { hostId: string } | { local: { cwd?: string } }
+export type SavedPane = { hostId: string; tmux?: string } | { local: { cwd?: string } }
 export type SavedLayout =
   | { type: 'pane'; pane: SavedPane; color?: string }
   | { type: 'split'; dir: 'row' | 'col'; sizes: number[]; children: SavedLayout[] }
@@ -206,6 +206,34 @@ export interface SessionInfo {
   canSftp: boolean
   /** 세션 유지(tmux) 로 연 창 */
   persist?: boolean
+  /** 붙은 tmux 세션 이름(SSH) — 재접속·탭 복원 때 같은 세션으로 */
+  tmuxSession?: string
+}
+
+/** 세션 유지 창을 열 때 tmux 세션 고르기 — name: 그 세션에, 'auto': 묻지 않고 쉬는 세션에(없으면 새로), 없으면 물어본다 */
+export type TmuxPick = { name: string } | 'auto'
+
+export interface TmuxSessionInfo {
+  name: string
+  /** 만든 시각 (ms) */
+  created: number
+  /** 마지막 활동 (ms) */
+  activity: number
+  /** 붙어 있는 클라이언트 수 — 0 이 아니면 다른 창에서 보고 있다 */
+  attached: number
+  /** 활성 창에서 돌고 있는 프로그램 */
+  command: string
+}
+
+/** 서버 확인 결과 — tmux 유무와, 없을 때 터미널에 넣어 줄 설치 명령 */
+export interface TmuxCheck {
+  installed: boolean
+  version?: string
+  os?: string
+  /** 배포판에 맞는 설치 명령. 알 수 없으면 없음 */
+  installCommand?: string
+  /** root 도 아니고 sudo 도 없을 때 */
+  needsAdmin?: boolean
 }
 
 export interface AdhocTarget {
@@ -247,6 +275,7 @@ export type UiRequest =
   | { reqId: string; kind: 'keyboard'; sessionTitle: string; name: string; instructions: string; prompts: { prompt: string; echo: boolean }[] }
   | { reqId: string; kind: 'passphrase'; sessionTitle: string }
   | { reqId: string; kind: 'username'; sessionTitle: string }
+  | { reqId: string; kind: 'tmux'; sessionTitle: string; sessions: TmuxSessionInfo[] }
 
 export interface ImportCandidate {
   source: 'putty' | 'ssh-config' | 'aws'
@@ -256,6 +285,17 @@ export interface ImportCandidate {
   /** 점프 호스트의 주소 — 같이 가져오는 후보나 이미 있는 서버 중 host 가 같은 것으로 잇는다 */
   jumpVia?: string
   note?: string
+}
+
+/** 이 PC 의 ~/.ssh/*.pub — 서버에 등록할 키 후보 */
+export interface LocalPublicKey {
+  name: string
+  path: string
+  type: string
+  comment: string
+  fingerprint: string
+  /** 같은 이름의 개인 키 파일이 옆에 있다 */
+  hasPrivate: boolean
 }
 
 export interface ClipboardInfo {

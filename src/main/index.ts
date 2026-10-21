@@ -14,6 +14,7 @@ import { initialBounds, resetWindow, trackWindow } from './windowState'
 import { scanAws } from './aws'
 import { checkUpdate, startUpdateCheck, updateInfo } from './update'
 import { gitSync } from './gitSync'
+import { listPublicKeys, installPublicKey, checkTmux } from './sshKeys'
 import type { AdhocTarget, CredentialInput, GitSyncConfig, Group, Host, ImportCandidate, StoreData } from '@shared/types'
 
 let win: BrowserWindow | null = null
@@ -122,7 +123,7 @@ function registerIpc(): void {
   handle('cred:delete', (id: string) => vault.remove(id))
 
   // sessions
-  handle('session:open', (o: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number }) => sessions.open(o))
+  handle('session:open', (o: Parameters<typeof sessions.open>[0]) => sessions.open(o))
   handle('session:close', (id: string) => {
     sessions.close(id)
     sftp.forgetSession(id)
@@ -131,6 +132,11 @@ function registerIpc(): void {
   ipcMain.on('session:write', (_e, id: string, data: string) => sessions.get(id)?.write(data))
   ipcMain.on('session:resize', (_e, id: string, cols: number, rows: number) => sessions.get(id)?.setSize(cols, rows))
   ipcMain.on('ui:respond', (_e, reqId: string, value: unknown) => respond(reqId, value))
+
+  // ssh 공개키 등록
+  handle('sshkey:list', () => listPublicKeys())
+  handle('sshkey:install', (hostId: string, pubPath: string) => installPublicKey(hostId, pubPath))
+  handle('persist:check', (host: Host) => checkTmux(host))
 
   // sftp
   handle('sftp:home', (id: string) => sftp.home(id))

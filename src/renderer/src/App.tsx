@@ -15,6 +15,7 @@ import { HostEditor, GroupEditor } from './components/HostEditor'
 import { QuickConnect } from './components/QuickConnect'
 import { SettingsDialog } from './components/SettingsDialog'
 import { ImportDialog } from './components/ImportDialog'
+import { SshKeyDialog } from './components/SshKeyDialog'
 import { UiRequestDialog } from './components/UiRequestDialog'
 import { ContextMenu, Toasts, ConfirmDialog, PromptDialog } from './components/ui'
 
@@ -192,6 +193,7 @@ export default function App(): JSX.Element {
       {dialog?.kind === 'quick' && <QuickConnect />}
       {dialog?.kind === 'settings' && <SettingsDialog section={dialog.section} />}
       {dialog?.kind === 'import' && <ImportDialog />}
+      {dialog?.kind === 'sshKey' && <SshKeyDialog hostId={dialog.hostId} />}
       {dialog?.kind === 'preview' && <PreviewDialog sessionId={dialog.sessionId} path={dialog.path} />}
       <UiRequestDialog />
       <ConfirmDialog />

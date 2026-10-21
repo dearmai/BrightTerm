@@ -28,6 +28,8 @@ export function LockScreen(props: { overlay: boolean }): JSX.Element {
   const [saved, setSaved] = useState(false)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  // Windows 는 볼트를 만들 때 Windows 계정 잠금 해제(DPAPI)를 기본으로 켠다
+  const [osUnlock, setOsUnlock] = useState(vault.osUnlockKind === 'windows')
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 50) }, [mode])
@@ -54,6 +56,9 @@ export function LockScreen(props: { overlay: boolean }): JSX.Element {
     setErr('')
     try {
       const r = await api.vault.setup(pw)
+      if (osUnlock && vault.osUnlockAvailable) {
+        try { await api.vault.setOsUnlock(true) } catch (e) { useApp.getState().toast('error', `${osUnlockText(vault.osUnlockKind).toggle}을 켜지 못했습니다: ${(e as Error).message}`) }
+      }
       setRc(r.recoveryCode)
       setMode('recovery')
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
@@ -103,6 +108,12 @@ export function LockScreen(props: { overlay: boolean }): JSX.Element {
               </div>
             )}
             <input className="input" type="password" placeholder="비밀번호 확인" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+            {vault.osUnlockAvailable && vault.osUnlockKind === 'windows' && (
+              <label className="row" style={{ fontSize: 12.5, alignItems: 'flex-start' }}>
+                <input type="checkbox" checked={osUnlock} onChange={(e) => setOsUnlock(e.target.checked)} style={{ marginTop: 2 }} />
+                <span>Windows 계정으로 잠금 해제 <span className="muted">— 이 PC의 Windows 로그인으로 볼트를 자동으로 엽니다. 나중에 설정 → 보안·계정에서 끌 수 있습니다</span></span>
+              </label>
+            )}
             {err && <div className="err">{err}</div>}
             <button className="btn primary" disabled={busy} style={{ justifyContent: 'center' }}>{busy ? '암호화 키 생성 중...' : '볼트 만들기'}</button>
           </form>

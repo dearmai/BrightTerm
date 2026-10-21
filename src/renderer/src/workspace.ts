@@ -11,7 +11,7 @@ import type { SavedLayout, SavedPane, SavedTab, SavedWorkspace, SessionInfo } fr
 
 function paneSpec(info: SessionInfo | undefined): SavedPane | null {
   if (!info) return null
-  if (info.hostId) return { hostId: info.hostId }
+  if (info.hostId) return { hostId: info.hostId, ...(info.tmuxSession ? { tmux: info.tmuxSession } : {}) }
   if (info.protocol === 'local') return { local: { cwd: info.target.replace(/^로컬 · /, '').replace(/^~$/, '') || undefined } }
   return null
 }
@@ -76,7 +76,8 @@ async function build(n: SavedLayout, out: PaneNode[]): Promise<LayoutNode | null
       let info: SessionInfo
       if ('hostId' in p) {
         if (!st.hosts.some((h) => h.id === p.hostId)) return null // 그새 지운 서버
-        info = await api.session.open({ hostId: p.hostId })
+        // 세션 유지 창은 그때 붙어 있던 tmux 세션으로(예전 저장본은 쉬는 세션으로) — 묻지 않는다
+        info = await api.session.open({ hostId: p.hostId, tmux: p.tmux ? { name: p.tmux } : 'auto' })
       } else {
         info = await api.session.open({ adhoc: { host: '', protocol: 'local', cwd: p.local.cwd } })
       }

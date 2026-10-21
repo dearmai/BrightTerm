@@ -208,7 +208,7 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
           <span className={`dot ${info?.state ?? 'closed'}`} />
           {env && <span className="env-tag" style={{ background: ENV_COLORS[env] }}>{ENV_LABELS[env]}</span>}
           <span className="ph-title">{info?.title ?? '세션'}</span>
-          {info?.persist && <span className="ph-persist" title="세션 유지(tmux) — 창을 닫아도 안의 프로그램은 계속 돕니다. 끝내려면 exit">유지</span>}
+          {info?.persist && <span className="ph-persist" title={`세션 유지(tmux${info.tmuxSession ? ` · ${info.tmuxSession}` : ''}) — 창을 닫아도 안의 프로그램은 계속 돕니다. 끝내려면 exit`}>유지{info.tmuxSession && /-\d+$/.test(info.tmuxSession) ? ` ${info.tmuxSession.match(/-(\d+)$/)![1]}` : ''}</span>}
           <span className="ph-target">{info?.target}</span>
           {tab.broadcast && <Radio size={12} color="var(--warn)" />}
           <span className="ph-actions">

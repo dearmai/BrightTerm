@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { createWriteStream, WriteStream, mkdirSync } from 'fs'
 import { join } from 'path'
 import * as iconv from 'iconv-lite'
-import type { AdhocTarget, Host, SessionInfo, SessionState } from '@shared/types'
+import type { AdhocTarget, Host, SessionInfo, SessionState, TmuxPick } from '@shared/types'
 import { ENV_COLORS } from '@shared/types'
 import type { Transport } from './transports/types'
 import { SshTransport } from './transports/ssh'
@@ -94,7 +94,11 @@ export class Session {
   private retryTimer: NodeJS.Timeout | null = null
   private log: WriteStream | null = null
 
-  constructor(public host: Host, public persistent: boolean) {
+  /** 세션 유지 서버에서 붙을 tmux 세션 — 한 번 붙으면 그 이름으로 고정해 재접속 때 묻지 않는다 */
+  private tmux?: TmuxPick
+
+  constructor(public host: Host, public persistent: boolean, tmux?: TmuxPick) {
+    this.tmux = tmux
     this.info = {
       id: randomUUID(),
       hostId: persistent ? host.id : null,
@@ -149,9 +153,14 @@ export class Session {
           cols: this.cols,
           rows: this.rows,
           onInfo: (m) => this.info_(m, '90'),
-          onSavePassword: (username, password) => this.savePassword(username, password)
+          onSavePassword: (username, password) => this.savePassword(username, password),
+          tmux: this.tmux
         })
         await st.start()
+        if (st.tmuxSession) {
+          this.tmux = { name: st.tmuxSession }
+          this.info = { ...this.info, tmuxSession: st.tmuxSession }
+        }
         t = st
       } else if (h.protocol === 'local') {
         const lt = new LocalTransport(h.local ?? {}, h.termType)
@@ -297,7 +306,8 @@ function translateError(m: string): string {
 class SessionManager {
   sessions = new Map<string, Session>()
 
-  open(opts: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number }): SessionInfo {
+  /** run: 세션 유지 없이 접속해 이 명령만 입력한다(서버에 tmux 설치 등) */
+  open(opts: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number; tmux?: TmuxPick; run?: string }): SessionInfo {
     let host: Host | undefined
     let persistent = true
     if (opts.hostId) host = store.get().hosts.find((h) => h.id === opts.hostId)
@@ -306,7 +316,9 @@ class SessionManager {
       persistent = false
     }
     if (!host) throw new Error('서버를 찾을 수 없습니다')
-    const s = new Session(structuredClone(host), persistent)
+    const h = structuredClone(host)
+    if (opts.run) Object.assign(h, { persist: false, startupCommand: opts.run })
+    const s = new Session(h, persistent, opts.tmux)
     if (opts.cols && opts.rows) s.setSize(opts.cols, opts.rows)
     this.sessions.set(s.info.id, s)
     // give renderer a tick to register the terminal before data arrives

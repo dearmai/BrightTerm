@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, ChevronDown, Folder, FolderOpen, Search, Plus, FolderPlus, Download, Star, Terminal, SquareTerminal, Cpu, Radio, Clock, SplitSquareHorizontal, Play } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Search, Plus, FolderPlus, Download, Star, Terminal, SquareTerminal, Cpu, Radio, Clock, SplitSquareHorizontal, Play, KeyRound, Layers } from 'lucide-react'
 import { useApp, newHost } from '../state'
 import { ENV_COLORS, ENV_LABELS, type Group, type Host } from '@shared/types'
 import { panes } from '../layout'
@@ -33,6 +33,9 @@ export function hostTarget(h: Host, withPort = false): string {
   if (h.protocol === 'local') return `로컬 · ${h.local?.cwd?.trim() || '~'}`
   return `${h.username ? h.username + '@' : ''}${h.host}${withPort ? ':' + h.port : ''}`
 }
+
+/** 비밀번호로 로그인하는 SSH 서버 — 공개키 등록 버튼을 보여준다 */
+const loginsWithPassword = (h: Host): boolean => h.protocol === 'ssh' && (h.authType === 'password' || h.authType === 'ask')
 
 function matches(h: Host, q: string, groups: Group[]): boolean {
   if (!q) return true
@@ -104,6 +107,7 @@ export function Sidebar(): JSX.Element {
       { label: '편집', shortcut: 'F2', onClick: () => useApp.setState({ dialog: { kind: 'host', host: h } }) },
       { label: '복제', onClick: () => st().upsertHost({ ...structuredClone(h), id: crypto.randomUUID(), alias: h.alias + ' (복사본)', lastUsedAt: undefined }) },
       { label: h.favorite ? '즐겨찾기 해제' : '즐겨찾기', onClick: () => st().upsertHost({ ...h, favorite: !h.favorite }) },
+      ...(loginsWithPassword(h) ? [{ label: 'SSH 키 등록…', onClick: () => useApp.setState({ dialog: { kind: 'sshKey', hostId: h.id } }) }] : []),
       { label: '주소 복사', onClick: () => navigator.clipboard.writeText(`${h.username ? h.username + '@' : ''}${h.host}`) },
       { separator: true },
       { label: '삭제', danger: true, onClick: async () => { if (await st().confirm({ title: '서버 삭제', message: `"${h.alias}"을(를) 삭제할까요?`, okText: '삭제', danger: true })) st().removeHosts([h.id]) } }
@@ -157,9 +161,11 @@ export function Sidebar(): JSX.Element {
         <span className="color-bar" style={{ background: color ?? 'transparent' }} />
         <span className="proto"><ProtoIcon p={h.protocol} size={13} /></span>
         <span className="n-label">{h.alias || h.host}</span>
+        {h.persist && (h.protocol === 'ssh' || h.protocol === 'local') && <span className="n-persist" title="세션 유지(tmux) — 창을 닫아도 안의 프로그램이 계속 돕니다"><Layers size={11} /></span>}
         <span className="n-sub">{h.protocol === 'serial' ? h.serial?.path : h.protocol === 'local' ? h.local?.cwd?.trim() || '~' : h.host}</span>
         {live ? <span className="n-live"><span className="dot connected" style={{ width: 6, height: 6 }} />{live > 1 ? live : ''}</span> : null}
         <span className="n-hover">
+          {loginsWithPassword(h) && <button className="ibtn sm" title="SSH 키 등록" onClick={(e) => { e.stopPropagation(); useApp.setState({ dialog: { kind: 'sshKey', hostId: h.id } }) }}><KeyRound size={13} /></button>}
           <button className="ibtn sm" title="분할로 연결" onClick={(e) => { e.stopPropagation(); st().openHost(h.id, 'row') }}><SplitSquareHorizontal size={13} /></button>
           <button className="ibtn sm" title="연결" onClick={(e) => { e.stopPropagation(); st().openHost(h.id) }}><Play size={13} /></button>
         </span>

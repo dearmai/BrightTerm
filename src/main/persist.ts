@@ -1,4 +1,4 @@
-import type { Host } from '@shared/types'
+import type { Host, TmuxCheck, TmuxSessionInfo } from '@shared/types'
 
 /**
  * 세션 유지(tmux). 접속 뒤 셸에 한 줄을 입력해 tmux 세션에 붙는다 — 세션이 없으면 만들고
@@ -28,11 +28,11 @@ export function persistSupported(h: Host): boolean {
   return /(^|[\\/])wsl(\.exe)?$/i.test(h.local?.shell?.trim() ?? '')
 }
 
-/** 접속 직후 셸에 입력할 한 줄 — 세션 유지가 아니면 자동 실행 명령 그대로 */
-export function startupLine(h: Host): string | undefined {
+/** 접속 직후 셸에 입력할 한 줄 — 세션 유지가 아니면 자동 실행 명령 그대로. session 은 고른 tmux 세션(없으면 기본 이름) */
+export function startupLine(h: Host, session?: string): string | undefined {
   const startup = h.startupCommand?.trim() || undefined
   if (!persistSupported(h)) return startup
-  const n = tmuxName(h)
+  const n = session || tmuxName(h)
   const t = q(`=${n}`)
   const create = [
     `tmux new-session -d -s ${q(n)} -c "$PWD"`,
@@ -41,6 +41,81 @@ export function startupLine(h: Host): string | undefined {
     ...(startup ? [`tmux send-keys -t ${q(n)} -l ${q(startup)}`, `tmux send-keys -t ${q(n)} Enter`] : [])
   ].join(' && ')
   const inner = `tmux has-session -t ${t} 2>/dev/null || { ${create}; }; TMUX= exec tmux attach-session -t ${t}`
-  const missing = `echo 'BrightTerm: tmux 가 없어 세션 유지를 쓰지 않습니다 (설치: macOS brew install tmux / Ubuntu sudo apt install tmux)'`
+  const missing = h.protocol === 'ssh'
+    ? `echo 'BrightTerm: 서버에 tmux 가 없어 세션 유지를 쓰지 않습니다 (서버 편집 → 세션 유지 → 서버 확인에서 설치할 수 있습니다)'`
+    : `echo 'BrightTerm: tmux 가 없어 세션 유지를 쓰지 않습니다 (설치: macOS brew install tmux / Ubuntu sudo apt install tmux)'`
   return ` if command -v tmux >/dev/null 2>&1; then sh -c ${q(inner)}; else ${missing}${startup ? `; ${startup}` : ''}; fi`
+}
+
+/* ── SSH 서버의 tmux 세션 고르기 ── 서버마다 기본 이름(bt-별칭) 과 새로 만든 bt-별칭-2, -3 … 을 그 서버 것으로 본다 */
+
+/** 이 서버의 tmux 세션 목록을 찍는 sh 스크립트. tmux 가 없으면 BT_NOTMUX */
+export const TMUX_LIST_SCRIPT = [
+  'command -v tmux >/dev/null 2>&1 || { echo BT_NOTMUX; exit 0; }',
+  `tmux list-sessions -F '#{session_name}|#{session_created}|#{session_activity}|#{session_attached}|#{pane_current_command}' 2>/dev/null`,
+  'echo BT_OK'
+].join('\n') + '\n'
+
+export const tmuxKillScript = (name: string): string => `tmux kill-session -t ${q(`=${name}`)} 2>/dev/null\n`
+
+const ownedBy = (base: string, name: string): boolean => name === base || (name.startsWith(base + '-') && /^\d+$/.test(name.slice(base.length + 1)))
+
+/** null 이면 서버에 tmux 가 없다 */
+export function parseTmuxList(out: string, base: string): TmuxSessionInfo[] | null {
+  if (out.includes('BT_NOTMUX') || !out.includes('BT_OK')) return null
+  const list: TmuxSessionInfo[] = []
+  for (const line of out.split(/\r?\n/)) {
+    const [name, created, activity, attached, command] = line.split('|')
+    if (!name || command === undefined || !ownedBy(base, name)) continue
+    list.push({ name, created: +created * 1000, activity: +activity * 1000, attached: +attached || 0, command })
+  }
+  return list.sort((a, b) => b.activity - a.activity)
+}
+
+/** 새 세션 이름 — 기본 이름이 비어 있으면 그것, 아니면 -2, -3 … */
+export function nextTmuxName(base: string, taken: string[]): string {
+  if (!taken.includes(base)) return base
+  let i = 2
+  while (taken.includes(`${base}-${i}`)) i++
+  return `${base}-${i}`
+}
+
+/** 서버 확인 — tmux 버전, 배포판, root·sudo, 패키지 관리자 */
+export const TMUX_CHECK_SCRIPT = [
+  'command -v tmux >/dev/null 2>&1 && echo "TMUX=$(tmux -V 2>/dev/null)"',
+  '[ -r /etc/os-release ] && ( . /etc/os-release; echo "OS=${PRETTY_NAME:-$ID}" )',
+  '[ "$(uname -s 2>/dev/null)" = Darwin ] && echo "OS=macOS $(sw_vers -productVersion 2>/dev/null)"',
+  'echo "UID=$(id -u)"',
+  'command -v sudo >/dev/null 2>&1 && echo SUDO=1',
+  'for p in apt-get dnf yum zypper apk pacman brew; do command -v $p >/dev/null 2>&1 && echo "PM=$p"; done',
+  'echo BT_OK'
+].join('\n') + '\n'
+
+const INSTALL: Record<string, string[]> = {
+  'apt-get': ['apt-get update', 'apt-get install -y tmux'],
+  dnf: ['dnf install -y tmux'],
+  yum: ['yum install -y tmux'],
+  zypper: ['zypper --non-interactive install tmux'],
+  apk: ['apk add tmux'],
+  pacman: ['pacman -S --noconfirm tmux']
+}
+
+export function parseTmuxCheck(out: string): TmuxCheck {
+  if (!out.includes('BT_OK')) throw new Error(`서버 정보를 읽지 못했습니다${out.trim() ? `: ${out.trim().slice(0, 200)}` : ' (sh 를 실행할 수 없는 서버일 수 있습니다)'}`)
+  const val = (k: string): string | undefined => out.match(new RegExp(`^${k}=(.*)$`, 'm'))?.[1]?.trim()
+  const version = val('TMUX')
+  const root = val('UID') === '0'
+  const sudo = out.includes('SUDO=1')
+  const pms = [...out.matchAll(/^PM=(\S+)$/gm)].map((m) => m[1])
+  const pm = Object.keys(INSTALL).find((p) => pms.includes(p))
+  let installCommand: string | undefined
+  if (pm) installCommand = INSTALL[pm].map((c) => (root ? c : `sudo ${c}`)).join(' && ')
+  else if (pms.includes('brew')) installCommand = 'brew install tmux'
+  return {
+    installed: !!version,
+    version,
+    os: val('OS'),
+    installCommand,
+    needsAdmin: !!pm && !root && !sudo
+  }
 }

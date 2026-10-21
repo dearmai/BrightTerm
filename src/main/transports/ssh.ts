@@ -2,12 +2,12 @@ import { EventEmitter } from 'events'
 import { createHash } from 'crypto'
 import { createServer, Server, connect as netConnect } from 'net'
 import { Client, ClientChannel, ConnectConfig, SFTPWrapper, utils, AnyAuthMethod, AuthenticationType } from 'ssh2'
-import type { Host, CredentialSecret } from '@shared/types'
+import type { Host, CredentialSecret, TmuxPick, TmuxSessionInfo } from '@shared/types'
 import type { Transport } from './types'
 import { ask } from '../ui'
 import { store } from '../store'
 import { vault } from '../vault'
-import { startupLine } from '../persist'
+import { startupLine, persistSupported, tmuxName, TMUX_LIST_SCRIPT, parseTmuxList, nextTmuxName, tmuxKillScript } from '../persist'
 
 export interface SshContext {
   title: string
@@ -17,6 +17,25 @@ export interface SshContext {
   onSavePassword?: (username: string, password: string) => void
   /** Called with informative text to show in the terminal */
   onInfo?: (msg: string) => void
+  /** 세션 유지 서버에서 붙을 tmux 세션 — 없으면 이전 세션이 있을 때 물어본다 */
+  tmux?: TmuxPick
+}
+
+/**
+ * 서버에서 sh 스크립트를 실행하고 출력(stdout+stderr)을 돌려준다.
+ * 로그인 셸이 fish·csh 여도 되도록 명령줄이 아니라 sh 표준입력으로 보낸다.
+ */
+export function execSh(client: Client, script: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    client.exec('sh -s', (err, ch) => {
+      if (err) return reject(err)
+      let text = ''
+      ch.on('data', (d: Buffer) => (text += d.toString('utf8')))
+      ch.stderr.on('data', (d: Buffer) => (text += d.toString('utf8')))
+      ch.on('close', () => resolve(text))
+      ch.end(script)
+    })
+  })
 }
 
 function keyTypeOf(blob: Buffer): string {
@@ -219,15 +238,46 @@ export class SshTransport extends EventEmitter implements Transport {
   private sftpP: Promise<SFTPWrapper> | null = null
   private servers: Server[] = []
   private closed = false
+  /** 붙은 tmux 세션 이름 (세션 유지 서버) */
+  tmuxSession?: string
 
   constructor(private host: Host, private ctx: SshContext) {
     super()
+  }
+
+  /**
+   * 세션 유지 서버: 이 서버의 tmux 세션 중 무엇에 붙을지 정한다. 정해 둔 이름이 있으면 그것,
+   * 'auto' 면 아무도 안 보는 최근 세션(없으면 새로), 아니면 이전 세션이 있을 때만 물어본다.
+   * 서버에 tmux 가 없으면 undefined — 셸에 넣는 한 줄이 안내만 찍는다.
+   */
+  private async pickTmux(client: Client): Promise<string | undefined> {
+    const pick = this.ctx.tmux
+    if (pick && pick !== 'auto') return pick.name
+    const base = tmuxName(this.host)
+    for (;;) {
+      const list = parseTmuxList(await execSh(client, TMUX_LIST_SCRIPT).catch(() => ''), base)
+      if (!list) return undefined
+      const fresh = nextTmuxName(base, list.map((s) => s.name))
+      if (!list.length) return fresh
+      if (pick === 'auto') return (list.find((s) => !s.attached) ?? list[0]).name
+      const r = await ask<{ action: 'attach' | 'kill'; name: string } | { action: 'new' }>({ kind: 'tmux', sessionTitle: this.ctx.title, sessions: list as TmuxSessionInfo[] })
+      if (!r) throw new Error('세션 선택을 취소했습니다')
+      if (r.action === 'new') return fresh
+      if (r.action === 'attach') return r.name
+      await execSh(client, tmuxKillScript(r.name)).catch(() => '')
+    }
   }
 
   async start(): Promise<void> {
     const { client, chain } = await openClient(this.host, this.ctx)
     this.client = client
     this.chain = chain
+    try {
+      if (persistSupported(this.host)) this.tmuxSession = await this.pickTmux(client)
+    } catch (e) {
+      this.finish()
+      throw e
+    }
     this.stream = await new Promise<ClientChannel>((res, rej) =>
       client.shell({ term: this.host.termType || 'xterm-256color', cols: this.ctx.cols, rows: this.ctx.rows }, (err, s) => (err ? rej(err) : res(s)))
     )
@@ -236,7 +286,7 @@ export class SshTransport extends EventEmitter implements Transport {
     this.stream.on('close', () => this.finish())
     client.on('close', () => this.finish('연결이 종료되었습니다'))
     this.setupForwards()
-    const line = startupLine(this.host)
+    const line = startupLine(this.host, this.tmuxSession)
     if (line) setTimeout(() => this.stream?.write(line.replace(/\r?\n/g, '\r') + '\r'), 400)
   }
 

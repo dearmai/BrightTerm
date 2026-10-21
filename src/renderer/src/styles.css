@@ -379,10 +379,16 @@ input, textarea, select, button { font: inherit; color: inherit; }
 .import-row { display: grid; grid-template-columns: 24px 1.3fr 1.5fr 70px 80px; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
 .import-row:last-child { border-bottom: none; }
 .import-row.head { color: var(--text-3); font-size: 11.5px; position: sticky; top: 0; background: var(--bg-2); }
+.key-row { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; cursor: pointer; }
+.key-row:last-child { border-bottom: none; }
+.key-row .key-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.key-row .key-fp { font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key-row .pill { background: rgba(245, 158, 11, 0.16); color: #f59e0b; }
 .preview-img { max-width: 100%; max-height: 62vh; object-fit: contain; border-radius: 6px; background: repeating-conic-gradient(var(--bg-3) 0% 25%, var(--bg) 0% 50%) 50% / 16px 16px; }
 
 /* 서버 편집 — 직접 입력한 베스천 */
 .jump-inline { display: flex; flex-direction: column; gap: 10px; margin: -4px 0 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-3); }
 .persist-box { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-3); }
 .persist-box .toggle { padding: 0; border: 0; }
+.node .n-persist { display: grid; color: var(--accent); opacity: 0.8; flex: none; }
 .ph-persist { margin-left: 6px; padding: 1px 6px; border-radius: 6px; font-size: 10.5px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }

@@ -42,6 +42,7 @@ type Dialog =
   | { kind: 'group'; group?: Group; parentId?: string | null }
   | { kind: 'settings'; section?: string }
   | { kind: 'import' }
+  | { kind: 'sshKey'; hostId: string }
   | { kind: 'quick' }
   | { kind: 'preview'; sessionId: string; path: string }
   | null
@@ -79,7 +80,8 @@ interface State {
   upsertGroup(g: Group): void
   removeGroup(id: string): void
 
-  openHost(hostId: string, where?: 'tab' | Dir): Promise<void>
+  /** run: 세션 유지 없이 접속해 그 명령만 입력(서버에 tmux 설치 등) */
+  openHost(hostId: string, where?: 'tab' | Dir, run?: string): Promise<void>
   /** 이미 열린 세션이 있으면 그 탭·패널로 이동(여러 개면 누를 때마다 다음 것). 없으면 false */
   revealHost(hostId: string): boolean
   /** 포커스된 패널의 서버 id — 사이드바 선택 동기화용 */
@@ -188,9 +190,9 @@ export const useApp = create<State>((set, get) => ({
     })
   },
 
-  async openHost(hostId, where = 'tab') {
+  async openHost(hostId, where = 'tab', run) {
     try {
-      const info = await api.session.open({ hostId })
+      const info = await api.session.open({ hostId, run })
       placeSession(info, where)
     } catch (e) {
       get().toast('error', (e as Error).message)
@@ -238,7 +240,8 @@ export const useApp = create<State>((set, get) => ({
     const ps: PaneNode[] = []
     for (const h of targets) {
       try {
-        const info = await api.session.open({ hostId: h.id })
+        // 서버마다 묻지 않고 쉬는 tmux 세션에 붙는다
+        const info = await api.session.open({ hostId: h.id, tmux: 'auto' })
         set((s) => ({ sessions: { ...s.sessions, [info.id]: info } }))
         ps.push({ type: 'pane', id: uid(), sessionId: info.id })
       } catch { /* */ }

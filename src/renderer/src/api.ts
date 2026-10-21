@@ -1,5 +1,5 @@
 import type {
-  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, ImportCandidate, SessionInfo, SftpEntry, StoreData, Transfer, UiRequest, UpdateInfo, VaultStatus
+  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, Host, ImportCandidate, LocalPublicKey, SessionInfo, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
 } from '@shared/types'
 
 interface Bt {
@@ -63,9 +63,16 @@ export const api = {
     remove: (id: string) => bt.call<void>('cred:delete', id)
   },
   session: {
-    open: (o: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number }) => bt.call<SessionInfo>('session:open', o),
+    open: (o: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number; tmux?: TmuxPick; run?: string }) => bt.call<SessionInfo>('session:open', o),
     close: (id: string) => bt.call<void>('session:close', id),
     reconnect: (id: string) => bt.call<void>('session:reconnect', id)
+  },
+  sshKey: {
+    list: () => bt.call<LocalPublicKey[]>('sshkey:list'),
+    install: (hostId: string, pubPath: string) => bt.call<'added' | 'exists'>('sshkey:install', hostId, pubPath)
+  },
+  persist: {
+    check: (host: Host) => bt.call<TmuxCheck>('persist:check', host)
   },
   sftp: {
     home: (id: string) => bt.call<string>('sftp:home', id),

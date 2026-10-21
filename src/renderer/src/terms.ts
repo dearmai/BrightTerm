@@ -51,7 +51,17 @@ function termOptions(s: Settings): ConstructorParameters<typeof Terminal>[0] {
     drawBoldTextInBrightColors: true,
     minimumContrastRatio: 1,
     smoothScrollDuration: 0,
-    altClickMovesCursor: true
+    altClickMovesCursor: true,
+    // OSC 8 링크(Claude Code 로그인 주소 등) — xterm 기본은 window.open 이라 창 열기 차단에 막힌다.
+    // 보이는 글자와 실제 주소가 다를 수 있어 Ctrl/⌘ 없이 누르면 주소 전체를 보여 주고 묻는다
+    linkHandler: {
+      allowNonHttpProtocols: false,
+      activate: async (ev, uri) => {
+        if (!/^https?:\/\//i.test(uri)) return
+        if (!(ev.ctrlKey || ev.metaKey) && !(await useApp.getState().confirm({ title: '링크 열기', message: '브라우저에서 이 주소를 열까요?', detail: uri, okText: '열기' }))) return
+        api.app.openExternal(uri)
+      }
+    }
   }
 }
 

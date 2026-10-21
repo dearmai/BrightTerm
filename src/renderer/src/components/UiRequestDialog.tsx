@@ -1,10 +1,58 @@
 import { useEffect, useRef, useState } from 'react'
-import { ShieldAlert, ShieldQuestion, KeyRound, User } from 'lucide-react'
+import { ShieldAlert, ShieldQuestion, KeyRound, User, Layers, Trash2 } from 'lucide-react'
 import { useApp } from '../state'
 import { api } from '../api'
 import { refocusTerminal } from '../terms'
-import { Modal, Field } from './ui'
+import { Modal, Field, fmtDate } from './ui'
 import type { UiRequest } from '@shared/types'
+
+function ago(ms: number): string {
+  const m = Math.floor((Date.now() - ms) / 60000)
+  if (m < 1) return '방금'
+  if (m < 60) return `${m}분 전`
+  if (m < 60 * 24) return `${Math.floor(m / 60)}시간 전`
+  return `${Math.floor(m / 60 / 24)}일 전`
+}
+
+/** 세션 유지 서버에 이전 tmux 세션이 있을 때 — 이어 쓸 세션 또는 새 세션 */
+function TmuxPickDialog({ req, done, cancel }: { req: Extract<UiRequest, { kind: 'tmux' }>; done: (v: unknown) => void; cancel: () => void }): JSX.Element {
+  // 아무도 안 보는 세션을 먼저 — 다 다른 창에서 보고 있으면 새 세션(같은 세션에 붙으면 두 창이 같은 화면이 된다)
+  const [pick, setPick] = useState(() => req.sessions.find((s) => !s.attached)?.name ?? '')
+  const ok = useRef<HTMLButtonElement>(null)
+  useEffect(() => { setTimeout(() => ok.current?.focus(), 40) }, [])
+  const submit = (): void => done(pick ? { action: 'attach', name: pick } : { action: 'new' })
+  const kill = async (name: string): Promise<void> => {
+    if (await useApp.getState().confirm({ title: 'tmux 세션 끝내기', message: `"${name}" 세션과 그 안에서 돌던 프로그램을 모두 끝낼까요?`, okText: '끝내기', danger: true })) done({ action: 'kill', name })
+  }
+  return (
+    <Modal title="이어서 쓸 세션 선택" icon={<Layers size={18} />} onClose={cancel}
+      foot={<><button className="btn" onClick={cancel}>취소</button><button ref={ok} className="btn primary" onClick={submit}>{pick ? '이 세션에 붙기' : '새 세션 열기'}</button></>}>
+      <div className="modal-body" onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'BUTTON') submit() }}>
+        <div className="muted">{req.sessionTitle} 에 세션 유지(tmux) 세션이 {req.sessions.length}개 있습니다. 이어서 쓸 세션을 고르거나 새 세션을 여세요.</div>
+        <div className="import-list">
+          {req.sessions.map((s) => (
+            <label key={s.name} className="key-row">
+              <input type="radio" name="tmux" checked={pick === s.name} onChange={() => setPick(s.name)} />
+              <span className="key-main">
+                <span><b>{s.name}</b> <span className="muted">· {s.command || '셸'} 실행 중</span></span>
+                <span className="key-fp">마지막 활동 {ago(s.activity)} · 만든 때 {fmtDate(s.created)}</span>
+              </span>
+              {s.attached > 0 && <span className="pill" title="이 세션을 지금 다른 창(이 앱 또는 다른 PC)에서 보고 있습니다. 붙으면 같은 화면을 함께 봅니다">다른 창에서 사용 중</span>}
+              <button className="ibtn sm" title="세션 끝내기 (tmux kill-session)" onClick={(e) => { e.preventDefault(); kill(s.name) }}><Trash2 size={13} /></button>
+            </label>
+          ))}
+          <label className="key-row">
+            <input type="radio" name="tmux" checked={pick === ''} onChange={() => setPick('')} />
+            <span className="key-main">
+              <span><b>새 세션</b></span>
+              <span className="key-fp">새 tmux 세션을 만듭니다. 자동 실행 명령이 있으면 그 안에서 실행합니다</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </Modal>
+  )
+}
 
 export function UiRequestDialog(): JSX.Element | null {
   const req = useApp((s) => s.requests[0])
@@ -47,6 +95,8 @@ export function UiRequestDialog(): JSX.Element | null {
       </Modal>
     )
   }
+
+  if (req.kind === 'tmux') return <TmuxPickDialog key={req.reqId} req={req} done={done} cancel={cancel} />
 
   if (req.kind === 'password' || req.kind === 'passphrase' || req.kind === 'username') {
     const title = req.kind === 'password' ? '비밀번호 입력' : req.kind === 'passphrase' ? '개인 키 암호 입력' : '사용자 이름 입력'
