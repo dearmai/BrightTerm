@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Columns2, Rows2, X, Maximize2, Minimize2, FolderTree, RotateCw, Search, ChevronUp, ChevronDown, ImageUp, Radio } from 'lucide-react'
-import { useApp, Tab } from '../state'
-import { LayoutNode, PaneNode, panes, setSizes } from '../layout'
+import { useApp, Tab, dockMenu } from '../state'
+import { LayoutNode, PaneNode, panes, setSizes, type Side } from '../layout'
 import { attach, detach, fitEntry, getEntry, smartPaste, uploadAndInsert, disposeEntry } from '../terms'
 import { api } from '../api'
 import { ENV_COLORS, ENV_LABELS } from '@shared/types'
@@ -107,6 +107,7 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
   const multi = panes(tab.root).length > 1
   const bodyRef = useRef<HTMLDivElement>(null)
   const [dropping, setDropping] = useState(false)
+  const [dock, setDock] = useState<Side | null>(null)
   const [find, setFind] = useState<string | null>(null)
   const findRef = useRef<HTMLInputElement>(null)
   const st = useApp.getState
@@ -173,8 +174,21 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
       { label: '아래로 분할 (같은 서버)', shortcut: SC.splitDown, onClick: () => st().duplicatePane('col') },
       { label: 'SFTP 열기', shortcut: SC.sftp, disabled: !info?.canSftp, onClick: () => useApp.setState({ rightPanel: 'sftp' }) },
       { label: '다시 접속', disabled: info?.state === 'connected', onClick: () => api.session.reconnect(pane.sessionId) },
+      ...(info?.tmuxMouse !== undefined ? [{
+        label: info.tmuxMouse ? 'tmux 마우스 모드 끄기 (드래그 선택 유지)' : 'tmux 마우스 모드 켜기 (휠로 tmux 스크롤)',
+        disabled: info.state !== 'connected',
+        onClick: () => {
+          const on = !info.tmuxMouse
+          api.session.tmuxMouse(pane.sessionId, on)
+            .then(() => st().toast('info', on ? 'tmux 마우스 모드 켜짐' : 'tmux 마우스 모드 꺼짐 — 드래그로 선택한 블록이 유지됩니다'))
+            .catch((e) => st().toast('error', `마우스 모드를 바꾸지 못했습니다: ${(e as Error).message}`))
+        }
+      }] : []),
       { separator: true },
       { label: '터미널 색상', colors: { value: pane.color, onPick: (c) => st().setPaneColor(tab.id, pane.id, c) } },
+      { separator: true },
+      { label: '새 탭으로 분리', disabled: !multi, onClick: () => st().movePane(pane.id, 'newTab') },
+      ...dockMenu('다른 탭으로 옮기기', tab.id, (to) => st().movePane(pane.id, { tabId: to })),
       { separator: true },
       { label: '패널 닫기', danger: true, onClick: () => st().closePane(pane.id, tab.id) }
     ])
@@ -194,17 +208,48 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
       data-pane={pane.id}
       style={{ ['--pane-color' as string]: color ?? 'var(--accent)', ['--term-bg' as string]: termBg }}
       onMouseDown={() => { if (!focused || useApp.getState().activeTab !== tab.id) st().focusPane(tab.id, pane.id) }}
-      onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDropping(true) } }}
-      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropping(false) }}
+      onDragOver={(e) => {
+        const d = st().drag
+        if (d) {
+          // 다른 탭이나 패널을 끌어 오면 가장 가까운 가장자리 쪽에 붙인다
+          if ((d.kind === 'pane' && d.paneId === pane.id) || (d.kind === 'tab' && d.tabId === tab.id)) return
+          e.preventDefault()
+          const r = e.currentTarget.getBoundingClientRect()
+          const x = (e.clientX - r.left) / r.width
+          const y = (e.clientY - r.top) / r.height
+          const near = Math.min(x, 1 - x, y, 1 - y)
+          setDock(near === x ? 'left' : near === 1 - x ? 'right' : near === y ? 'top' : 'bottom')
+          return
+        }
+        if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDropping(true) }
+      }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { setDropping(false); setDock(null) } }}
       onDrop={(e) => {
         e.preventDefault()
         setDropping(false)
+        const d = st().drag
+        if (d) {
+          const to = { tabId: tab.id, paneId: pane.id, side: dock ?? 'right' }
+          setDock(null)
+          useApp.setState({ drag: null })
+          if (d.kind === 'pane') st().movePane(d.paneId, to)
+          else st().mergeTab(d.tabId, to)
+          return
+        }
         const paths = Array.from(e.dataTransfer.files).map((f) => api.pathForFile(f)).filter(Boolean)
         if (paths.length) uploadAndInsert(pane.sessionId, { kind: 'files', paths })
       }}
     >
       {(
-        <div className="pane-head" onContextMenu={(e) => onContext(e, true)} style={color ? { background: `color-mix(in srgb, ${color} ${focused ? 22 : 12}%, var(--bg-3))`, borderBottomColor: color } : undefined}>
+        <div className="pane-head" onContextMenu={(e) => onContext(e, true)}
+          draggable
+          title="끌어서 다른 패널 옆이나 다른 탭으로 옮길 수 있습니다"
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = 'move'
+            e.dataTransfer.setData('application/x-bt-pane', pane.id)
+            useApp.setState({ drag: { kind: 'pane', paneId: pane.id } })
+          }}
+          onDragEnd={() => useApp.setState({ drag: null })} style={color ? { background: `color-mix(in srgb, ${color} ${focused ? 22 : 12}%, var(--bg-3))`, borderBottomColor: color } : undefined}>
           <span className={`dot ${info?.state ?? 'closed'}`} />
           {env && <span className="env-tag" style={{ background: ENV_COLORS[env] }}>{ENV_LABELS[env]}</span>}
           <span className="ph-title">{info?.title ?? '세션'}</span>
@@ -242,6 +287,7 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
           <button className="ibtn sm" onClick={() => { setFind(null); getEntry(pane.sessionId)?.search.clearDecorations() }}><X size={14} /></button>
         </div>
       )}
+      {dock && <div className={`pane-dock ${dock}`} />}
       {dropping && (
         <div className="pane-drop"><div><ImageUp size={18} /> {info?.canSftp ? `서버(${settings.uploadDir})로 업로드하고 경로를 입력합니다` : info?.protocol === 'local' ? '파일 경로를 입력합니다 (이미지는 저장 후 경로)' : '파일 경로를 입력합니다'}</div></div>
       )}

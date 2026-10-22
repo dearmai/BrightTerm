@@ -1,8 +1,8 @@
 import { create } from 'zustand'
-import type { CredentialMeta, Group, Host, SessionInfo, Settings, Snippet, StoreData, Transfer, UiRequest, VaultStatus, AdhocTarget } from '@shared/types'
+import type { CredentialMeta, Group, Host, SessionInfo, Settings, Snippet, StoreData, Transfer, UiRequest, VaultStatus, AdhocTarget, TmuxPick } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { api } from './api'
-import { LayoutNode, PaneNode, uid, panes, splitPane, removePane, grid, Dir, findPane, setPaneColor } from './layout'
+import { LayoutNode, PaneNode, uid, panes, splitPane, removePane, grid, Dir, findPane, setPaneColor, insertNode, type Side } from './layout'
 
 export interface Tab {
   id: string
@@ -15,7 +15,28 @@ export interface Tab {
   zoomed?: string | null
 }
 
+/** 패널·탭을 다른 탭으로 옮기는 자리 — paneId 가 없으면 그 탭 전체의 side 끝에 */
+export interface DockTarget { tabId: string; paneId?: string; side?: Side }
+
+/** 탭 이름 — 직접 지은 이름이 없으면 포커스된 패널의 서버 이름 */
+export function tabTitle(t: Tab): string {
+  const p = findPane(t.root, t.focused) ?? panes(t.root)[0]
+  return t.title || useApp.getState().sessions[p.sessionId]?.title || '세션'
+}
+
+/** 옮겨 갈 수 있는 다른 탭들을 메뉴 항목으로 — 누르면 그 탭의 오른쪽 끝에 붙는다 */
+export function dockMenu(heading: string, exceptTabId: string | null, onPick: (tabId: string) => void): MenuItem[] {
+  const others = useApp.getState().tabs.filter((t) => t.id !== exceptTabId)
+  if (!others.length) return []
+  return [{ heading }, ...others.map((t) => ({ label: `${tabTitle(t)}${panes(t.root).length > 1 ? ` (${panes(t.root).length})` : ''}`, onClick: () => onPick(t.id) }))]
+}
+
+/** 끌고 있는 탭·패널 — dragover 에서는 dataTransfer 를 읽을 수 없어 상태에 둔다 */
+export type DragItem = { kind: 'tab'; tabId: string } | { kind: 'pane'; paneId: string }
+
 export interface MenuItem {
+  /** 메뉴 안의 작은 제목 줄(누를 수 없음) */
+  heading?: string
   label?: string
   shortcut?: string
   danger?: boolean
@@ -32,8 +53,13 @@ export interface ConfirmReq {
   detail?: string
   okText?: string
   danger?: boolean
-  resolve: (ok: boolean) => void
+  /** 있으면 확인 버튼 옆에 버튼을 하나 더 둔다 — 누르면 'alt' */
+  altText?: string
+  resolve: (ok: boolean | 'alt') => void
 }
+
+/** 닫기 확인 결과 — killTmux: 세션 유지 창의 tmux 세션도 서버에서 끝낸다 */
+export interface CloseChoice { killTmux: boolean }
 
 export interface Toast { id: string; kind: 'ok' | 'error' | 'info'; text: string }
 
@@ -62,6 +88,8 @@ interface State {
   transfers: Record<string, Transfer>
   requests: UiRequest[]
   confirmReq: ConfirmReq | null
+  /** 끌고 있는 탭·패널 */
+  drag: DragItem | null
   promptReq: { title: string; label?: string; value: string; resolve: (v: string | null) => void } | null
   menu: { x: number; y: number; items: MenuItem[] } | null
   toasts: Toast[]
@@ -80,16 +108,19 @@ interface State {
   upsertGroup(g: Group): void
   removeGroup(id: string): void
 
-  /** run: 세션 유지 없이 접속해 그 명령만 입력(서버에 tmux 설치 등) */
-  openHost(hostId: string, where?: 'tab' | Dir, run?: string): Promise<void>
+  /** run: 세션 유지 없이 접속해 그 명령만 입력(서버에 tmux 설치 등). tmux 'none': 세션 유지 서버를 일반 접속으로 */
+  openHost(hostId: string, where?: 'tab' | Dir, run?: string, tmux?: TmuxPick): Promise<void>
   /** 이미 열린 세션이 있으면 그 탭·패널로 이동(여러 개면 누를 때마다 다음 것). 없으면 false */
   revealHost(hostId: string): boolean
   /** 포커스된 패널의 서버 id — 사이드바 선택 동기화용 */
   focusedHostId(): string | null
   openAdhoc(t: AdhocTarget, where?: 'tab' | Dir): Promise<void>
   openGroupGrid(groupId: string): Promise<void>
-  closePane(paneId: string, tabId?: string): Promise<void>
-  closeTab(tabId: string, force?: boolean): Promise<void>
+  /** choice 가 없으면 서버에 연결된 세션을 닫기 전에 확인한다 */
+  closePane(paneId: string, tabId?: string, choice?: CloseChoice): Promise<void>
+  closeTab(tabId: string, choice?: CloseChoice): Promise<void>
+  /** 서버에 연결된 세션이 있으면 닫을지(세션 유지 창이면 tmux 세션도 끝낼지) 묻는다. 취소하면 null */
+  confirmCloseSessions(sessionIds: string[], title: string): Promise<CloseChoice | null>
   focusPane(tabId: string, paneId: string): void
   setActiveTab(id: string): void
   updateTab(id: string, p: Partial<Tab>): void
@@ -97,6 +128,10 @@ interface State {
   moveTab(from: number, to: number): void
   gatherAll(): void
   splitToTabs(tabId: string): void
+  /** 패널을 다른 탭(같은 탭의 다른 자리도)으로 옮긴다. 'newTab' 이면 자기 탭으로 떼어 낸다. 연결은 그대로 */
+  movePane(paneId: string, to: DockTarget | 'newTab'): void
+  /** 탭의 패널(배치 전체)을 다른 탭 안으로 넣고 원래 탭은 없앤다 */
+  mergeTab(srcTabId: string, to: DockTarget): void
   duplicatePane(where: 'tab' | Dir): Promise<void>
 
   focusedSession(): SessionInfo | null
@@ -125,6 +160,7 @@ export const useApp = create<State>((set, get) => ({
   transfers: {},
   requests: [],
   confirmReq: null,
+  drag: null,
   promptReq: null,
   menu: null,
   toasts: [],
@@ -190,9 +226,9 @@ export const useApp = create<State>((set, get) => ({
     })
   },
 
-  async openHost(hostId, where = 'tab', run) {
+  async openHost(hostId, where = 'tab', run, tmux) {
     try {
-      const info = await api.session.open({ hostId, run })
+      const info = await api.session.open({ hostId, run, tmux })
       placeSession(info, where)
     } catch (e) {
       get().toast('error', (e as Error).message)
@@ -251,13 +287,15 @@ export const useApp = create<State>((set, get) => ({
     set((s) => ({ tabs: [...s.tabs, tab], activeTab: tab.id }))
   },
 
-  async closePane(paneId, tabId) {
+  async closePane(paneId, tabId, choice) {
     const s = get()
     const tab = s.tabs.find((t) => (tabId ? t.id === tabId : !!findPane(t.root, paneId)))
     if (!tab) return
     const pane = findPane(tab.root, paneId)
     if (!pane) return
-    api.session.close(pane.sessionId)
+    choice ??= (await get().confirmCloseSessions([pane.sessionId], '패널 닫기')) ?? undefined
+    if (!choice) return
+    api.session.close(pane.sessionId, choice.killTmux)
     const root = removePane(tab.root, paneId)
     set((st) => {
       const sessions = { ...st.sessions }
@@ -273,13 +311,32 @@ export const useApp = create<State>((set, get) => ({
     })
   },
 
-  async closeTab(tabId, force = false) {
+  async closeTab(tabId, choice) {
     const tab = get().tabs.find((t) => t.id === tabId)
     if (!tab) return
     const ps = panes(tab.root)
-    const live = ps.filter((p) => get().sessions[p.sessionId]?.state === 'connected').length
-    if (!force && live > 1 && !(await get().confirm({ title: '탭 닫기', message: `이 탭의 연결 ${live}개를 모두 닫을까요?`, okText: '닫기', danger: true }))) return
-    for (const p of ps) await get().closePane(p.id, tabId)
+    choice ??= (await get().confirmCloseSessions(ps.map((p) => p.sessionId), '탭 닫기')) ?? undefined
+    if (!choice) return
+    for (const p of ps) await get().closePane(p.id, tabId, choice)
+  },
+
+  async confirmCloseSessions(sessionIds, title) {
+    const live = sessionIds.map((id) => get().sessions[id]).filter((x): x is SessionInfo => !!x && x.state === 'connected' && x.protocol !== 'local')
+    if (!live.length) return { killTmux: false }
+    const message = live.length === 1 ? `[${live[0].title}] 서버와 연결되어 있습니다. 연결을 끊고 닫을까요?` : `서버 연결 ${live.length}개를 모두 끊고 닫을까요?`
+    // 서버의 tmux 세션에 붙은 창은 세션을 남겨 둘지 함께 끝낼지 고른다
+    const tmux = live.filter((x) => x.tmuxSession)
+    if (!tmux.length) return (await get().confirm({ title, message, okText: '닫기', danger: true })) ? { killTmux: false } : null
+    const r = await new Promise<boolean | 'alt'>((resolve) => set({ confirmReq: {
+      title,
+      message,
+      detail: `세션 유지(tmux) ${tmux.map((x) => x.tmuxSession).join(', ')}\n· 유지하고 닫기: 안의 프로그램이 계속 돌고, 다시 열면 그대로 붙습니다.\n· 세션 끝내기: 서버의 tmux 세션과 안의 프로그램까지 모두 끝냅니다.`,
+      okText: '유지하고 닫기',
+      altText: '세션 끝내기',
+      danger: true,
+      resolve
+    } }))
+    return r === false ? null : { killTmux: r === 'alt' }
   },
 
   focusPane(tabId, paneId) {
@@ -337,10 +394,42 @@ export const useApp = create<State>((set, get) => ({
     })
   },
 
+  movePane(paneId, to) {
+    const s = get()
+    const src = s.tabs.find((t) => findPane(t.root, paneId))
+    const pane = src && findPane(src.root, paneId)
+    if (!src || !pane) return
+    if (to === 'newTab' ? src.root.type === 'pane' : to.paneId === paneId) return
+    const rest = removePane(src.root, paneId)
+    let tabs = s.tabs.flatMap((t) => (t.id !== src.id ? [t] : rest ? [{ ...t, root: rest, focused: t.focused === paneId ? panes(rest)[0].id : t.focused, zoomed: null }] : []))
+    let activeTab: string
+    if (to === 'newTab') {
+      const tab: Tab = { id: uid(), root: pane, focused: pane.id, broadcast: false }
+      tabs.splice(s.tabs.findIndex((t) => t.id === src.id) + 1, 0, tab)
+      activeTab = tab.id
+    } else {
+      if (!tabs.some((t) => t.id === to.tabId)) return
+      tabs = tabs.map((t) => (t.id === to.tabId ? { ...t, root: insertNode(t.root, to.paneId ?? null, to.side ?? 'right', pane), focused: pane.id, zoomed: null } : t))
+      activeTab = to.tabId
+    }
+    set({ tabs, activeTab })
+  },
+
+  mergeTab(srcTabId, to) {
+    const s = get()
+    const src = s.tabs.find((t) => t.id === srcTabId)
+    if (!src || srcTabId === to.tabId || !s.tabs.some((t) => t.id === to.tabId)) return
+    const tabs = s.tabs
+      .filter((t) => t.id !== srcTabId)
+      .map((t) => (t.id === to.tabId ? { ...t, root: insertNode(t.root, to.paneId ?? null, to.side ?? 'right', src.root), focused: src.focused, zoomed: null } : t))
+    set({ tabs, activeTab: to.tabId })
+  },
+
   async duplicatePane(where) {
     const info = get().focusedSession()
     if (!info) return
-    if (info.hostId) return get().openHost(info.hostId, where)
+    // 일반 접속으로 연 세션 유지 서버는 복제도 일반 접속으로
+    if (info.hostId) return get().openHost(info.hostId, where, undefined, info.persist ? undefined : 'none')
     if (info.protocol === 'local') return get().openAdhoc({ host: '', protocol: 'local', cwd: info.target.replace(/^로컬 · /, '') }, where)
     const m = info.target.match(/^(?:(.+)@)?(.+):(\d+)$/)
     if (m) return get().openAdhoc({ username: m[1], host: m[2], port: +m[3], protocol: info.protocol }, where)
@@ -359,7 +448,7 @@ export const useApp = create<State>((set, get) => ({
   },
 
   confirm(o) {
-    return new Promise((resolve) => set({ confirmReq: { ...o, resolve } }))
+    return new Promise((resolve) => set({ confirmReq: { ...o, resolve: (r) => resolve(!!r) } }))
   },
 
   prompt(title, value = '', label) {

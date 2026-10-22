@@ -240,6 +240,8 @@ export class SshTransport extends EventEmitter implements Transport {
   private closed = false
   /** 붙은 tmux 세션 이름 (세션 유지 서버) */
   tmuxSession?: string
+  /** 세션 유지 서버지만 세션 고르기에서 tmux 없이 일반 접속을 골랐다 */
+  plain = false
 
   constructor(private host: Host, private ctx: SshContext) {
     super()
@@ -252,7 +254,7 @@ export class SshTransport extends EventEmitter implements Transport {
    */
   private async pickTmux(client: Client): Promise<string | undefined> {
     const pick = this.ctx.tmux
-    if (pick && pick !== 'auto') return pick.name
+    if (typeof pick === 'object') return pick.name
     const base = tmuxName(this.host)
     for (;;) {
       const list = parseTmuxList(await execSh(client, TMUX_LIST_SCRIPT).catch(() => ''), base)
@@ -260,8 +262,12 @@ export class SshTransport extends EventEmitter implements Transport {
       const fresh = nextTmuxName(base, list.map((s) => s.name))
       if (!list.length) return fresh
       if (pick === 'auto') return (list.find((s) => !s.attached) ?? list[0]).name
-      const r = await ask<{ action: 'attach' | 'kill'; name: string } | { action: 'new' }>({ kind: 'tmux', sessionTitle: this.ctx.title, sessions: list as TmuxSessionInfo[] })
+      const r = await ask<{ action: 'attach' | 'kill'; name: string } | { action: 'new' } | { action: 'plain' }>({ kind: 'tmux', sessionTitle: this.ctx.title, sessions: list as TmuxSessionInfo[] })
       if (!r) throw new Error('세션 선택을 취소했습니다')
+      if (r.action === 'plain') {
+        this.plain = true
+        return undefined
+      }
       if (r.action === 'new') return fresh
       if (r.action === 'attach') return r.name
       await execSh(client, tmuxKillScript(r.name)).catch(() => '')
@@ -286,7 +292,7 @@ export class SshTransport extends EventEmitter implements Transport {
     this.stream.on('close', () => this.finish())
     client.on('close', () => this.finish('연결이 종료되었습니다'))
     this.setupForwards()
-    const line = startupLine(this.host, this.tmuxSession)
+    const line = startupLine(this.plain ? { ...this.host, persist: false } : this.host, this.tmuxSession)
     if (line) setTimeout(() => this.stream?.write(line.replace(/\r?\n/g, '\r') + '\r'), 400)
   }
 
@@ -343,6 +349,15 @@ export class SshTransport extends EventEmitter implements Transport {
         ch.on('close', () => res(out))
       })
     })
+  }
+
+  /** 붙어 있는 tmux 세션을 서버에서 끝낸다(안의 프로그램까지). 응답이 없어도 5초 뒤에는 돌아온다 */
+  async killTmux(): Promise<void> {
+    if (!this.client || !this.tmuxSession) return
+    await Promise.race([
+      execSh(this.client, tmuxKillScript(this.tmuxSession)).catch(() => ''),
+      new Promise((r) => setTimeout(r, 5000))
+    ])
   }
 
   write(data: Buffer): void {

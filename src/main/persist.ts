@@ -28,6 +28,12 @@ export function persistSupported(h: Host): boolean {
   return /(^|[\\/])wsl(\.exe)?$/i.test(h.local?.shell?.trim() ?? '')
 }
 
+/** tmux 마우스 모드 — 켜면 휠로 tmux 스크롤, 끄면 드래그 선택을 터미널이 직접 한다. 지정하지 않으면 켠다 */
+export const tmuxMouse = (h: Host): boolean => h.persistMouse ?? true
+
+/** 이미 있는 tmux 세션의 마우스 모드를 바꾸는 sh 스크립트 */
+export const tmuxMouseScript = (name: string, on: boolean): string => `tmux set-option -t ${q(`=${name}`)} mouse ${on ? 'on' : 'off'} >/dev/null\n`
+
 /** 접속 직후 셸에 입력할 한 줄 — 세션 유지가 아니면 자동 실행 명령 그대로. session 은 고른 tmux 세션(없으면 기본 이름) */
 export function startupLine(h: Host, session?: string): string | undefined {
   const startup = h.startupCommand?.trim() || undefined
@@ -36,11 +42,12 @@ export function startupLine(h: Host, session?: string): string | undefined {
   const t = q(`=${n}`)
   const create = [
     `tmux new-session -d -s ${q(n)} -c "$PWD"`,
-    `tmux set-option -t ${q(n)} mouse on >/dev/null`,
     `tmux set-option -t ${q(n)} status off >/dev/null`,
     ...(startup ? [`tmux send-keys -t ${q(n)} -l ${q(startup)}`, `tmux send-keys -t ${q(n)} Enter`] : [])
   ].join(' && ')
-  const inner = `tmux has-session -t ${t} 2>/dev/null || { ${create}; }; TMUX= exec tmux attach-session -t ${t}`
+  // 마우스 모드는 붙을 때마다 서버 설정대로 — 이미 있던 세션도 맞춘다
+  const mouse = `tmux set-option -t ${t} mouse ${tmuxMouse(h) ? 'on' : 'off'} >/dev/null 2>&1`
+  const inner = `tmux has-session -t ${t} 2>/dev/null || { ${create}; }; ${mouse}; TMUX= exec tmux attach-session -t ${t}`
   const missing = h.protocol === 'ssh'
     ? `echo 'BrightTerm: 서버에 tmux 가 없어 세션 유지를 쓰지 않습니다 (서버 편집 → 세션 유지 → 서버 확인에서 설치할 수 있습니다)'`
     : `echo 'BrightTerm: tmux 가 없어 세션 유지를 쓰지 않습니다 (설치: macOS brew install tmux / Ubuntu sudo apt install tmux)'`

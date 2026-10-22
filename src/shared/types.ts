@@ -76,6 +76,8 @@ export interface Host {
   persist?: boolean
   /** tmux 세션 이름(비우면 별칭·폴더에서 만든다) */
   persistName?: string
+  /** tmux 마우스 모드 — 지정하지 않으면 켠다 */
+  persistMouse?: boolean
   notes?: string
   favorite?: boolean
   lastUsedAt?: number
@@ -144,7 +146,8 @@ export interface GitSyncStatus {
 }
 
 /** 앱을 다시 켤 때 복원할 탭·분할 — 창마다 서버 id 또는 로컬 시작 폴더만 기억한다 */
-export type SavedPane = { hostId: string; tmux?: string } | { local: { cwd?: string } }
+/** plain: 세션 유지 서버를 tmux 없이 일반 접속으로 연 창 */
+export type SavedPane = { hostId: string; tmux?: string; plain?: boolean } | { local: { cwd?: string } }
 export type SavedLayout =
   | { type: 'pane'; pane: SavedPane; color?: string }
   | { type: 'split'; dir: 'row' | 'col'; sizes: number[]; children: SavedLayout[] }
@@ -208,10 +211,12 @@ export interface SessionInfo {
   persist?: boolean
   /** 붙은 tmux 세션 이름(SSH) — 재접속·탭 복원 때 같은 세션으로 */
   tmuxSession?: string
+  /** tmux 에 붙어 있을 때 지금 마우스 모드 — 붙지 않았으면 없다 */
+  tmuxMouse?: boolean
 }
 
-/** 세션 유지 창을 열 때 tmux 세션 고르기 — name: 그 세션에, 'auto': 묻지 않고 쉬는 세션에(없으면 새로), 없으면 물어본다 */
-export type TmuxPick = { name: string } | 'auto'
+/** 세션 유지 창을 열 때 tmux 세션 고르기 — name: 그 세션에, 'auto': 묻지 않고 쉬는 세션에(없으면 새로), 'none': tmux 없이 일반 접속, 없으면 물어본다 */
+export type TmuxPick = { name: string } | 'auto' | 'none'
 
 export interface TmuxSessionInfo {
   name: string

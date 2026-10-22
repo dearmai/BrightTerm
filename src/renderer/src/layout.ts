@@ -34,6 +34,41 @@ export function splitPane(root: LayoutNode, targetId: string, dir: Dir, newPane:
   return rec(root)
 }
 
+export type Side = 'left' | 'right' | 'top' | 'bottom'
+
+/**
+ * 패널(또는 다른 탭의 배치 전체) node 를 targetId 패널의 side 쪽에 넣는다 — 대상 패널의 자리를 반씩 나눈다.
+ * targetId 가 없거나 못 찾으면 탭 전체의 그쪽 끝에 붙인다.
+ */
+export function insertNode(root: LayoutNode, targetId: string | null, side: Side, node: LayoutNode): LayoutNode {
+  const dir: Dir = side === 'left' || side === 'right' ? 'row' : 'col'
+  const before = side === 'left' || side === 'top'
+  const pair = (a: LayoutNode): LayoutNode => ({ type: 'split', id: uid(), dir, children: before ? [node, a] : [a, node], sizes: [50, 50] })
+  if (!targetId || !findPane(root, targetId)) {
+    if (root.type === 'split' && root.dir === dir) {
+      const each = 100 / (root.children.length + 1)
+      const scale = (100 - each) / 100
+      const sizes = root.sizes.map((s) => s * scale)
+      return { ...root, children: before ? [node, ...root.children] : [...root.children, node], sizes: before ? [each, ...sizes] : [...sizes, each] }
+    }
+    return pair(root)
+  }
+  const rec = (n: LayoutNode): LayoutNode => {
+    if (n.type === 'pane') return n.id === targetId ? pair(n) : n
+    const idx = n.children.findIndex((c) => c.type === 'pane' && c.id === targetId)
+    if (idx >= 0 && n.dir === dir) {
+      const half = n.sizes[idx] / 2
+      const children = [...n.children]
+      const sizes = [...n.sizes]
+      children.splice(before ? idx : idx + 1, 0, node)
+      sizes.splice(idx, 1, half, half)
+      return { ...n, children, sizes }
+    }
+    return { ...n, children: n.children.map(rec) }
+  }
+  return rec(root)
+}
+
 /** Remove a pane; collapses splits with a single child. Returns null when tree becomes empty. */
 export function removePane(root: LayoutNode, paneId: string): LayoutNode | null {
   const rec = (n: LayoutNode): LayoutNode | null => {

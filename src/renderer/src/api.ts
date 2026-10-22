@@ -64,8 +64,9 @@ export const api = {
   },
   session: {
     open: (o: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number; tmux?: TmuxPick; run?: string }) => bt.call<SessionInfo>('session:open', o),
-    close: (id: string) => bt.call<void>('session:close', id),
-    reconnect: (id: string) => bt.call<void>('session:reconnect', id)
+    close: (id: string, killTmux?: boolean) => bt.call<void>('session:close', id, killTmux),
+    reconnect: (id: string) => bt.call<void>('session:reconnect', id),
+    tmuxMouse: (id: string, on: boolean) => bt.call<void>('session:tmuxMouse', id, on)
   },
   sshKey: {
     list: () => bt.call<LocalPublicKey[]>('sshkey:list'),

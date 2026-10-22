@@ -69,8 +69,19 @@ function createWindow(): void {
     const live = [...sessions.sessions.values()].filter((s) => s.info.state === 'connected')
     const open = live.length
     const kept = live.filter((s) => s.info.persist).length
-    if (open > 0 && !(win as BrowserWindow & { _forceClose?: boolean })._forceClose) {
-      const r = dialog.showMessageBoxSync(win!, {
+    const w = win as BrowserWindow & { _forceClose?: boolean }
+    if (open > 0 && !w._forceClose) {
+      // 서버에 붙어 있는 tmux 세션은 유지할지 끝낼지 고른다
+      const tmux = live.filter((s) => s.sshTransport()?.tmuxSession)
+      const r = dialog.showMessageBoxSync(w, tmux.length ? {
+        type: 'question',
+        buttons: ['tmux 세션 유지하고 종료', 'tmux 세션도 끝내고 종료', '취소'],
+        defaultId: 2,
+        cancelId: 2,
+        title: 'BrightTerm',
+        message: `연결된 세션 ${open}개가 있습니다. 모두 닫고 종료할까요?`,
+        detail: `세션 유지(tmux)로 연 창 ${tmux.length}개 — 유지하면 안의 프로그램이 계속 돌고 다시 열면 그대로 붙습니다. 끝내면 서버의 tmux 세션과 안의 프로그램까지 모두 끝납니다.`
+      } : {
         type: 'question',
         buttons: ['종료', '취소'],
         defaultId: 1,
@@ -79,7 +90,13 @@ function createWindow(): void {
         message: `연결된 세션 ${open}개가 있습니다. 모두 닫고 종료할까요?`,
         detail: kept ? `세션 유지(tmux)로 연 창 ${kept}개는 종료해도 안의 프로그램이 계속 돌고, 다시 열면 그대로 붙습니다.` : undefined
       })
-      if (r !== 0) e.preventDefault()
+      if (tmux.length && r === 1) {
+        e.preventDefault()
+        Promise.all(tmux.map((s) => sessions.close(s.info.id, true))).finally(() => {
+          w._forceClose = true
+          w.close()
+        })
+      } else if (r !== 0) e.preventDefault()
     }
   })
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -124,11 +141,12 @@ function registerIpc(): void {
 
   // sessions
   handle('session:open', (o: Parameters<typeof sessions.open>[0]) => sessions.open(o))
-  handle('session:close', (id: string) => {
-    sessions.close(id)
+  handle('session:close', async (id: string, killTmux?: boolean) => {
     sftp.forgetSession(id)
+    await sessions.close(id, !!killTmux)
   })
   handle('session:reconnect', (id: string) => sessions.get(id)?.reconnectNow())
+  handle('session:tmuxMouse', (id: string, on: boolean) => sessions.get(id)?.setTmuxMouse(on))
   ipcMain.on('session:write', (_e, id: string, data: string) => sessions.get(id)?.write(data))
   ipcMain.on('session:resize', (_e, id: string, cols: number, rows: number) => sessions.get(id)?.setSize(cols, rows))
   ipcMain.on('ui:respond', (_e, reqId: string, value: unknown) => respond(reqId, value))

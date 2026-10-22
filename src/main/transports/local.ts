@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import { createRequire } from 'module'
 import { app } from 'electron'
+import { execFile } from 'child_process'
 import { existsSync, readFileSync, statSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
@@ -52,6 +53,15 @@ export function hasTmux(): boolean {
   if (isWin) return false
   const dirs = [...(process.env.PATH ?? '').split(':'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/home/linuxbrew/.linuxbrew/bin']
   return dirs.some((d) => d && existsSync(join(d, 'tmux')))
+}
+
+/** 이 PC 에서 sh 스크립트를 실행한다(tmux 설정 등). Windows 는 WSL 안에서 — 세션 유지는 WSL 셸에서만 된다 */
+export function execLocalSh(script: string): Promise<string> {
+  const env = { ...process.env, PATH: [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', '/home/linuxbrew/.linuxbrew/bin'].filter(Boolean).join(':') }
+  const [cmd, args] = isWin ? ['wsl.exe', ['-e', 'sh', '-c', script]] : ['/bin/sh', ['-c', script]]
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { env: isWin ? process.env : env, timeout: 5000, windowsHide: true }, (err, out) => (err ? reject(err) : resolve(out)))
+  })
 }
 
 function defaultShell(): string {

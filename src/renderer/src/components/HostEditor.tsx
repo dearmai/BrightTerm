@@ -267,6 +267,15 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                   </div>
                 )}
                 {h.persist && (
+                  <div className="toggle">
+                    <div className="t-label">
+                      <span>tmux 마우스 모드</span>
+                      <small>켜면 마우스 휠로 tmux 화면을 스크롤합니다(드래그 선택은 손을 떼면 풀리고 {isMac ? '⌥' : 'Shift'}+드래그로 유지). 끄면 드래그 선택이 유지되고 휠은 위·아래 키로 보냅니다. 접속 중에는 패널 우클릭 메뉴에서 바꿀 수 있습니다.</small>
+                    </div>
+                    <Switch value={h.persistMouse ?? true} onChange={(v) => set('persistMouse', v)} />
+                  </div>
+                )}
+                {h.persist && (
                   <Field label="tmux 세션 이름 (선택)" hint={h.protocol === 'ssh' ? '비우면 별칭으로 만듭니다. 새 세션은 이름 뒤에 -2, -3 … 이 붙습니다. 완전히 끝내려면 그 창에서 exit' : '비우면 별칭·폴더 이름으로 만듭니다. 완전히 끝내려면 그 창에서 exit'}>
                     <input className="input mono" value={h.persistName ?? ''} onChange={(e) => set('persistName', e.target.value || undefined)} placeholder="자동" />
                   </Field>

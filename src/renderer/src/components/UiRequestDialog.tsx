@@ -14,19 +14,22 @@ function ago(ms: number): string {
   return `${Math.floor(m / 60 / 24)}일 전`
 }
 
-/** 세션 유지 서버에 이전 tmux 세션이 있을 때 — 이어 쓸 세션 또는 새 세션 */
+/** 세션 고르기에서 tmux 없이 일반 접속 — tmux 세션 이름과 겹치지 않는 값 */
+const PLAIN = '\0plain'
+
+/** 세션 유지 서버에 이전 tmux 세션이 있을 때 — 이어 쓸 세션, 새 세션 또는 일반 접속 */
 function TmuxPickDialog({ req, done, cancel }: { req: Extract<UiRequest, { kind: 'tmux' }>; done: (v: unknown) => void; cancel: () => void }): JSX.Element {
   // 아무도 안 보는 세션을 먼저 — 다 다른 창에서 보고 있으면 새 세션(같은 세션에 붙으면 두 창이 같은 화면이 된다)
   const [pick, setPick] = useState(() => req.sessions.find((s) => !s.attached)?.name ?? '')
   const ok = useRef<HTMLButtonElement>(null)
   useEffect(() => { setTimeout(() => ok.current?.focus(), 40) }, [])
-  const submit = (): void => done(pick ? { action: 'attach', name: pick } : { action: 'new' })
+  const submit = (): void => done(pick === PLAIN ? { action: 'plain' } : pick ? { action: 'attach', name: pick } : { action: 'new' })
   const kill = async (name: string): Promise<void> => {
     if (await useApp.getState().confirm({ title: 'tmux 세션 끝내기', message: `"${name}" 세션과 그 안에서 돌던 프로그램을 모두 끝낼까요?`, okText: '끝내기', danger: true })) done({ action: 'kill', name })
   }
   return (
     <Modal title="이어서 쓸 세션 선택" icon={<Layers size={18} />} onClose={cancel}
-      foot={<><button className="btn" onClick={cancel}>취소</button><button ref={ok} className="btn primary" onClick={submit}>{pick ? '이 세션에 붙기' : '새 세션 열기'}</button></>}>
+      foot={<><button className="btn" onClick={cancel}>취소</button><button ref={ok} className="btn primary" onClick={submit}>{pick === PLAIN ? '일반 접속' : pick ? '이 세션에 붙기' : '새 세션 열기'}</button></>}>
       <div className="modal-body" onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'BUTTON') submit() }}>
         <div className="muted">{req.sessionTitle} 에 세션 유지(tmux) 세션이 {req.sessions.length}개 있습니다. 이어서 쓸 세션을 고르거나 새 세션을 여세요.</div>
         <div className="import-list">
@@ -46,6 +49,13 @@ function TmuxPickDialog({ req, done, cancel }: { req: Extract<UiRequest, { kind:
             <span className="key-main">
               <span><b>새 세션</b></span>
               <span className="key-fp">새 tmux 세션을 만듭니다. 자동 실행 명령이 있으면 그 안에서 실행합니다</span>
+            </span>
+          </label>
+          <label className="key-row">
+            <input type="radio" name="tmux" checked={pick === PLAIN} onChange={() => setPick(PLAIN)} />
+            <span className="key-main">
+              <span><b>일반 접속 (세션 유지 안 함)</b></span>
+              <span className="key-fp">tmux 없이 접속합니다. 창을 닫으면 안에서 돌던 프로그램도 끝납니다</span>
             </span>
           </label>
         </div>

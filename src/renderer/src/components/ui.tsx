@@ -102,7 +102,7 @@ export function ContextMenu(): JSX.Element | null {
   return (
     <div className="ctx" ref={ref} style={{ left: pos.x || menu.x, top: pos.y || menu.y }} onMouseDown={(e) => e.stopPropagation()}>
       {menu.items.map((it, i) =>
-        it.separator ? <hr key={i} /> : it.colors ? (
+        it.separator ? <hr key={i} /> : it.heading ? <div key={i} className="ctx-label ctx-heading">{it.heading}</div> : it.colors ? (
           <div key={i} className="ctx-colors">
             {it.label && <div className="ctx-label">{it.label}</div>}
             <div className="swatches">
@@ -141,7 +141,7 @@ export function ConfirmDialog(): JSX.Element | null {
   // dangerous actions: default focus on Cancel so a stray Enter never confirms
   useEffect(() => { if (c) setTimeout(() => (c.danger ? cancelRef : okRef).current?.focus(), 30) }, [c])
   if (!c) return null
-  const done = (ok: boolean): void => {
+  const done = (ok: boolean | 'alt'): void => {
     useApp.setState({ confirmReq: null })
     c.resolve(ok)
     refocusTerminal()
@@ -150,6 +150,7 @@ export function ConfirmDialog(): JSX.Element | null {
     <Modal title={c.title} onClose={() => done(false)} size="sm"
       foot={<>
         <button ref={cancelRef} className="btn" onClick={() => done(false)}>취소</button>
+        {c.altText && <button className="btn danger" onClick={() => done('alt')}>{c.altText}</button>}
         <button ref={okRef} className={`btn ${c.danger ? 'danger' : 'primary'}`} onClick={() => done(true)}>{c.okText ?? '확인'}</button>
       </>}>
       <div className="modal-body">

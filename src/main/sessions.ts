@@ -8,8 +8,9 @@ import type { Transport } from './transports/types'
 import { SshTransport } from './transports/ssh'
 import { TelnetTransport } from './transports/telnet'
 import { SerialTransport } from './transports/serial'
-import { LocalTransport } from './transports/local'
-import { persistSupported, startupLine } from './persist'
+import { LocalTransport, execLocalSh } from './transports/local'
+import { execSh } from './transports/ssh'
+import { persistSupported, startupLine, tmuxMouse, tmuxMouseScript, tmuxName } from './persist'
 import { send } from './ui'
 import { store, dataDir } from './store'
 import { vault } from './vault'
@@ -161,6 +162,12 @@ export class Session {
           this.tmux = { name: st.tmuxSession }
           this.info = { ...this.info, tmuxSession: st.tmuxSession }
         }
+        if (st.plain) {
+          // 세션 고르기에서 일반 접속을 골랐다 — 재접속 때도 tmux 없이
+          this.host = { ...this.host, persist: false }
+          this.info = { ...this.info, persist: false }
+        }
+        this.info = { ...this.info, tmuxMouse: st.tmuxSession ? tmuxMouse(h) : undefined }
         t = st
       } else if (h.protocol === 'local') {
         const lt = new LocalTransport(h.local ?? {}, h.termType)
@@ -168,6 +175,7 @@ export class Session {
         if (lt.cwdFallback) this.info_(`시작 폴더(${h.local?.cwd})가 없어 홈 폴더에서 엽니다`, '33')
         const line = startupLine(h)
         if (line) setTimeout(() => lt.write(Buffer.from(line.replace(/\r?\n/g, '\r') + '\r')), 300)
+        this.info = { ...this.info, tmuxMouse: persistSupported(h) ? tmuxMouse(h) : undefined }
         t = lt
       } else if (h.protocol === 'telnet') {
         const tt = new TelnetTransport(h.host, h.port, h.termType)
@@ -180,6 +188,8 @@ export class Session {
         t = s
       }
       this.transport = t
+      // 접속하는 동안(tmux 세션 고르기 등) 바뀐 창 크기는 transport 가 없어 전달되지 못했다 — 지금 크기로 맞춘다
+      t.resize(this.cols, this.rows)
       this.retry = 0
       t.on('data', (d: Buffer) => this.onData(d))
       t.on('close', (reason?: string) => this.onClose(reason))
@@ -283,11 +293,26 @@ export class Session {
     return this.transport instanceof SshTransport ? this.transport : null
   }
 
-  close(): void {
+  /** 붙어 있는 tmux 세션의 마우스 모드를 바꾼다. 재접속 때도 바꾼 값으로 붙는다 */
+  async setTmuxMouse(on: boolean): Promise<void> {
+    if (this.info.tmuxMouse === undefined) throw new Error('tmux 세션에 붙어 있지 않습니다')
+    const ssh = this.sshTransport()
+    if (ssh?.client && ssh.tmuxSession) await execSh(ssh.client, tmuxMouseScript(ssh.tmuxSession, on))
+    else if (this.transport instanceof LocalTransport) await execLocalSh(tmuxMouseScript(tmuxName(this.host), on))
+    else throw new Error('연결되지 않음')
+    this.host = { ...this.host, persistMouse: on }
+    this.info = { ...this.info, tmuxMouse: on }
+    send('session:state', this.info)
+  }
+
+  /** killTmux: 세션 유지 창이면 붙어 있던 tmux 세션도 서버에서 끝낸 뒤 끊는다 */
+  async close(killTmux = false): Promise<void> {
     this.userClosed = true
     if (this.retryTimer) clearTimeout(this.retryTimer)
-    this.transport?.close()
+    const t = this.transport
     this.transport = null
+    if (killTmux && t instanceof SshTransport) await t.killTmux()
+    t?.close()
     this.log?.end()
   }
 }
@@ -318,6 +343,7 @@ class SessionManager {
     if (!host) throw new Error('서버를 찾을 수 없습니다')
     const h = structuredClone(host)
     if (opts.run) Object.assign(h, { persist: false, startupCommand: opts.run })
+    if (opts.tmux === 'none') h.persist = false
     const s = new Session(h, persistent, opts.tmux)
     if (opts.cols && opts.rows) s.setSize(opts.cols, opts.rows)
     this.sessions.set(s.info.id, s)
@@ -330,9 +356,10 @@ class SessionManager {
     return this.sessions.get(id)
   }
 
-  close(id: string): void {
-    this.sessions.get(id)?.close()
+  async close(id: string, killTmux = false): Promise<void> {
+    const s = this.sessions.get(id)
     this.sessions.delete(id)
+    await s?.close(killTmux)
   }
 
   closeAll(): void {

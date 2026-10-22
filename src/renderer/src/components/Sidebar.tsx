@@ -103,6 +103,7 @@ export function Sidebar(): JSX.Element {
       { label: '새 탭에서 연결', shortcut: 'Enter', onClick: () => st().openHost(h.id) },
       { label: '오른쪽으로 분할해 연결', onClick: () => st().openHost(h.id, 'row') },
       { label: '아래로 분할해 연결', onClick: () => st().openHost(h.id, 'col') },
+      ...(h.persist && (h.protocol === 'ssh' || h.protocol === 'local') ? [{ label: '세션 유지 없이 연결 (일반 접속)', onClick: () => st().openHost(h.id, 'tab', undefined, 'none') }] : []),
       { separator: true },
       { label: '편집', shortcut: 'F2', onClick: () => useApp.setState({ dialog: { kind: 'host', host: h } }) },
       { label: '복제', onClick: () => st().upsertHost({ ...structuredClone(h), id: crypto.randomUUID(), alias: h.alias + ' (복사본)', lastUsedAt: undefined }) },
