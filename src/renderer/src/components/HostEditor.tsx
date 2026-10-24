@@ -3,7 +3,7 @@ import { KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOpen, Search, C
 import { useApp, newHost } from '../state'
 import { api } from '../api'
 import { Modal, Field, Seg, ColorPick, Switch } from './ui'
-import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJump, type SerialOptions, type TmuxCheck } from '@shared/types'
+import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJump, type ProxyConfig, type ProxyType, type SerialOptions, type TmuxCheck } from '@shared/types'
 import { isMac, isWindows } from '../platform'
 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
@@ -41,6 +41,20 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   const jump: InlineJump = h.jump ?? { host: '', port: 22, username: '', authType: 'key', credentialId: null }
   const setJump = (p: Partial<InlineJump>): void => set('jump', { ...jump, ...p })
   const jumpCred = creds.find((c) => c.id === h.jump?.credentialId)
+  // 프록시 — 새 비밀번호는 저장 때 볼트로
+  const [pPassword, setPPassword] = useState('')
+  const proxyPort = (t: ProxyType): number => (t === 'http' ? 8080 : t === 'https' ? 443 : 1080)
+  const proxy: ProxyConfig = h.proxy ?? { type: 'socks5', host: '', port: 1080 }
+  const setProxy = (p: Partial<ProxyConfig>): void => set('proxy', { ...proxy, ...p })
+  const proxyCred = creds.find((c) => c.id === h.proxy?.credentialId)
+  /** socks5://user:pass@host:port 같은 주소를 붙여 넣으면 칸을 나눠 채운다 */
+  const pasteProxy = (v: string): void => {
+    const m = v.trim().match(/^(https?|socks5h?|socks4a?):\/\/(?:([^:@/]*)(?::([^@/]*))?@)?([^:/\s]+|\[[^\]]+\])(?::(\d+))?\/?$/i)
+    if (!m) return setProxy({ host: v })
+    const type: ProxyType = /^https$/i.test(m[1]) ? 'https' : /^http$/i.test(m[1]) ? 'http' : /^socks4/i.test(m[1]) ? 'socks4' : 'socks5'
+    setProxy({ type, host: m[4].replace(/^\[|\]$/g, ''), port: m[5] ? +m[5] : proxyPort(type), ...(m[2] ? { username: decodeURIComponent(m[2]) } : {}) })
+    if (m[3]) setPPassword(decodeURIComponent(m[3]))
+  }
   const [err, setErr] = useState('')
   const st = useApp.getState
 
@@ -89,6 +103,13 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
       out.jump = { ...out.jump, host: out.jump.host.trim(), username: out.jump.username.trim(), port: out.jump.port || 22 }
       if (!out.jump.host) { setTab('adv'); return setErr('베스천 주소를 입력하세요') }
     }
+    if (out.protocol !== 'ssh' && out.protocol !== 'telnet') out.proxy = null
+    if (out.proxy) {
+      out.proxy = { ...out.proxy, host: out.proxy.host.trim(), username: out.proxy.username?.trim() || undefined, port: out.proxy.port || proxyPort(out.proxy.type) }
+      if (out.proxy.type !== 'https') delete out.proxy.insecure
+      if (!out.proxy.host) { setTab('adv'); return setErr('프록시 주소를 입력하세요') }
+      if (!out.proxy.username || out.proxy.type === 'socks4') out.proxy.credentialId = null
+    }
     if (out.protocol === 'serial' && !out.serial?.path) { setTab('basic'); return setErr('시리얼 포트를 선택하세요') }
     try {
       const needsSecret = (out.authType === 'password' && password) || (out.authType === 'key' && keyText)
@@ -123,6 +144,18 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
           out.jump.credentialId = meta.id
           await st().refreshCreds()
         }
+      }
+      if (out.proxy?.username && out.proxy.type !== 'socks4' && pPassword) {
+        if (!vault.unlocked) return setErr('볼트가 잠겨 있어 프록시 비밀번호를 저장할 수 없습니다')
+        const meta = await api.cred.save({
+          id: out.proxy.credentialId && hosts.filter((x) => x.proxy?.credentialId === out.proxy!.credentialId && x.id !== out.id).length === 0 ? out.proxy.credentialId : undefined,
+          name: `${out.alias} 프록시`,
+          kind: 'password',
+          username: out.proxy.username,
+          password: pPassword
+        })
+        out.proxy.credentialId = meta.id
+        await st().refreshCreds()
       }
       if (out.authType === 'ask' || out.authType === 'agent') {
         // keep credential link only if shared explicitly
@@ -403,6 +436,51 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                 )}
                 {!vault.unlocked && (jump.authType === 'key' || jump.authType === 'password') && <div className="notice warn"><Lock size={15} />볼트가 잠겨 있어 베스천 키·비밀번호를 저장할 수 없습니다.</div>}
                 <div className="muted" style={{ fontSize: 12 }}>이 서버에 접속할 때 위 베스천을 먼저 거칩니다. 베스천은 서버 목록에 따로 생기지 않습니다.</div>
+              </div>
+            )}
+            {(h.protocol === 'ssh' || h.protocol === 'telnet') && (
+              <Field label="프록시" hint={h.protocol === 'ssh' && (h.jump || h.jumpHostId) ? '점프 호스트를 쓰면 이 PC 에서 첫 번째 베스천으로 갈 때 프록시를 거칩니다 (등록된 점프 호스트에 프록시가 따로 있으면 그것을 씁니다).' : '회사망 등에서 서버로 바로 나갈 수 없을 때 거쳐 갈 프록시입니다.'}>
+                <Seg value={h.proxy ? proxy.type : 'none'} onChange={(v) => {
+                  if (v === 'none') return set('proxy', null)
+                  // 직접 바꾼 포트는 두고, 기본 포트였으면 새 종류의 기본 포트로
+                  const keepPort = h.proxy && h.proxy.port !== proxyPort(h.proxy.type)
+                  setProxy({ type: v as ProxyType, port: keepPort ? proxy.port : proxyPort(v as ProxyType) })
+                }} options={[
+                  { value: 'none', label: '사용 안 함' },
+                  { value: 'socks5', label: 'SOCKS5' },
+                  { value: 'http', label: 'HTTP' },
+                  { value: 'https', label: 'HTTPS' },
+                  { value: 'socks4', label: 'SOCKS4' }
+                ]} />
+              </Field>
+            )}
+            {(h.protocol === 'ssh' || h.protocol === 'telnet') && h.proxy && (
+              <div className="jump-inline">
+                <div className="grid3">
+                  <Field label="프록시 주소">
+                    <input className="input mono" autoFocus={!proxy.host} value={proxy.host} onChange={(e) => pasteProxy(e.target.value)} placeholder="127.0.0.1  또는  socks5://user@host:1080" />
+                  </Field>
+                  <Field label="포트"><input className="input mono" type="number" value={proxy.port} onChange={(e) => setProxy({ port: +e.target.value || 0 })} /></Field>
+                  <Field label={proxy.type === 'socks4' ? '사용자 ID (선택)' : '사용자 이름 (선택)'}><input className="input mono" value={proxy.username ?? ''} onChange={(e) => setProxy({ username: e.target.value })} placeholder="인증 없으면 비움" /></Field>
+                </div>
+                {proxy.type !== 'socks4' && !!proxy.username?.trim() && (
+                  <Field label="프록시 비밀번호" hint={proxyCred ? '저장된 비밀번호가 있습니다. 바꾸려면 새로 입력하세요.' : '볼트에 암호화해 저장합니다.'}>
+                    <input className="input" type="password" value={pPassword} onChange={(e) => setPPassword(e.target.value)} placeholder={proxyCred ? '••••••••  (저장됨)' : '비밀번호'} autoComplete="new-password" />
+                  </Field>
+                )}
+                {proxy.type === 'https' && (
+                  <div className="toggle">
+                    <div className="t-label">
+                      <span>인증서 확인 건너뛰기</span>
+                      <small>사내 자체 서명 인증서처럼 확인할 수 없는 프록시 인증서도 받아들입니다. 중간에서 가로채도 알 수 없게 되니, 믿을 수 있는 망에서만 켜세요. (SSH 서버 자체는 호스트 키로 따로 확인합니다)</small>
+                    </div>
+                    <Switch value={!!proxy.insecure} onChange={(v) => setProxy({ insecure: v || undefined })} />
+                  </div>
+                )}
+                {proxy.type !== 'socks4' && !!proxy.username?.trim() && !vault.unlocked && <div className="notice warn"><Lock size={15} />볼트가 잠겨 있어 프록시 비밀번호를 저장할 수 없습니다.</div>}
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {proxy.type === 'http' || proxy.type === 'https' ? `${proxy.type === 'https' ? '프록시까지 TLS 로 암호화하고 그 안에서 ' : ''}HTTP CONNECT 로 터널을 엽니다. 프록시가 SSH 포트(22 등)로 가는 CONNECT 를 허용해야 합니다. 인증이 없는 프록시면 사용자 이름을 비워 두세요.` : proxy.type === 'socks5' ? '서버 주소 이름 풀기도 프록시가 합니다 (socks5h 와 같음).' : 'SOCKS4a 로 접속합니다 — 주소 이름 풀기는 프록시가 합니다. 비밀번호 인증은 없습니다.'}
+                </div>
               </div>
             )}
             <Field label={h.protocol === 'local' ? '셸 시작 후 자동 실행 명령' : '접속 후 자동 실행 명령'} hint={h.persist && h.protocol !== 'telnet' && h.protocol !== 'serial' ? '세션 유지가 켜져 있으면 tmux 세션을 처음 만들 때만 실행됩니다 — 다시 붙을 때는 돌던 프로그램에 그대로 붙습니다' : h.protocol === 'local' ? '창을 열 때마다 실행됩니다. 예: nvm use && claude' : '예: cd /var/www && sudo -i'}>

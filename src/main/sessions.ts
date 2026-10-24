@@ -10,6 +10,7 @@ import { TelnetTransport } from './transports/telnet'
 import { SerialTransport } from './transports/serial'
 import { LocalTransport, execLocalSh } from './transports/local'
 import { execSh } from './transports/ssh'
+import { proxyLabel } from './proxy'
 import { persistSupported, startupLine, tmuxMouse, tmuxMouseScript, tmuxName } from './persist'
 import { send } from './ui'
 import { store, dataDir } from './store'
@@ -178,7 +179,8 @@ export class Session {
         this.info = { ...this.info, tmuxMouse: persistSupported(h) ? tmuxMouse(h) : undefined }
         t = lt
       } else if (h.protocol === 'telnet') {
-        const tt = new TelnetTransport(h.host, h.port, h.termType)
+        if (h.proxy?.host) this.info_(`프록시 ${proxyLabel(h.proxy)} 경유 중...`, '90')
+        const tt = new TelnetTransport(h.host, h.port, h.termType, h.proxy)
         await tt.start(this.cols, this.rows)
         t = tt
       } else {

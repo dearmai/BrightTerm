@@ -7,6 +7,7 @@ import type { Transport } from './types'
 import { ask } from '../ui'
 import { store } from '../store'
 import { vault } from '../vault'
+import { proxyConnect, proxyLabel } from '../proxy'
 import { startupLine, persistSupported, tmuxName, TMUX_LIST_SCRIPT, parseTmuxList, nextTmuxName, tmuxKillScript } from '../persist'
 
 export interface SshContext {
@@ -73,6 +74,7 @@ function inlineJumpHost(host: Host): Host {
     username: j.username,
     authType: j.authType,
     credentialId: j.credentialId ?? null,
+    proxy: host.proxy,
     tags: [],
     encoding: 'utf-8',
     termType: host.termType,
@@ -87,8 +89,14 @@ export async function openClient(host: Host, ctx: SshContext, depth = 0): Promis
   if (depth > 4) throw new Error('점프 호스트 체인이 너무 깁니다')
   const chain: Client[] = []
   let sock: NodeJS.ReadableStream | undefined
-  const jh = host.jump?.host ? inlineJumpHost(host) : host.jumpHostId ? store.get().hosts.find((h) => h.id === host.jumpHostId) : undefined
+  const saved = host.jumpHostId ? store.get().hosts.find((h) => h.id === host.jumpHostId) : undefined
+  // 프록시는 이 PC 에서 나가는 첫 연결에 쓴다 — 점프 호스트에 프록시가 없으면 이 서버의 것을 물려준다
+  const jh = host.jump?.host ? inlineJumpHost(host) : saved && !saved.proxy?.host && host.proxy?.host ? { ...saved, proxy: host.proxy } : saved
   if (host.jumpHostId && !host.jump?.host && !jh) throw new Error('점프 호스트를 찾을 수 없습니다')
+  if (!jh && host.proxy?.host) {
+    ctx.onInfo?.(`프록시 ${proxyLabel(host.proxy)} 경유 중...`)
+    sock = await proxyConnect(host.proxy, host.host, host.port)
+  }
   if (jh) {
     ctx.onInfo?.(`점프 호스트 ${jh.alias} 경유 중...`)
     // 베스천에서 입력한 비밀번호를 이 서버 계정에 저장하면 안 된다 — 저장 콜백은 넘기지 않는다

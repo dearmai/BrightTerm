@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events'
 import { Socket, connect } from 'net'
+import type { ProxyConfig } from '@shared/types'
 import type { Transport } from './types'
+import { proxyConnect } from '../proxy'
 
 const IAC = 255, DONT = 254, DO = 253, WONT = 252, WILL = 251, SB = 250, SE = 240
 const ECHO = 1, SGA = 3, TTYPE = 24, NAWS = 31
@@ -16,25 +18,30 @@ export class TelnetTransport extends EventEmitter implements Transport {
   private cmd = 0
   private sbBuf: number[] = []
 
-  constructor(private host: string, private port: number, private termType: string) {
+  constructor(private host: string, private port: number, private termType: string, private proxy?: ProxyConfig | null) {
     super()
   }
 
-  start(cols: number, rows: number): Promise<void> {
+  async start(cols: number, rows: number): Promise<void> {
     this.cols = cols
     this.rows = rows
-    return new Promise((res, rej) => {
-      const s = connect({ host: this.host, port: this.port })
-      s.setTimeout(15000, () => s.destroy(new Error('연결 시간 초과')))
-      s.once('connect', () => {
-        s.setTimeout(0)
-        res()
-      })
-      s.once('error', (e) => (this.sock ? this.finish(e.message) : rej(e)))
-      s.on('data', (d) => this.parse(d))
-      s.on('close', () => this.finish('연결이 종료되었습니다'))
-      this.sock = s
-    })
+    const s = this.proxy?.host
+      ? await proxyConnect(this.proxy, this.host, this.port, 15000)
+      : await new Promise<Socket>((res, rej) => {
+          const c = connect({ host: this.host, port: this.port })
+          c.setTimeout(15000, () => c.destroy(new Error('연결 시간 초과')))
+          c.once('connect', () => {
+            c.setTimeout(0)
+            c.off('error', rej)
+            res(c)
+          })
+          c.once('error', rej)
+        })
+    s.on('error', (e) => this.finish(e.message))
+    s.on('data', (d) => this.parse(d))
+    s.on('close', () => this.finish('연결이 종료되었습니다'))
+    this.sock = s
+    s.resume()
   }
 
   private sendCmd(verb: number, opt: number): void {

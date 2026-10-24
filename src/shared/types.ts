@@ -43,6 +43,19 @@ export interface InlineJump {
   credentialId?: string | null
 }
 
+/** 서버에 접속할 때 거치는 프록시. 비밀번호는 볼트(credentialId) */
+export type ProxyType = 'http' | 'https' | 'socks5' | 'socks4'
+export interface ProxyConfig {
+  type: ProxyType
+  host: string
+  port: number
+  /** 인증 — 비우면 인증 없이 */
+  username?: string
+  credentialId?: string | null
+  /** HTTPS 프록시의 인증서를 확인하지 않는다(사내 자체 서명 등) */
+  insecure?: boolean
+}
+
 /** 로컬 터미널 — 이 PC 의 셸. 빈 값이면 기본 셸 / 홈 폴더 */
 export interface LocalOptions {
   shell?: string
@@ -62,6 +75,8 @@ export interface Host {
   jumpHostId?: string | null
   /** jumpHostId 대신 이 서버 안에 직접 적은 베스천 */
   jump?: InlineJump | null
+  /** 이 PC 에서 서버(점프 호스트를 쓰면 첫 번째 베스천)로 갈 때 거치는 프록시 — SSH·텔넷 */
+  proxy?: ProxyConfig | null
   color?: string
   env?: Env
   tags: string[]
