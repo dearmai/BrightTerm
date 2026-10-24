@@ -52,17 +52,16 @@ function termOptions(s: Settings): ConstructorParameters<typeof Terminal>[0] {
     minimumContrastRatio: 1,
     smoothScrollDuration: 0,
     altClickMovesCursor: true,
-    // OSC 8 링크(Claude Code 로그인 주소 등) — xterm 기본은 window.open 이라 창 열기 차단에 막힌다.
-    // 보이는 글자와 실제 주소가 다를 수 있어 Ctrl/⌘ 없이 누르면 주소 전체를 보여 주고 묻는다
-    linkHandler: {
-      allowNonHttpProtocols: false,
-      activate: async (ev, uri) => {
-        if (!/^https?:\/\//i.test(uri)) return
-        if (!(ev.ctrlKey || ev.metaKey) && !(await useApp.getState().confirm({ title: '링크 열기', message: '브라우저에서 이 주소를 열까요?', detail: uri, okText: '열기' }))) return
-        api.app.openExternal(uri)
-      }
-    }
+    // OSC 8 링크(Claude Code 로그인 주소 등) — xterm 기본은 window.open 이라 창 열기 차단에 막힌다
+    linkHandler: { allowNonHttpProtocols: false, activate: (ev, uri) => void openLink(ev, uri) }
   }
+}
+
+/** 터미널 링크 클릭 — Ctrl/⌘+클릭은 바로, 그냥 클릭은 주소 전체를 보여 주고 묻는다(OSC 8 은 보이는 글자와 주소가 다를 수 있다) */
+async function openLink(ev: MouseEvent, uri: string): Promise<void> {
+  if (!/^https?:\/\//i.test(uri)) return
+  if (!(ev.ctrlKey || ev.metaKey) && !(await useApp.getState().confirm({ title: '링크 열기', message: '브라우저에서 이 주소를 열까요?', detail: uri, okText: '열기' }))) return
+  api.app.openExternal(uri)
 }
 
 export function getEntry(sessionId: string): TermEntry | undefined {
@@ -78,9 +77,7 @@ export function ensureEntry(sessionId: string): TermEntry {
   const search = new SearchAddon()
   term.loadAddon(fit)
   term.loadAddon(search)
-  term.loadAddon(new WebLinksAddon((ev, uri) => {
-    if (ev.ctrlKey || ev.metaKey) api.app.openExternal(uri)
-  }))
+  term.loadAddon(new WebLinksAddon((ev, uri) => void openLink(ev, uri)))
   const u = new Unicode11Addon()
   term.loadAddon(u)
   term.unicode.activeVersion = '11'
