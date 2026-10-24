@@ -4,3 +4,4 @@ dist/
 test/.imp.mjs
 test/.*.mjs
 test/.*.cjs
+*.pfx

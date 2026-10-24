@@ -182,6 +182,7 @@ npm run dev          # 개발 실행
 npm run build        # 빌드
 npm run typecheck
 npm run dist:win     # Windows 설치형 + 포터블 (dist/)
+npm run dist:win:signed # 위와 같고 셀프 인증서로 서명 (사내 배포용, docs/codesign.md)
 npm run dist:linux   # Linux AppImage + deb (dist/) — 빌드한 PC의 아키텍처
 npm run dist:linux:dir # Linux 실행 폴더 (dist/linux-unpacked/)
 npm run dist:mac     # macOS dmg x64 + arm64 (dist/) — ad-hoc 서명(인증서 없이)
