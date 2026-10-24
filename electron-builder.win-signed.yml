@@ -1,0 +1,12 @@
+# Windows 셀프 인증서 서명 (사내·폐쇄망 배포용)
+#   1) 처음 한 번: powershell -ExecutionPolicy Bypass -File scripts\codesign-cert.ps1
+#   2) npm run dist:win:signed
+# 인증서는 현재 사용자 저장소(Cert:\CurrentUser\My)에서 주체 이름으로 찾는다 — .pfx·비밀번호를 설정에 두지 않는다.
+# 셀프 인증서라 배포 대상 PC 에 build\codesign\BrightTerm-codesign.cer 를 등록해야 '신뢰된 게시자'로 보인다(install-cert.cmd).
+extends: ./electron-builder.yml
+win:
+  signtoolOptions:
+    certificateSubjectName: Dany Kim
+    publisherName: Dany Kim
+    signingHashAlgorithms: [sha256]
+    rfc3161TimeStampServer: http://timestamp.digicert.com

@@ -1,3 +1,4 @@
+import './portable'
 import { app, BrowserWindow, ipcMain, dialog, shell, powerMonitor, clipboard, Menu, nativeTheme, nativeImage } from 'electron'
 import { join } from 'path'
 import { promises as fs } from 'fs'
@@ -19,7 +20,7 @@ import type { AdhocTarget, CredentialInput, GitSyncConfig, Group, Host, ImportCa
 
 let win: BrowserWindow | null = null
 
-// 테스트·개발: 데이터 폴더를 따로 주면 Chromium 프로필도 분리해 실행 중인 앱과 별개 인스턴스로 뜬다
+// 테스트·개발·포터블(portable.ts): 데이터 폴더를 따로 주면 Chromium 프로필도 분리해 실행 중인 앱과 별개 인스턴스로 뜬다
 if (process.env.BRIGHTTERM_DATA) app.setPath('userData', join(process.env.BRIGHTTERM_DATA, 'userdata'))
 
 // Single instance – second launch focuses the existing window

@@ -16,7 +16,7 @@ PuTTY를 대신할 **Windows·macOS·Linux용 SSH / Telnet / 시리얼 / 로컬 
 | 운영체제 | 파일 | 비고 |
 | --- | --- | --- |
 | Windows | `BrightTerm-Setup-1.2.3.exe` | 설치형. 설치 경로 선택, 바탕화면 바로가기 |
-| Windows | `BrightTerm-Portable-1.2.3.exe` | 설치 없이 실행 |
+| Windows | `BrightTerm-Portable-1.2.3.exe` | 설치 없이 실행. 설정·볼트는 실행 파일 옆 `BrightTerm-data` 폴더에 저장 |
 | macOS (Apple Silicon) | `BrightTerm-1.2.3-mac-arm64.dmg` | M1 이후 맥 |
 | macOS (Intel) | `BrightTerm-1.2.3-mac-x64.dmg` | Intel 맥 |
 
