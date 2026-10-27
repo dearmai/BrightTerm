@@ -1,0 +1,21 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <application android:name=".BrightTermApp" android:largeHeap="true" android:theme="@style/AppTheme" android:label="BrightTerm" android:icon="@drawable/ic_terminal"
+        android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true" android:usesCleartextTraffic="false">
+        <activity android:name=".MainActivity" android:exported="true" android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|density|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <layout android:defaultWidth="1000dp" android:defaultHeight="720dp" android:minWidth="320dp" android:minHeight="300dp" />
+        </activity>
+        <service android:name=".TerminalService" android:exported="false" android:foregroundServiceType="connectedDevice" />
+        <meta-data android:name="com.samsung.android.sdk.multiwindow.enable" android:value="true" />
+    </application>
+</manifest>

@@ -9,6 +9,16 @@ PuTTY를 대신할 **Windows·macOS·Linux용 SSH / Telnet / 시리얼 / 로컬 
 - 캡처 이미지를 붙여넣으면 서버로 올리고 경로를 입력해 줍니다. 서버에서 Claude Code 같은 CLI를 쓸 때 편합니다.
 - 내 PC의 셸도 같은 창에서 엽니다. 프로젝트 폴더마다 로컬 터미널을 등록해 두면 폴더 하나로 여러 프로젝트를 격자로 띄울 수 있습니다.
 
+## Android (휴대폰 · Samsung DeX)
+
+별도 네이티브 Android 앱을 `android/`에서 개발합니다. SSH 비밀번호·키 인증, 여러 세션, SFTP, 데스크톱 호환 Git 동기화, 기기 암호화 저장, 터치 보조키 및 창 크기에 반응하는 DeX 배치를 제공합니다. Android 11 이상이 필요합니다. 데스크톱 기능 전체를 지원하는 버전은 아니며 DeX 실기기 검증은 남아 있습니다. 빌드·설치·지원 범위는 [Android 안내](./android/README.md)를 참고하세요.
+
+```sh
+make android-run
+# 여러 기기 연결 시: make android-run ANDROID_SERIAL=<기기_ID>
+# APK만 만들기: make android-build
+```
+
 ## 설치
 
 **[최신 버전 내려받기 → Releases](https://github.com/Yeosup/BrightTerm/releases/latest)**

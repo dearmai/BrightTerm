@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>BrightTerm</title>
+    <link rel="stylesheet" href="vendor/xterm.css" />
+    <link rel="stylesheet" href="app.css" />
+    <script defer src="vendor/xterm.js"></script>
+    <script defer src="vendor/addon-fit.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <header>
+      <button id="menu" aria-label="서버 목록" title="서버 목록 (Ctrl+Shift+L)">
+        ☰</button
+      ><strong>Bright<span>Term</span></strong
+      ><span class="badge">ANDROID</span>
+      <div class="spacer"></div>
+      <button id="sftp" title="SFTP 파일 전송">파일</button
+      ><button id="new" title="새 연결 (Ctrl+Shift+T)">＋ 새 연결</button>
+    </header>
+    <div id="body">
+      <aside id="sidebar">
+        <div class="sidebar-heading">
+          <h2>서버</h2>
+          <button id="add" aria-label="서버 추가">＋</button>
+        </div>
+        <input id="filter" placeholder="서버 검색" aria-label="서버 검색" />
+        <div id="hosts"></div>
+        <footer>
+          <button id="git-settings">Git 동기화</button>
+          기기에 암호화하여 저장<br />SSH · xterm-256color<br /><button
+            id="about"
+          >
+            정보 · 단축키
+          </button>
+        </footer>
+      </aside>
+      <main>
+        <nav id="tabs" aria-label="터미널 세션"></nav>
+        <div id="terminals">
+          <div id="welcome">
+            <div class="glyph">❯_</div>
+            <h1>어디서든, 내 서버로.</h1>
+            <p>휴대폰에서는 간편하게.<br />DeX에서는 넓은 작업 공간으로.</p>
+            <button id="first" class="primary">SSH 연결 시작</button>
+            <p class="hint">Ctrl+Shift+T 새 연결 · Ctrl+Tab 세션 전환</p>
+          </div>
+        </div>
+        <div id="keys" aria-label="터미널 보조키">
+          <button data-key="\u001b">Esc</button
+          ><button data-key="\t">Tab</button
+          ><button id="ctrl" aria-pressed="false">Ctrl</button
+          ><button id="alt" aria-pressed="false">Alt</button
+          ><button data-key="\u0003">^C</button
+          ><button data-key="\u001b[A" aria-label="위">↑</button
+          ><button data-key="\u001b[B" aria-label="아래">↓</button
+          ><button data-key="\u001b[D" aria-label="왼쪽">←</button
+          ><button data-key="\u001b[C" aria-label="오른쪽">→</button
+          ><button id="copy">복사</button><button id="paste">붙여넣기</button
+          ><button id="keyboard">키보드</button>
+        </div>
+        <div id="status" role="status">연결 대기 · SSH</div>
+      </main>
+    </div>
+    <dialog id="editor">
+      <form id="form">
+        <div class="dialog-heading">
+          <h2 id="editor-title">SSH 연결</h2>
+          <button type="button" id="cancel" aria-label="닫기">✕</button>
+        </div>
+        <label
+          >이름<input name="name" placeholder="예: 개발 서버" maxlength="100"
+        /></label>
+        <div class="row">
+          <label
+            >호스트<input
+              name="host"
+              required
+              placeholder="192.168.0.10"
+              autocapitalize="off"
+              spellcheck="false" /></label
+          ><label class="port"
+            >포트<input
+              name="port"
+              type="number"
+              min="1"
+              max="65535"
+              value="22"
+              required
+          /></label>
+        </div>
+        <label
+          >사용자명<input
+            name="username"
+            required
+            autocomplete="username"
+            autocapitalize="off"
+            spellcheck="false" /></label
+        ><label
+          >비밀번호<input
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="저장된 값 유지 / 이번 연결에 사용"
+        /></label>
+        <details>
+          <summary>SSH 키 · 시작 명령</summary>
+          <button type="button" id="import-key">개인키 파일 선택…</button
+          ><span id="key-name"></span
+          ><label
+            >키 암호<input
+              name="passphrase"
+              type="password"
+              autocomplete="off" /></label
+          ><label
+            >연결 후 실행할 명령<input
+              name="command"
+              placeholder="예: tmux new-session -A -s brightterm"
+              autocapitalize="off"
+              spellcheck="false"
+          /></label>
+        </details>
+        <details id="tmux-settings">
+          <summary>세션 유지 (tmux)</summary>
+          <label class="check"
+            ><input type="checkbox" name="persist" id="tmux-enabled" />앱을
+            닫아도 서버 작업 유지</label
+          >
+          <div id="tmux-options" hidden>
+            <label
+              >tmux 세션 이름<input
+                name="persistName"
+                maxlength="80"
+                placeholder="비우면 서버 이름으로 자동 생성"
+                autocapitalize="off"
+                spellcheck="false"
+            /></label>
+            <p id="tmux-preview" class="hint"></p>
+            <label class="check"
+              ><input type="checkbox" name="persistMouse" checked />tmux 마우스
+              모드 (휠로 스크롤)</label
+            >
+            <p class="hint">
+              같은 이름의 세션이 있으면 이어서 연결합니다. 시작 명령은 새 세션을
+              만들 때만 실행합니다. 마우스 모드에서 텍스트를 선택하려면
+              Shift+드래그하거나 마우스 모드를 끄세요. 서버에 tmux가 없으면 안내
+              후 일반 셸로 연결합니다.
+            </p>
+          </div>
+        </details>
+        <label class="check"
+          ><input name="remember" type="checkbox" checked /> 서버와 자격 증명을
+          이 기기에 암호화하여 저장</label
+        >
+        <p class="hint">
+          기존 서버의 비밀번호·키 암호를 비워 두면 저장된 값을 유지합니다. 자격
+          증명을 지우려면 서버를 삭제하고 다시 등록하세요.
+        </p>
+        <div class="actions">
+          <button type="button" id="delete" class="danger" hidden>삭제</button>
+          <div class="spacer"></div>
+          <button type="button" id="save">저장</button
+          ><button type="submit" class="primary">연결</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="info">
+      <h2>BrightTerm Android</h2>
+      <p>
+        SSH 비밀번호·개인키 인증, 여러 세션, SFTP 파일 전송, 암호화된 서버
+        저장을 지원합니다. 백그라운드 연결은 알림에서 종료할 수 있습니다. OS가
+        프로세스를 종료하면 연결이 끊깁니다. 서버 작업 유지는 tmux를 사용하세요.
+      </p>
+      <p>
+        Ctrl+Shift+T: 연결 · Ctrl+Tab: 다음 세션<br />Ctrl+Shift+L: 서버 목록 ·
+        Ctrl+Shift+W: 세션 닫기<br />Ctrl+Shift+C/V: 복사/붙여넣기 · Ctrl +/-:
+        글자 크기 · 두 손가락 핀치줌으로 글자 크기 조절<br />터치 보조키 Ctrl/Alt는 다음 입력 한 번에 적용됩니다.
+      </p>
+      <p>
+        이 Android 버전은 SSH 중심의 초기 포팅입니다. 데스크톱 백업 파일
+        가져오기, Telnet, USB 시리얼, 로컬 셸, 점프 호스트·포워딩은 아직
+        지원하지 않습니다.
+      </p>
+      <p>
+        Copyright © 2026 Dany Kim · BrightTerm Source-Available License 1.0
+      </p>
+      <details>
+        <summary>라이선스 및 제3자 고지</summary>
+        <pre id="licenses"></pre>
+      </details>
+      <button id="close-info" class="primary">닫기</button>
+    </dialog>
+    <dialog id="files">
+      <div class="dialog-heading">
+        <h2>SFTP 파일</h2>
+        <button id="close-files" aria-label="파일 창 닫기">✕</button>
+      </div>
+      <label
+        >원격 폴더
+        <div class="row">
+          <input
+            id="remote-directory"
+            value="."
+            aria-label="원격 폴더"
+          /><button id="list-files">열기</button>
+        </div></label
+      >
+      <div id="file-list"></div>
+      <label
+        >원격 파일 경로<input
+          id="remote-file"
+          placeholder="/home/user/file.txt"
+          autocapitalize="off"
+          spellcheck="false"
+      /></label>
+      <p class="hint">
+        업로드는 원격 파일을 덮어씁니다. 다운로드는 Android 파일 선택기에서 저장
+        위치를 지정하세요.
+      </p>
+      <div class="actions">
+        <button id="upload">업로드…</button
+        ><button id="download" class="primary">다운로드…</button>
+      </div>
+      <p id="transfer-status" role="status"></p>
+    </dialog>
+    <dialog id="git-dialog">
+      <form id="git-form">
+        <div class="dialog-heading">
+          <h2>Git 동기화</h2>
+          <button type="button" id="close-git" aria-label="동기화 설정 닫기">
+            ✕
+          </button>
+        </div>
+        <label class="check"
+          ><input id="git-enabled" type="checkbox" />앱을 사용하는 동안 자동
+          동기화</label
+        >
+        <label
+          >Git URL<input
+            id="git-remote"
+            placeholder="https://github.com/user/vault.git 또는 git@host:repo.git"
+            autocapitalize="off"
+            spellcheck="false"
+        /></label>
+        <label
+          >브랜치<input
+            id="git-branch"
+            value="main"
+            autocapitalize="off"
+            spellcheck="false"
+        /></label>
+        <details id="git-auth">
+          <summary>Git 인증 (기기에만 암호화하여 저장)</summary>
+          <label
+            >Git 사용자명<input
+              id="git-user"
+              value="git"
+              autocapitalize="off"
+              spellcheck="false"
+          /></label>
+          <label
+            >HTTPS 토큰 / SSH 비밀번호<input
+              id="git-token"
+              type="password"
+              autocomplete="off"
+              placeholder="빈칸은 저장된 값 유지"
+          /></label>
+          <button type="button" id="git-import-key">Git SSH 개인키 선택…</button
+          ><span id="git-key-state"></span>
+          <label
+            >SSH 키 암호<input
+              id="git-passphrase"
+              type="password"
+              autocomplete="off"
+              placeholder="빈칸은 저장된 값 유지"
+          /></label>
+          <label class="check"
+            ><input id="git-clear" type="checkbox" />저장된 Git 인증 정보
+            지우기</label
+          >
+          <p class="hint">
+            저장소 주소를 바꾸면 기존 Git 인증 정보는 재사용하지 않습니다. SSH
+            최초 접속 시 서버 지문을 확인합니다.
+          </p>
+        </details>
+        <button type="submit" class="primary" id="git-save">설정 저장</button>
+      </form>
+      <p id="git-message" role="status"></p>
+      <p id="git-last" class="hint"></p>
+      <label
+        >동기화 볼트 마스터 비밀번호<input
+          id="git-master"
+          type="password"
+          autocomplete="off"
+          placeholder="PC에서 사용하던 볼트 비밀번호 / 새 볼트는 8자 이상"
+      /></label>
+      <p class="hint">
+        Git 인증과 별개인 암호화 비밀번호입니다. Git에는 암호문만 저장합니다. 새
+        볼트 비밀번호는 복구를 위해 따로 보관하세요. 원격 가져오기는 이 기기의
+        서버 목록을 교체하며, 직전 데이터를 암호화해 백업합니다. 세션과 호스트
+        신뢰 기록은 기기별로 유지합니다.
+      </p>
+      <button id="git-restore" hidden>
+        마지막 가져오기 전 로컬 데이터 복원
+      </button>
+      <div class="actions">
+        <button id="git-now">지금 동기화</button
+        ><button id="git-pull" hidden>원격 가져오기</button
+        ><button id="git-push" class="danger" hidden>로컬 올리기</button>
+      </div>
+    </dialog>
+    <div id="toast" role="alert" hidden></div>
+  </body>
+</html>
