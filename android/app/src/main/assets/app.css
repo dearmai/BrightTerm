@@ -1,9 +1,76 @@
+@font-face {
+  font-family: "D2Coding ligature";
+  src: url(fonts/D2CodingLigature-Regular.woff2) format("woff2");
+  font-weight: 400;
+}
+@font-face {
+  font-family: "D2Coding ligature";
+  src: url(fonts/D2CodingLigature-Bold.woff2) format("woff2");
+  font-weight: 700;
+}
+@font-face {
+  font-family: "D2Coding";
+  src: url(fonts/D2Coding-Regular.woff2) format("woff2");
+  font-weight: 400;
+}
+@font-face {
+  font-family: "D2Coding";
+  src: url(fonts/D2Coding-Bold.woff2) format("woff2");
+  font-weight: 700;
+}
 :root {
+  --bg: #0d1117;
+  --bg-2: #121923;
+  --surface: #151e2b;
+  --btn: #1b2432;
+  --btn-hover: #2a394c;
+  --hover: #203146;
+  --border: #263142;
+  --border-2: #303b4c;
+  --border-3: #344158;
+  --text: #d6dde6;
+  --text-strong: #e4edf7;
+  --label: #aabbd0;
+  --text-2: #9aabc0;
+  --text-3: #8293aa;
+  --accent: #7dd3fc;
+  --on-accent: #0d1117;
+  --danger: #f87171;
+  --ok: #4ade80;
+  --warn: #facc15;
+  --toast: #52252b;
+  --backdrop: #000a;
+  --shadow: #0009;
   color-scheme: dark;
   font-family: system-ui, sans-serif;
-  color: #d6dde6;
-  background: #0d1117;
+  color: var(--text);
+  background: var(--bg);
   font-size: 14px;
+}
+:root[data-theme="light"] {
+  --bg: #f5f6f8;
+  --bg-2: #ffffff;
+  --surface: #ffffff;
+  --btn: #eef0f4;
+  --btn-hover: #e2e6ee;
+  --hover: #dde3ee;
+  --border: #e1e4ea;
+  --border-2: #cfd5df;
+  --border-3: #cfd5df;
+  --text: #1e2533;
+  --text-strong: #111827;
+  --label: #556070;
+  --text-2: #556070;
+  --text-3: #8a93a3;
+  --accent: #2563eb;
+  --on-accent: #ffffff;
+  --danger: #dc2626;
+  --ok: #16a34a;
+  --warn: #ca8a04;
+  --toast: #fde8e8;
+  --backdrop: #0f172a66;
+  --shadow: #0f172a33;
+  color-scheme: light;
 }
 * {
   box-sizing: border-box;
@@ -16,12 +83,13 @@ body {
   overflow: hidden;
 }
 button,
-input {
+input,
+select {
   font: inherit;
 }
 button {
-  border: 1px solid #303b4c;
-  background: #1b2432;
+  border: 1px solid var(--border-2);
+  background: var(--btn);
   color: inherit;
   border-radius: 7px;
   min-height: 44px;
@@ -30,42 +98,42 @@ button {
   white-space: nowrap;
 }
 button:hover {
-  background: #2a394c;
+  background: var(--btn-hover);
 }
 button:focus-visible,
 input:focus-visible,
 summary:focus-visible {
-  outline: 2px solid #7dd3fc;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 button.primary {
-  background: #7dd3fc;
-  color: #0d1117;
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 650;
-  border-color: #7dd3fc;
+  border-color: var(--accent);
 }
 button.danger {
-  color: #f87171;
+  color: var(--danger);
 }
 header {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 6px 12px;
-  border-bottom: 1px solid #263142;
-  background: #121923;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
   flex-shrink: 0;
 }
 header strong {
   font-size: 19px;
 }
 header strong span {
-  color: #7dd3fc;
+  color: var(--accent);
 }
 .badge {
   font-size: 9px;
   letter-spacing: 1.5px;
-  color: #8293aa;
+  color: var(--text-3);
 }
 .spacer {
   flex: 1;
@@ -79,8 +147,8 @@ header strong span {
 aside {
   width: 260px;
   flex-shrink: 0;
-  background: #121923;
-  border-right: 1px solid #263142;
+  background: var(--bg-2);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   padding: 12px;
@@ -95,12 +163,13 @@ h2 {
   font-size: 17px;
   margin: 8px 0 16px;
 }
-input {
-  border: 1px solid #344158;
-  background: #0d1117;
+input,
+select {
+  border: 1px solid var(--border-3);
+  background: var(--bg);
   border-radius: 7px;
   padding: 10px;
-  color: #e4edf7;
+  color: var(--text-strong);
   min-height: 44px;
   min-width: 0;
   width: 100%;
@@ -130,14 +199,14 @@ input {
 }
 .host small {
   font-size: 11px;
-  color: #9aabc0;
+  color: var(--text-2);
   margin-top: 4px;
 }
 .host .edit {
   padding: 0 10px;
 }
 footer {
-  color: #8293aa;
+  color: var(--text-3);
   line-height: 1.8;
   padding-top: 18px;
   font-size: 12px;
@@ -157,18 +226,18 @@ main {
   display: flex;
   overflow-x: auto;
   flex-shrink: 0;
-  background: #121923;
+  background: var(--bg-2);
   min-height: 0;
 }
 .tab {
   display: flex;
   align-items: center;
-  border-right: 1px solid #263142;
+  border-right: 1px solid var(--border);
   max-width: 240px;
 }
 .tab.active {
-  background: #203146;
-  box-shadow: inset 0 -2px #7dd3fc;
+  background: var(--hover);
+  box-shadow: inset 0 -2px var(--accent);
 }
 .tab button {
   border: 0;
@@ -184,13 +253,13 @@ main {
   padding: 0 10px;
 }
 .tab .dot {
-  color: #facc15;
+  color: var(--warn);
 }
 .tab[data-state="connected"] .dot {
-  color: #4ade80;
+  color: var(--ok);
 }
 .tab[data-state="disconnected"] .dot {
-  color: #f87171;
+  color: var(--danger);
 }
 #terminals {
   flex: 1;
@@ -220,7 +289,7 @@ main {
   display: none;
 }
 .glyph {
-  color: #7dd3fc;
+  color: var(--accent);
   font-size: 55px;
   font-family: monospace;
 }
@@ -230,11 +299,11 @@ h1 {
 }
 p {
   line-height: 1.7;
-  color: #9aabc0;
+  color: var(--text-2);
 }
 .hint {
   font-size: 12px;
-  color: #8293aa;
+  color: var(--text-3);
 }
 #keys {
   display: flex;
@@ -242,8 +311,8 @@ p {
   overflow-x: auto;
   flex-shrink: 0;
   padding: 5px;
-  border-top: 1px solid #263142;
-  background: #121923;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
 }
 #keys button {
   min-width: 44px;
@@ -251,23 +320,23 @@ p {
   touch-action: manipulation;
 }
 #keys button[aria-pressed="true"] {
-  background: #7dd3fc;
-  color: #0d1117;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 #status {
   font-size: 11px;
-  color: #9aabc0;
+  color: var(--text-2);
   padding: 5px 10px;
-  border-top: 1px solid #263142;
+  border-top: 1px solid var(--border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
 }
 dialog {
-  background: #151e2b;
-  color: #d6dde6;
-  border: 1px solid #344158;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-3);
   border-radius: 12px;
   width: min(540px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
@@ -275,7 +344,7 @@ dialog {
   overflow: auto;
 }
 dialog::backdrop {
-  background: #000a;
+  background: var(--backdrop);
 }
 .dialog-heading {
   display: flex;
@@ -291,7 +360,7 @@ label {
   flex-direction: column;
   gap: 6px;
   margin: 12px 0;
-  color: #aabbd0;
+  color: var(--label);
   font-size: 12px;
 }
 .row {
@@ -313,7 +382,7 @@ summary {
 }
 #key-name {
   font-size: 12px;
-  color: #7dd3fc;
+  color: var(--accent);
   margin-left: 12px;
 }
 .check {
@@ -337,8 +406,8 @@ summary {
   left: 50%;
   bottom: 76px;
   transform: translateX(-50%);
-  background: #52252b;
-  border: 1px solid #f87171;
+  background: var(--toast);
+  border: 1px solid var(--danger);
   padding: 12px 18px;
   border-radius: 8px;
   max-width: 90vw;
@@ -360,7 +429,7 @@ pre {
     inset: 0 auto 0 0;
     z-index: 3;
     width: min(300px, 85vw);
-    box-shadow: 20px 0 60px #0009;
+    box-shadow: 20px 0 60px var(--shadow);
   }
   .sidebar-open aside {
     display: flex;
@@ -414,7 +483,7 @@ pre {
 #file-list {
   max-height: 35dvh;
   overflow: auto;
-  border: 1px solid #303b4c;
+  border: 1px solid var(--border-2);
   border-radius: 7px;
   min-height: 44px;
 }
@@ -423,14 +492,14 @@ pre {
   width: 100%;
   text-align: left;
   border: 0;
-  border-bottom: 1px solid #263142;
+  border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 #file-list button:hover {
-  background: #203146;
+  background: var(--hover);
 }
 #transfer-status {
   overflow-wrap: anywhere;
@@ -454,7 +523,7 @@ pre {
 
 #git-key-state {
   font-size: 12px;
-  color: #7dd3fc;
+  color: var(--accent);
 }
 #git-dialog .actions {
   flex-wrap: wrap;
@@ -462,4 +531,36 @@ pre {
 button:disabled {
   opacity: 0.5;
   cursor: wait;
+}
+
+#settings-dialog h3 {
+  font-size: 13px;
+  color: var(--accent);
+  margin: 20px 0 4px;
+}
+#theme-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+#theme-list button {
+  text-align: left;
+  padding: 8px 10px;
+  border-width: 2px;
+  white-space: normal;
+  font-size: 12px;
+  line-height: 1.5;
+}
+#theme-list button[aria-checked="true"] {
+  border-color: var(--accent);
+}
+#settings-dialog .actions {
+  flex-wrap: wrap;
+}
+#settings-dialog .row label {
+  flex: 1;
+}
+#settings {
+  font-size: 18px;
 }

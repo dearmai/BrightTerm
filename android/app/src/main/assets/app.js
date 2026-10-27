@@ -7,13 +7,121 @@ let profiles = [],
   editing = null,
   privateKey = "",
   ctrl = false,
-  alt = false,
-  fontSize = 14;
+  alt = false;
 let toastTimer,
   filesSession = null;
 let gitStatus = null,
   gitKey = "",
   gitDirty = false;
+// Desktop settings that apply to the Android terminal; window, backup, lock and
+// connection options are desktop-only.
+const DEFAULT_SETTINGS = {
+  theme: "dark",
+  terminalTheme: "BrightTerm Dark",
+  fontFamily: "D2Coding ligature",
+  fontSize: 14,
+  lineHeight: 1.15,
+  cursorStyle: "block",
+  cursorBlink: true,
+  scrollback: 10000,
+  copyOnSelect: true,
+  confirmMultilinePaste: true,
+  shiftEnterNewline: true,
+  osc52Clipboard: true,
+};
+const FONT_STACKS = {
+  "D2Coding ligature": "'D2Coding ligature', 'D2Coding', monospace",
+  D2Coding: "'D2Coding', monospace",
+  monospace: "monospace",
+};
+const MIN_FONT_SIZE = 8,
+  MAX_FONT_SIZE = 28;
+const clamp = (value, min, max, fallback) =>
+  Number.isFinite(+value) ? Math.max(min, Math.min(max, +value)) : fallback;
+function normalizeSettings(value) {
+  const s = { ...DEFAULT_SETTINGS, ...value };
+  if (!Object.hasOwn(TERMINAL_THEMES, s.terminalTheme))
+    s.terminalTheme = DEFAULT_SETTINGS.terminalTheme;
+  if (!Object.hasOwn(FONT_STACKS, s.fontFamily))
+    s.fontFamily = DEFAULT_SETTINGS.fontFamily;
+  if (!["dark", "light", "system"].includes(s.theme))
+    s.theme = DEFAULT_SETTINGS.theme;
+  if (!["block", "bar", "underline"].includes(s.cursorStyle))
+    s.cursorStyle = DEFAULT_SETTINGS.cursorStyle;
+  s.fontSize = Math.round(clamp(s.fontSize, MIN_FONT_SIZE, MAX_FONT_SIZE, 14));
+  s.lineHeight = clamp(s.lineHeight, 1, 2, 1.15);
+  s.scrollback = Math.round(clamp(s.scrollback, 500, 100000, 10000));
+  for (const key of Object.keys(DEFAULT_SETTINGS))
+    if (typeof DEFAULT_SETTINGS[key] === "boolean") s[key] = !!s[key];
+  return s;
+}
+let settings = DEFAULT_SETTINGS;
+try {
+  settings = normalizeSettings(native ? JSON.parse(native.settings()) : {});
+} catch (_) {
+  settings = normalizeSettings({});
+}
+let settingsTimer;
+function saveSettings() {
+  clearTimeout(settingsTimer);
+  settingsTimer = setTimeout(
+    () => invoke("saveSettings", JSON.stringify(settings)),
+    300,
+  );
+}
+function terminalOptions() {
+  return {
+    fontSize: settings.fontSize,
+    fontFamily: FONT_STACKS[settings.fontFamily],
+    lineHeight: settings.lineHeight,
+    cursorStyle: settings.cursorStyle,
+    cursorBlink: settings.cursorBlink,
+    scrollback: settings.scrollback,
+    theme: TERMINAL_THEMES[settings.terminalTheme],
+  };
+}
+// Measure cells only after the bundled font is ready, or xterm keeps fallback metrics.
+function loadFont() {
+  if (settings.fontFamily === "monospace" || !document.fonts)
+    return Promise.resolve();
+  const family = `"${settings.fontFamily}"`;
+  return Promise.all([
+    document.fonts.load(`${settings.fontSize}px ${family}`),
+    document.fonts.load(`bold ${settings.fontSize}px ${family}`),
+  ]).catch(() => {});
+}
+let systemNight = native ? native.nightMode() : true;
+function applyAppTheme() {
+  const light =
+    settings.theme === "light" || (settings.theme === "system" && !systemNight);
+  document.documentElement.dataset.theme = light ? "light" : "dark";
+  invoke("setAppearance", light);
+}
+let applying = 0;
+function updateSettings(patch) {
+  // Like the desktop, switching the app theme flips the default terminal theme with it.
+  if (patch.theme && patch.theme !== settings.theme && !patch.terminalTheme) {
+    const light =
+      patch.theme === "light" || (patch.theme === "system" && !systemNight);
+    if (light && settings.terminalTheme === "BrightTerm Dark")
+      patch = { ...patch, terminalTheme: "BrightTerm Light" };
+    else if (!light && settings.terminalTheme === "BrightTerm Light")
+      patch = { ...patch, terminalTheme: "BrightTerm Dark" };
+  }
+  settings = normalizeSettings({ ...settings, ...patch });
+  saveSettings();
+  applyAppTheme();
+  const run = ++applying;
+  loadFont().then(() => {
+    if (run !== applying) return;
+    const options = terminalOptions();
+    for (const s of sessions.values()) {
+      Object.assign(s.term.options, options);
+      s.pane.style.background = options.theme.background;
+    }
+    fit(current());
+  });
+}
 function toast(message) {
   $("toast").textContent = message;
   $("toast").hidden = false;
@@ -38,9 +146,11 @@ function fit(session) {
 }
 let fontFrame = 0;
 function setFontSize(value) {
-  const size = Math.max(10, Math.min(28, Math.round(value)));
-  if (fontSize === size) return;
-  fontSize = size;
+  const size = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(value)));
+  if (settings.fontSize === size) return;
+  settings = { ...settings, fontSize: size };
+  saveSettings();
+  if ($("settings-dialog").open) $("settings-form").elements.fontSize.value = size;
   for (const s of sessions.values()) s.term.options.fontSize = size;
   if (!fontFrame) fontFrame = requestAnimationFrame(() => {
     fontFrame = 0;
@@ -56,7 +166,7 @@ function enablePinch(pane) {
   const handle = (event) => {
     if (event.touches.length >= 2) {
       suppress = true;
-      if (!gesture) gesture = { distance: Math.max(1, distance(event.touches)), size: fontSize };
+      if (!gesture) gesture = { distance: Math.max(1, distance(event.touches)), size: settings.fontSize };
       if (event.type === "touchmove") setFontSize(gesture.size * distance(event.touches) / gesture.distance);
     }
     if (suppress) {
@@ -104,19 +214,8 @@ function createSession(id, name) {
   const pane = document.createElement("div");
   pane.className = "terminal-pane";
   $("terminals").append(pane);
-  const term = new Terminal({
-    cursorBlink: true,
-    fontSize,
-    fontFamily: "monospace",
-    scrollback: 5000,
-    allowProposedApi: false,
-    theme: {
-      background: "#0d1117",
-      foreground: "#d6dde6",
-      cursor: "#7dd3fc",
-      selectionBackground: "#2f4a6b",
-    },
-  });
+  const term = new Terminal({ ...terminalOptions(), allowProposedApi: false });
+  pane.style.background = TERMINAL_THEMES[settings.terminalTheme].background;
   const fitAddon = new FitAddon.FitAddon();
   term.loadAddon(fitAddon);
   enablePinch(pane);
@@ -160,10 +259,47 @@ function createSession(id, name) {
     invoke("input", id, data);
   });
   term.attachCustomKeyEventHandler((event) => {
+    if (
+      settings.shiftEnterNewline &&
+      event.key === "Enter" &&
+      event.shiftKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.isComposing
+    ) {
+      // Ctrl+J: newline in Claude Code/Codex CLI, Enter in ordinary shells.
+      event.preventDefault();
+      if (event.type === "keydown") invoke("input", id, "\n");
+      return false;
+    }
     const appShortcut =
       event.ctrlKey &&
-      (event.shiftKey || ["Tab", "+", "=", "-"].includes(event.key));
+      (event.shiftKey || ["Tab", "+", "=", "-", ","].includes(event.key));
     return !appShortcut;
+  });
+  let copyTimer;
+  term.onSelectionChange(() => {
+    if (!settings.copyOnSelect) return;
+    clearTimeout(copyTimer);
+    // Copy once the selection settles instead of on every drag step.
+    copyTimer = setTimeout(() => {
+      if (term.hasSelection()) invoke("copy", term.getSelection());
+    }, 400);
+  });
+  // OSC 52 ; Pc ; Pd — Pd is base64 text to copy. Reading the clipboard ('?') is never answered.
+  term.parser.registerOscHandler(52, (data) => {
+    if (!settings.osc52Clipboard) return true;
+    const payload = data.slice(data.indexOf(";") + 1);
+    if (data.includes(";") && payload && payload !== "?") {
+      try {
+        const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+        invoke("copy", new TextDecoder().decode(bytes));
+      } catch (_) {
+        /* Invalid base64. */
+      }
+    }
+    return true;
   });
   pane.addEventListener("contextmenu", (event) => {
     event.preventDefault();
@@ -274,6 +410,10 @@ window.nativeEvent = (event) => {
       gitStatus = JSON.parse(event.value);
       renderGitStatus();
       break;
+    case "night":
+      systemNight = event.value === "true";
+      if (settings.theme === "system") applyAppTheme();
+      break;
     case "git-key":
       gitKey = event.value;
       $("git-key-state").textContent = " 개인키 선택됨";
@@ -317,7 +457,7 @@ window.nativeEvent = (event) => {
       $("key-name").textContent = "개인키 선택됨";
       break;
     case "paste":
-      if (current()) current().term.paste(event.value);
+      if (current()) pasteText(current(), event.value);
       break;
     case "reset":
       for (const item of sessions.values()) {
@@ -330,8 +470,23 @@ window.nativeEvent = (event) => {
       break;
   }
 };
+function pasteText(session, text) {
+  const lines = text.split(/\r\n|\r|\n/).filter((line) => line.length);
+  if (
+    settings.confirmMultilinePaste &&
+    lines.length > 1 &&
+    !session.term.modes.bracketedPasteMode &&
+    !confirm(
+      `${lines.length}줄을 ${session.name}에 붙여넣습니다. 각 줄이 명령으로 실행될 수 있습니다.`,
+    )
+  )
+    return session.term.focus();
+  session.term.paste(text);
+  session.term.focus();
+}
 window.androidBack = () => {
-  if ($("git-dialog").open) $("git-dialog").close();
+  if ($("settings-dialog").open) $("settings-dialog").close();
+  else if ($("git-dialog").open) $("git-dialog").close();
   else if ($("files").open) $("files").close();
   else if ($("editor").open) {
     $("editor").close();
@@ -421,6 +576,7 @@ document.addEventListener(
       $("editor").open ||
       $("info").open ||
       $("git-dialog").open ||
+      $("settings-dialog").open ||
       $("files").open ||
       event.target instanceof HTMLInputElement ||
       !event.ctrlKey
@@ -445,8 +601,9 @@ document.addEventListener(
           ],
         );
     } else if (["+", "=", "-"].includes(event.key)) {
-      setFontSize(fontSize + (event.key === "-" ? -1 : 1));
-    } else handled = false;
+      setFontSize(settings.fontSize + (event.key === "-" ? -1 : 1));
+    } else if (event.key === ",") openSettings();
+    else handled = false;
     if (handled) event.preventDefault();
   },
   true,
@@ -456,7 +613,86 @@ new ResizeObserver(() => requestAnimationFrame(() => fit(current()))).observe(
 );
 window.visualViewport?.addEventListener("resize", () => fit(current()));
 renderProfiles();
-if (native) native.ready();
+applyAppTheme();
+loadFont().then(() => native?.ready());
+
+function renderThemes() {
+  $("theme-list").replaceChildren();
+  for (const [name, t] of Object.entries(TERMINAL_THEMES)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(settings.terminalTheme === name));
+    Object.assign(button.style, {
+      background: t.background,
+      color: t.foreground,
+      fontFamily: FONT_STACKS[settings.fontFamily],
+    });
+    const sample = (color, text) => {
+      const span = document.createElement("span");
+      span.style.color = color;
+      span.textContent = text;
+      return span;
+    };
+    button.append(
+      name,
+      document.createElement("br"),
+      sample(t.green, "user@host"),
+      ":",
+      sample(t.blue, "~"),
+      "$ ",
+      sample(t.yellow, "ls"),
+      " ",
+      sample(t.red, "err"),
+    );
+    button.onclick = () => {
+      updateSettings({ terminalTheme: name });
+      renderThemes();
+    };
+    $("theme-list").append(button);
+  }
+}
+function fillSettings() {
+  const f = $("settings-form").elements;
+  for (const [key, value] of Object.entries(settings)) {
+    if (!f[key]) continue;
+    if (typeof value === "boolean") f[key].checked = value;
+    else f[key].value = value;
+  }
+  renderThemes();
+}
+function openSettings() {
+  fillSettings();
+  $("settings-dialog").showModal();
+}
+for (const id of ["settings", "open-settings"]) $(id).onclick = openSettings;
+$("close-settings").onclick = () => $("settings-dialog").close();
+$("settings-dialog").addEventListener("close", () => current()?.term.focus());
+$("settings-form").onsubmit = (event) => event.preventDefault();
+$("settings-form").addEventListener("change", (event) => {
+  const field = event.target;
+  if (!field.name || !Object.hasOwn(DEFAULT_SETTINGS, field.name)) return;
+  const value =
+    field.type === "checkbox"
+      ? field.checked
+      : field.type === "number"
+        ? +field.value
+        : field.value;
+  updateSettings({ [field.name]: value });
+  fillSettings();
+});
+$("reset-settings").onclick = () => {
+  updateSettings(DEFAULT_SETTINGS);
+  fillSettings();
+};
+$("settings-git").onclick = () => {
+  $("settings-dialog").close();
+  $("git-settings").click();
+};
+$("settings-about").onclick = () => {
+  $("settings-dialog").close();
+  $("about").click();
+};
 
 function showFiles(data) {
   $("remote-directory").value = data.path;

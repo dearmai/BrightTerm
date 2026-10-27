@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="app.css" />
     <script defer src="vendor/xterm.js"></script>
     <script defer src="vendor/addon-fit.js"></script>
+    <script defer src="themes.js"></script>
     <script defer src="app.js"></script>
   </head>
   <body>
@@ -25,7 +26,8 @@
       ><span class="badge">ANDROID</span>
       <div class="spacer"></div>
       <button id="sftp" title="SFTP 파일 전송">파일</button
-      ><button id="new" title="새 연결 (Ctrl+Shift+T)">＋ 새 연결</button>
+      ><button id="new" title="새 연결 (Ctrl+Shift+T)">＋ 새 연결</button
+      ><button id="settings" aria-label="설정" title="설정 (Ctrl+,)">⚙</button>
     </header>
     <div id="body">
       <aside id="sidebar">
@@ -36,7 +38,8 @@
         <input id="filter" placeholder="서버 검색" aria-label="서버 검색" />
         <div id="hosts"></div>
         <footer>
-          <button id="git-settings">Git 동기화</button>
+          <button id="git-settings">Git 동기화</button
+          ><button id="open-settings">설정</button>
           기기에 암호화하여 저장<br />SSH · xterm-256color<br /><button
             id="about"
           >
@@ -183,7 +186,7 @@
       <p>
         Ctrl+Shift+T: 연결 · Ctrl+Tab: 다음 세션<br />Ctrl+Shift+L: 서버 목록 ·
         Ctrl+Shift+W: 세션 닫기<br />Ctrl+Shift+C/V: 복사/붙여넣기 · Ctrl +/-:
-        글자 크기 · 두 손가락 핀치줌으로 글자 크기 조절<br />터치 보조키 Ctrl/Alt는 다음 입력 한 번에 적용됩니다.
+        글자 크기 · Ctrl+,: 설정 · 두 손가락 핀치줌으로 글자 크기 조절<br />터치 보조키 Ctrl/Alt는 다음 입력 한 번에 적용됩니다.
       </p>
       <p>
         이 Android 버전은 SSH 중심의 초기 포팅입니다. 데스크톱 백업 파일
@@ -317,6 +320,77 @@
         ><button id="git-pull" hidden>원격 가져오기</button
         ><button id="git-push" class="danger" hidden>로컬 올리기</button>
       </div>
+    </dialog>
+    <dialog id="settings-dialog">
+      <form id="settings-form">
+        <div class="dialog-heading">
+          <h2>설정</h2>
+          <button type="button" id="close-settings" aria-label="설정 닫기">✕</button>
+        </div>
+        <h3>모양</h3>
+        <label
+          >앱 테마<select name="theme">
+            <option value="dark">다크</option>
+            <option value="light">라이트</option>
+            <option value="system">시스템 설정 따르기</option>
+          </select></label
+        >
+        <div id="theme-list" role="radiogroup" aria-label="터미널 색 테마"></div>
+        <label
+          >글꼴<select name="fontFamily">
+            <option value="D2Coding ligature">D2Coding ligature (내장)</option>
+            <option value="D2Coding">D2Coding (내장)</option>
+            <option value="monospace">시스템 고정폭</option>
+          </select></label
+        >
+        <div class="row">
+          <label
+            >글자 크기<input name="fontSize" type="number" min="8" max="28" step="1"
+          /></label>
+          <label
+            >줄 간격<input name="lineHeight" type="number" min="1" max="2" step="0.05"
+          /></label>
+        </div>
+        <div class="row">
+          <label
+            >커서 모양<select name="cursorStyle">
+              <option value="block">블록</option>
+              <option value="bar">막대</option>
+              <option value="underline">밑줄</option>
+            </select></label
+          >
+          <label
+            >스크롤백 (줄)<input name="scrollback" type="number" min="500" max="100000" step="500"
+          /></label>
+        </div>
+        <label class="check"><input type="checkbox" name="cursorBlink" />커서 깜빡임</label>
+        <h3>입력·붙여넣기</h3>
+        <label class="check"
+          ><input type="checkbox" name="copyOnSelect" />선택하면 자동 복사</label
+        >
+        <label class="check"
+          ><input type="checkbox" name="confirmMultilinePaste" />여러 줄 붙여넣기
+          전에 확인</label
+        >
+        <label class="check"
+          ><input type="checkbox" name="shiftEnterNewline" />Shift+Enter로 줄바꿈
+          (Claude Code·Codex CLI 등, 하드웨어 키보드)</label
+        >
+        <label class="check"
+          ><input type="checkbox" name="osc52Clipboard" />서버 프로그램의
+          클립보드 복사 허용 (tmux·vim 등의 OSC 52, 읽기는 허용 안 함)</label
+        >
+        <p class="hint">
+          설정은 바로 적용되며 이 기기에만 저장합니다. 두 손가락 핀치줌과 Ctrl
+          +/-로 바꾼 글자 크기도 기억합니다.
+        </p>
+        <div class="actions">
+          <button type="button" id="reset-settings">기본값으로</button>
+          <div class="spacer"></div>
+          <button type="button" id="settings-git">Git 동기화</button
+          ><button type="button" id="settings-about">정보 · 단축키</button>
+        </div>
+      </form>
     </dialog>
     <div id="toast" role="alert" hidden></div>
   </body>

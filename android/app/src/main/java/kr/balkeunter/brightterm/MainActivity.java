@@ -21,7 +21,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     private volatile TerminalService service;
     private String transferSession, transferPath;
     private boolean transferUpload;
-    private boolean ready, bound, resumed;
+    private boolean ready, bound, resumed, lightTheme;
     private final ExecutorService storage = Executors.newSingleThreadExecutor();
     private final java.util.Set<CompletableFuture<Boolean>> prompts = ConcurrentHashMap.newKeySet();
     private final java.util.Set<CompletableFuture<String>> tmuxPrompts = ConcurrentHashMap.newKeySet();
@@ -44,7 +44,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
             if (app.storageError != null) throw app.storageError;
             vault = app.vault; gitSync = app.sync;
         }
-        catch (Exception error) { new AlertDialog.Builder(this).setTitle("볼트를 열 수 없습니다").setMessage("기기 암호화 키 또는 저장 파일을 확인하세요. 데이터는 덮어쓰지 않았습니다.").setPositiveButton("닫기", (d,w) -> finish()).show(); return; }
+        catch (Exception error) { dialogBuilder().setTitle("볼트를 열 수 없습니다").setMessage("기기 암호화 키 또는 저장 파일을 확인하세요. 데이터는 덮어쓰지 않았습니다.").setPositiveButton("닫기", (d,w) -> finish()).show(); return; }
         web = new WebView(this); web.setBackgroundColor(0xff0d1117);
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setAllowFileAccess(false); web.getSettings().setAllowContentAccess(false);
@@ -52,7 +52,15 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         web.getSettings().setMediaPlaybackRequiresUserGesture(true);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         WebViewAssetLoader assets = new WebViewAssetLoader.Builder().addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
-        web.setWebChromeClient(new WebChromeClient());
+        // WebView's built-in JS dialogs title themselves with the asset origin URL.
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
+                return jsDialog(message, result, false);
+            }
+            @Override public boolean onJsConfirm(WebView view, String url, String message, JsResult result) {
+                return jsDialog(message, result, true);
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 WebResourceResponse response = assets.shouldInterceptRequest(request.getUrl());
@@ -71,6 +79,9 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
             return WindowInsets.CONSUMED;
         });
         getWindow().setDecorFitsSystemWindows(false);
+        String theme = getSharedPreferences("app-settings", MODE_PRIVATE).getString("json", "{}");
+        try { theme = new JSONObject(theme).optString("theme", "dark"); } catch (JSONException error) { theme = "dark"; }
+        appearance(theme.equals("light") || (theme.equals("system") && !night(getResources().getConfiguration())));
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
         bound = bindService(new Intent(this, TerminalService.class), connection, BIND_AUTO_CREATE);
     }
@@ -90,7 +101,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         CompletableFuture<Boolean> answer = new CompletableFuture<>(); prompts.add(answer);
         runOnUiThread(() -> {
             if (isFinishing() || isDestroyed() || answer.isDone()) { answer.complete(false); return; }
-            AlertDialog dialog = new AlertDialog.Builder(this).setTitle("처음 연결하는 SSH 서버")
+            AlertDialog dialog = dialogBuilder().setTitle("처음 연결하는 SSH 서버")
                 .setMessage(host + "\n\n" + fingerprint + "\n\n서버 관리자가 제공한 지문과 일치할 때만 신뢰하세요.")
                 .setNegativeButton("취소", (d,w) -> answer.complete(false))
                 .setPositiveButton("신뢰하고 연결", (d,w) -> answer.complete(true))
@@ -112,7 +123,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
             choices[names.size()] = "신규 tmux 세션 생성";
             choices[names.size() + 1] = "일반 SSH 셸 (tmux 사용 안 함)";
             int[] selected = { names.isEmpty() ? names.size() : 0 };
-            AlertDialog dialog = new AlertDialog.Builder(this).setTitle(host + " · 접속 방식")
+            AlertDialog dialog = dialogBuilder().setTitle(host + " · 접속 방식")
                 .setSingleChoiceItems(choices, selected[0], (d, which) -> selected[0] = which)
                 .setPositiveButton("연결", (d, which) -> answer.complete(selected[0] < names.size() ? names.get(selected[0]) : selected[0] == names.size() ? "" : "\0"))
                 .setNegativeButton("취소", (d, which) -> answer.complete(null))
@@ -136,6 +147,14 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     private void fail(Exception error) { event(eventOf("error", "", error.getMessage() == null ? "작업 실패" : error.getMessage())); }
     class Bridge {
         @JavascriptInterface public void ready() { runOnUiThread(() -> { ready = true; profiles(); gitSync.attach(MainActivity.this); if (resumed) gitSync.foreground(true); if (service != null) service.attach(MainActivity.this); }); }
+        // App settings stay on this device; Git sync carries only servers and the vault, as on the desktop.
+        @JavascriptInterface public String settings() { return getSharedPreferences("app-settings", MODE_PRIVATE).getString("json", "{}"); }
+        @JavascriptInterface public void saveSettings(String json) {
+            try { new JSONObject(json); getSharedPreferences("app-settings", MODE_PRIVATE).edit().putString("json", json).apply(); }
+            catch (JSONException error) { fail(error); }
+        }
+        @JavascriptInterface public boolean nightMode() { return night(getResources().getConfiguration()); }
+        @JavascriptInterface public void setAppearance(boolean light) { runOnUiThread(() -> appearance(light)); }
         @JavascriptInterface public void syncStatus() { runOnUiThread(() -> gitSync.attach(MainActivity.this)); }
         @JavascriptInterface public void configureSync(String config) { gitSync.configure(config); }
         @JavascriptInterface public void sync(String choice, String password) { gitSync.request(choice, password); }
@@ -229,7 +248,37 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
             } catch (Exception error) { fail(error); }
         });
     }
-    @Override public void onConfigurationChanged(Configuration configuration) { super.onConfigurationChanged(configuration); if (web != null) web.requestApplyInsets(); }
+    @Override public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        if (web != null) web.requestApplyInsets();
+        event(eventOf("night", "", String.valueOf(night(configuration))));
+    }
+    private AlertDialog.Builder dialogBuilder() {
+        return new AlertDialog.Builder(this, lightTheme ? android.R.style.Theme_Material_Light_Dialog_Alert : android.R.style.Theme_Material_Dialog_Alert);
+    }
+    private boolean jsDialog(String message, JsResult result, boolean cancelable) {
+        if (isFinishing() || isDestroyed()) { result.cancel(); return true; }
+        AlertDialog.Builder dialog = dialogBuilder().setTitle("BrightTerm").setMessage(message)
+            .setPositiveButton("확인", (d, w) -> result.confirm())
+            .setOnCancelListener(d -> result.cancel());
+        if (cancelable) dialog.setNegativeButton("취소", (d, w) -> result.cancel());
+        dialog.show();
+        return true;
+    }
+    private static boolean night(Configuration configuration) {
+        return (configuration.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+    }
+    // Match the native window and system bar icons to the WebView's app theme.
+    private void appearance(boolean light) {
+        lightTheme = light;
+        if (web == null) return;
+        int background = light ? 0xfff5f6f8 : 0xff0d1117;
+        web.setBackgroundColor(background);
+        ((View)web.getParent()).setBackgroundColor(background);
+        int bars = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+        WindowInsetsController controller = getWindow().getInsetsController();
+        if (controller != null) controller.setSystemBarsAppearance(light ? bars : 0, bars);
+    }
     @Override protected void onDestroy() {
         for (CompletableFuture<String> prompt : tmuxPrompts) prompt.complete(null);
         for (CompletableFuture<Boolean> prompt : prompts) prompt.complete(false);

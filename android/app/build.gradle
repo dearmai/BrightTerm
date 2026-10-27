@@ -55,3 +55,19 @@ def notices = tasks.register('androidNotices') {
     }
 }
 tasks.named('preBuild').configure { dependsOn notices }
+
+// Terminal color themes come from the desktop renderer so both apps offer the same set.
+def terminalThemes = tasks.register('terminalThemes') {
+    def source = rootProject.file('../src/renderer/src/themes.ts')
+    def output = layout.buildDirectory.file('generated/terminalAssets/themes.js')
+    inputs.file(source)
+    outputs.file(output)
+    doLast {
+        def match = source.text =~ /(?s)export const TERMINAL_THEMES[^=]*=\s*(\{.*?\n\})/
+        if (!match.find()) throw new GradleException('TERMINAL_THEMES not found in ' + source)
+        def file = output.get().asFile
+        file.parentFile.mkdirs()
+        file.text = '"use strict";\nconst TERMINAL_THEMES = ' + match.group(1) + ';\n'
+    }
+}
+tasks.named('preBuild').configure { dependsOn terminalThemes }
