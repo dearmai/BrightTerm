@@ -36,6 +36,7 @@
         <input id="filter" placeholder="서버 검색" aria-label="서버 검색" />
         <div id="hosts"></div>
         <footer>
+          <button id="git-settings">Git 동기화</button>
           기기에 암호화하여 저장<br />SSH · xterm-256color<br /><button
             id="about"
           >
@@ -128,6 +129,34 @@
               spellcheck="false"
           /></label>
         </details>
+        <details id="tmux-settings">
+          <summary>세션 유지 (tmux)</summary>
+          <label class="check"
+            ><input type="checkbox" name="persist" id="tmux-enabled" />앱을
+            닫아도 서버 작업 유지</label
+          >
+          <div id="tmux-options" hidden>
+            <label
+              >tmux 세션 이름<input
+                name="persistName"
+                maxlength="80"
+                placeholder="비우면 서버 이름으로 자동 생성"
+                autocapitalize="off"
+                spellcheck="false"
+            /></label>
+            <p id="tmux-preview" class="hint"></p>
+            <label class="check"
+              ><input type="checkbox" name="persistMouse" checked />tmux 마우스
+              모드 (휠로 스크롤)</label
+            >
+            <p class="hint">
+              같은 이름의 세션이 있으면 이어서 연결합니다. 시작 명령은 새 세션을
+              만들 때만 실행합니다. 마우스 모드에서 텍스트를 선택하려면
+              Shift+드래그하거나 마우스 모드를 끄세요. 서버에 tmux가 없으면 안내
+              후 일반 셸로 연결합니다.
+            </p>
+          </div>
+        </details>
         <label class="check"
           ><input name="remember" type="checkbox" checked /> 서버와 자격 증명을
           이 기기에 암호화하여 저장</label
@@ -157,8 +186,8 @@
         글자 크기<br />터치 보조키 Ctrl/Alt는 다음 입력 한 번에 적용됩니다.
       </p>
       <p>
-        이 Android 버전은 SSH 중심의 초기 포팅입니다. 데스크톱 볼트 가져오기,
-        Telnet, USB 시리얼, 로컬 셸, Git 동기화, 점프 호스트·포워딩은 아직
+        이 Android 버전은 SSH 중심의 초기 포팅입니다. 데스크톱 백업 파일
+        가져오기, Telnet, USB 시리얼, 로컬 셸, 점프 호스트·포워딩은 아직
         지원하지 않습니다.
       </p>
       <p>
@@ -202,6 +231,92 @@
         ><button id="download" class="primary">다운로드…</button>
       </div>
       <p id="transfer-status" role="status"></p>
+    </dialog>
+    <dialog id="git-dialog">
+      <form id="git-form">
+        <div class="dialog-heading">
+          <h2>Git 동기화</h2>
+          <button type="button" id="close-git" aria-label="동기화 설정 닫기">
+            ✕
+          </button>
+        </div>
+        <label class="check"
+          ><input id="git-enabled" type="checkbox" />앱을 사용하는 동안 자동
+          동기화</label
+        >
+        <label
+          >Git URL<input
+            id="git-remote"
+            placeholder="https://github.com/user/vault.git 또는 git@host:repo.git"
+            autocapitalize="off"
+            spellcheck="false"
+        /></label>
+        <label
+          >브랜치<input
+            id="git-branch"
+            value="main"
+            autocapitalize="off"
+            spellcheck="false"
+        /></label>
+        <details id="git-auth">
+          <summary>Git 인증 (기기에만 암호화하여 저장)</summary>
+          <label
+            >Git 사용자명<input
+              id="git-user"
+              value="git"
+              autocapitalize="off"
+              spellcheck="false"
+          /></label>
+          <label
+            >HTTPS 토큰 / SSH 비밀번호<input
+              id="git-token"
+              type="password"
+              autocomplete="off"
+              placeholder="빈칸은 저장된 값 유지"
+          /></label>
+          <button type="button" id="git-import-key">Git SSH 개인키 선택…</button
+          ><span id="git-key-state"></span>
+          <label
+            >SSH 키 암호<input
+              id="git-passphrase"
+              type="password"
+              autocomplete="off"
+              placeholder="빈칸은 저장된 값 유지"
+          /></label>
+          <label class="check"
+            ><input id="git-clear" type="checkbox" />저장된 Git 인증 정보
+            지우기</label
+          >
+          <p class="hint">
+            저장소 주소를 바꾸면 기존 Git 인증 정보는 재사용하지 않습니다. SSH
+            최초 접속 시 서버 지문을 확인합니다.
+          </p>
+        </details>
+        <button type="submit" class="primary" id="git-save">설정 저장</button>
+      </form>
+      <p id="git-message" role="status"></p>
+      <p id="git-last" class="hint"></p>
+      <label
+        >동기화 볼트 마스터 비밀번호<input
+          id="git-master"
+          type="password"
+          autocomplete="off"
+          placeholder="PC에서 사용하던 볼트 비밀번호 / 새 볼트는 8자 이상"
+      /></label>
+      <p class="hint">
+        Git 인증과 별개인 암호화 비밀번호입니다. Git에는 암호문만 저장합니다. 새
+        볼트 비밀번호는 복구를 위해 따로 보관하세요. 원격 가져오기는 이 기기의
+        서버 목록을 교체하며, 직전 데이터를 암호화해 백업합니다. 세션과 호스트
+        신뢰 기록은 기기별로 유지합니다.
+      </p>
+      <button id="git-restore" hidden>
+        마지막 가져오기 전 로컬 데이터 복원
+      </button>
+      <div class="actions">
+        <button id="git-now">지금 동기화</button
+        ><button id="git-pull" hidden>원격 가져오기</button
+        ><button id="git-push" class="danger" hidden>로컬 올리기</button>
+      </div>
     </dialog>
     <div id="toast" role="alert" hidden></div>
   </body>

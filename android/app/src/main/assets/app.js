@@ -11,6 +11,9 @@ let profiles = [],
   fontSize = 14;
 let toastTimer,
   filesSession = null;
+let gitStatus = null,
+  gitKey = "",
+  gitDirty = false;
 function toast(message) {
   $("toast").textContent = message;
   $("toast").hidden = false;
@@ -184,6 +187,11 @@ function openEditor(profile) {
   for (const key of ["name", "host", "username", "port", "command"])
     $("form").elements[key].value =
       profile?.[key] ?? (key === "port" ? 22 : "");
+  $("form").elements.persist.checked = profile?.persist ?? false;
+  $("form").elements.persistName.value = profile?.persistName ?? "";
+  $("form").elements.persistMouse.checked = profile?.persistMouse ?? true;
+  updateTmuxOptions();
+  $("tmux-settings").open = !!profile?.persist;
   $("delete").hidden = !editing;
   $("editor-title").textContent = editing ? "서버 편집" : "SSH 연결";
   $("key-name").textContent = profile?.hasKey ? "저장된 개인키 사용" : "";
@@ -202,6 +210,9 @@ function getProfile() {
     passphrase: fields.passphrase.value,
     privateKey,
     command: fields.command.value,
+    persist: fields.persist.checked,
+    persistName: fields.persistName.value.trim(),
+    persistMouse: fields.persistMouse.checked,
   };
 }
 function submit(connect) {
@@ -226,6 +237,14 @@ function submit(connect) {
 window.nativeEvent = (event) => {
   const s = sessions.get(event.id);
   switch (event.type) {
+    case "git-sync":
+      gitStatus = JSON.parse(event.value);
+      renderGitStatus();
+      break;
+    case "git-key":
+      gitKey = event.value;
+      $("git-key-state").textContent = " 개인키 선택됨";
+      break;
     case "profiles":
       profiles = JSON.parse(event.value);
       renderProfiles();
@@ -279,7 +298,8 @@ window.nativeEvent = (event) => {
   }
 };
 window.androidBack = () => {
-  if ($("files").open) $("files").close();
+  if ($("git-dialog").open) $("git-dialog").close();
+  else if ($("files").open) $("files").close();
   else if ($("editor").open) {
     $("editor").close();
     privateKey = "";
@@ -367,6 +387,7 @@ document.addEventListener(
     if (
       $("editor").open ||
       $("info").open ||
+      $("git-dialog").open ||
       $("files").open ||
       event.target instanceof HTMLInputElement ||
       !event.ctrlKey
@@ -463,3 +484,142 @@ $("upload").onclick = () => {
 };
 $("download").onclick = () =>
   invoke("transfer", filesSession, $("remote-file").value.trim(), false);
+
+function fillGitSettings() {
+  if (!gitStatus?.config || gitDirty) return;
+  const c = gitStatus.config;
+  $("git-enabled").checked = c.enabled;
+  $("git-remote").value = c.remote || "";
+  $("git-branch").value = c.branch || "main";
+  $("git-user").value = c.username || "git";
+  $("git-key-state").textContent = c.hasKey ? " 저장된 개인키 사용" : "";
+  $("git-token").placeholder = c.hasToken
+    ? "저장된 인증 정보 사용 (빈칸은 유지)"
+    : "토큰 또는 SSH 비밀번호";
+}
+function renderGitStatus() {
+  if (!gitStatus) return;
+  $("git-message").textContent = gitStatus.message;
+  $("git-last").textContent = gitStatus.lastSync
+    ? "마지막 동기화: " + new Date(gitStatus.lastSync).toLocaleString()
+    : "";
+  $("git-settings").textContent =
+    "Git 동기화 · " +
+    ({
+      disabled: "꺼짐",
+      idle: "대기",
+      syncing: "진행 중",
+      synced: "완료",
+      conflict: "충돌",
+      "password-required": "비밀번호 필요",
+      error: "오류",
+    }[gitStatus.state] || gitStatus.state);
+  const busy = gitStatus.state === "syncing";
+  for (const id of [
+    "git-save",
+    "git-now",
+    "git-pull",
+    "git-push",
+    "git-restore",
+  ])
+    $(id).disabled = busy;
+  $("git-restore").hidden = !gitStatus.hasBackup;
+  const conflict = ["conflict", "password-required"].includes(gitStatus.state);
+  $("git-pull").hidden = !conflict;
+  $("git-push").hidden = !conflict;
+  fillGitSettings();
+}
+$("git-settings").onclick = () => {
+  gitDirty = false;
+  gitKey = "";
+  $("git-token").value = "";
+  $("git-passphrase").value = "";
+  $("git-master").value = "";
+  $("git-clear").checked = false;
+  fillGitSettings();
+  $("git-dialog").showModal();
+  invoke("syncStatus");
+};
+$("close-git").onclick = () => $("git-dialog").close();
+$("git-dialog").addEventListener("close", () => {
+  gitKey = "";
+  $("git-master").value = "";
+  $("git-token").value = "";
+  $("git-passphrase").value = "";
+});
+$("git-form").addEventListener("input", () => (gitDirty = true));
+$("git-import-key").onclick = () => {
+  gitDirty = true;
+  invoke("importSyncKey");
+};
+$("git-form").onsubmit = (event) => {
+  event.preventDefault();
+  const config = {
+    enabled: $("git-enabled").checked,
+    remote: $("git-remote").value.trim(),
+    branch: $("git-branch").value.trim() || "main",
+    username: $("git-user").value.trim(),
+    token: $("git-token").value,
+    privateKey: gitKey,
+    passphrase: $("git-passphrase").value,
+    clearCredentials: $("git-clear").checked,
+  };
+  gitDirty = false;
+  invoke("configureSync", JSON.stringify(config));
+  gitKey = "";
+  $("git-token").value = "";
+  $("git-passphrase").value = "";
+  $("git-clear").checked = false;
+};
+function synchronize(choice) {
+  if (gitDirty) {
+    toast("수정한 Git 설정을 먼저 저장하세요.");
+    return;
+  }
+  if (
+    choice === "remote" &&
+    !confirm(
+      "원격 데이터로 이 기기의 서버 목록을 교체할까요? 현재 데이터는 암호화해 백업합니다.",
+    )
+  )
+    return;
+  if (
+    choice === "local" &&
+    !confirm(
+      "로컬 데이터로 원격 동기화 파일을 교체할까요? 기존 원격 버전은 Git 기록에 남습니다.",
+    )
+  )
+    return;
+  const password = $("git-master").value;
+  $("git-master").value = "";
+  invoke("sync", choice, password);
+}
+$("git-now").onclick = () => synchronize("");
+$("git-pull").onclick = () => synchronize("remote");
+$("git-push").onclick = () => synchronize("local");
+
+$("git-restore").onclick = () => {
+  if (
+    confirm(
+      "마지막 원격 가져오기 전의 로컬 데이터를 복원할까요? 현재 데이터도 백업하고, 자동 동기화는 끕니다.",
+    )
+  )
+    invoke("restoreSyncBackup");
+};
+
+function updateTmuxOptions() {
+  const f = $("form").elements;
+  $("tmux-options").hidden = !f.persist.checked;
+  const slug = (text) =>
+    text
+      .normalize("NFKD")
+      .replace(/[^A-Za-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40);
+  const custom = f.persistName.value.trim(),
+    base = slug(custom) || slug(f.name.value) || "terminal";
+  $("tmux-preview").textContent = "세션: " + (custom ? base : "bt-" + base);
+}
+$("tmux-enabled").onchange = updateTmuxOptions;
+$("form").elements.persistName.addEventListener("input", updateTmuxOptions);
+$("form").elements.name.addEventListener("input", updateTmuxOptions);

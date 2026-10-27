@@ -451,3 +451,15 @@ pre {
     padding: 0 8px;
   }
 }
+
+#git-key-state {
+  font-size: 12px;
+  color: #7dd3fc;
+}
+#git-dialog .actions {
+  flex-wrap: wrap;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}

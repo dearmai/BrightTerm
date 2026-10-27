@@ -120,7 +120,7 @@ public class TerminalService extends Service {
                 c.shell.setPtyType("xterm-256color", c.cols, c.rows, 0, 0);
                 InputStream output = c.shell.getInputStream(); c.input = c.shell.getOutputStream(); c.shell.connect(15000);
                 c.state = "connected"; emit("state", c.id, c.state);
-                String command = profile.optString("command");
+                String command = Tmux.startup(profile);
                 if (!command.trim().isEmpty()) { c.input.write((command + "\r").getBytes(StandardCharsets.UTF_8)); c.input.flush(); }
                 byte[] buffer = new byte[16384]; int count;
                 while (!c.closed && (count = output.read(buffer)) != -1) {

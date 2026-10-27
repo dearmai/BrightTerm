@@ -14,13 +14,14 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
 
-public class MainActivity extends androidx.activity.ComponentActivity implements TerminalService.Listener {
+public class MainActivity extends androidx.activity.ComponentActivity implements TerminalService.Listener, GitSync.Listener {
     private WebView web;
     private Vault vault;
+    private GitSync gitSync;
     private volatile TerminalService service;
     private String transferSession, transferPath;
     private boolean transferUpload;
-    private boolean ready, bound;
+    private boolean ready, bound, resumed;
     private final ExecutorService storage = Executors.newSingleThreadExecutor();
     private final java.util.Set<CompletableFuture<Boolean>> prompts = ConcurrentHashMap.newKeySet();
     private final ServiceConnection connection = new ServiceConnection() {
@@ -37,7 +38,11 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
                 web.evaluateJavascript("window.androidBack()", result -> { if (!"true".equals(result)) moveTaskToBack(true); });
             }
         });
-        try { vault = new Vault(this); }
+        try {
+            BrightTermApp app = (BrightTermApp)getApplication();
+            if (app.storageError != null) throw app.storageError;
+            vault = app.vault; gitSync = app.sync;
+        }
         catch (Exception error) { new AlertDialog.Builder(this).setTitle("볼트를 열 수 없습니다").setMessage("기기 암호화 키 또는 저장 파일을 확인하세요. 데이터는 덮어쓰지 않았습니다.").setPositiveButton("닫기", (d,w) -> finish()).show(); return; }
         web = new WebView(this); web.setBackgroundColor(0xff0d1117);
         web.getSettings().setJavaScriptEnabled(true);
@@ -68,6 +73,11 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
         bound = bindService(new Intent(this, TerminalService.class), connection, BIND_AUTO_CREATE);
     }
+    @Override public void changed(JSONObject status, boolean profilesChanged) {
+        event(eventOf("git-sync", "", status.toString())); if (profilesChanged) profiles();
+    }
+    @Override protected void onResume() { super.onResume(); resumed = true; if (gitSync != null && ready) gitSync.foreground(true); }
+    @Override protected void onPause() { resumed = false; if (gitSync != null) gitSync.foreground(false); super.onPause(); }
     private static JSONObject eventOf(String type, String id, String value) {
         try { return new JSONObject().put("type", type).put("id", id).put("value", value); }
         catch (JSONException error) { throw new IllegalStateException(error); }
@@ -96,9 +106,14 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     }
     private void fail(Exception error) { event(eventOf("error", "", error.getMessage() == null ? "작업 실패" : error.getMessage())); }
     class Bridge {
-        @JavascriptInterface public void ready() { runOnUiThread(() -> { ready = true; profiles(); if (service != null) service.attach(MainActivity.this); }); }
+        @JavascriptInterface public void ready() { runOnUiThread(() -> { ready = true; profiles(); gitSync.attach(MainActivity.this); if (resumed) gitSync.foreground(true); if (service != null) service.attach(MainActivity.this); }); }
+        @JavascriptInterface public void syncStatus() { runOnUiThread(() -> gitSync.attach(MainActivity.this)); }
+        @JavascriptInterface public void configureSync(String config) { gitSync.configure(config); }
+        @JavascriptInterface public void sync(String choice, String password) { gitSync.request(choice, password); }
+        @JavascriptInterface public void restoreSyncBackup() { gitSync.restoreBackup(); }
+        @JavascriptInterface public void importSyncKey() { runOnUiThread(() -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE), 13)); }
         @JavascriptInterface public void save(String json) {
-            storage.execute(() -> { try { JSONObject p = new JSONObject(json); validate(p); vault.save(p); profiles(); } catch (Exception error) { fail(error); } });
+            storage.execute(() -> { try { JSONObject p = new JSONObject(json); validateFields(p); vault.save(p); profiles(); } catch (Exception error) { fail(error); } });
         }
         @JavascriptInterface public void delete(String id) { storage.execute(() -> { try { vault.delete(id); profiles(); } catch (Exception error) { fail(error); } }); }
         @JavascriptInterface public void connect(String json, int cols, int rows) {
@@ -154,6 +169,10 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         }); }
     }
     private static void validate(JSONObject p) throws Exception {
+        if (!p.optString("unsupported").isEmpty()) throw new IllegalArgumentException(p.getString("unsupported"));
+        validateFields(p);
+    }
+    private static void validateFields(JSONObject p) throws Exception {
         if (p.optString("host").trim().isEmpty() || p.optString("username").trim().isEmpty()) throw new IllegalArgumentException("호스트와 사용자명을 입력하세요.");
         int port = p.optInt("port", 22); if (port < 1 || port > 65535) throw new IllegalArgumentException("포트는 1~65535여야 합니다.");
     }
@@ -165,7 +184,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
                 s.transfer(transferSession, transferPath, data.getData(), transferUpload);
             transferSession = null; transferPath = null; return;
         }
-        if (request != 11 || result != RESULT_OK || data == null || data.getData() == null) return;
+        if ((request != 11 && request != 13) || result != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
         storage.execute(() -> {
             try (InputStream input = getContentResolver().openInputStream(uri)) {
@@ -177,7 +196,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
                 if (bytes.length > 65536) throw new IOException("키 파일은 64KB 이하여야 합니다.");
                 String text = new String(bytes, StandardCharsets.UTF_8);
                 if (!text.contains("PRIVATE KEY")) throw new IOException("PEM/OpenSSH 개인키 파일을 선택하세요.");
-                event(eventOf("key", "", text));
+                event(eventOf(request == 13 ? "git-key" : "key", "", text));
             } catch (Exception error) { fail(error); }
         });
     }
@@ -185,6 +204,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     @Override protected void onDestroy() {
         for (CompletableFuture<Boolean> prompt : prompts) prompt.complete(false);
         if (service != null && service.listener == this) service.listener = null;
+        if (gitSync != null) gitSync.detach(this);
         if (bound) unbindService(connection);
         if (web != null) { web.removeJavascriptInterface("Android"); web.destroy(); web = null; }
         storage.shutdown(); super.onDestroy();

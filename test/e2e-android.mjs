@@ -73,7 +73,8 @@ async function attach() {
 }
 async function clickTrust(accept=true) {
   await until(async () => {
-    adb('shell','uiautomator','dump','/sdcard/brightterm-test.xml');
+    try { adb('shell','uiautomator','dump','/sdcard/brightterm-test.xml'); }
+    catch (error) { if (!error.stdout?.includes('UI hierchary dumped')) return false; }
     const xml=adb('shell','cat','/sdcard/brightterm-test.xml');
     const label=accept ? '신뢰하고 연결' : '취소';
     const node=xml.match(new RegExp(`<node[^>]*text="${label}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`));
