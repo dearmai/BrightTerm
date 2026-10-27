@@ -25,6 +25,22 @@ PuTTY를 대신할 **Windows·macOS·Linux용 SSH / Telnet / 시리얼 / 로컬 
 
 처음 실행하면 **마스터 비밀번호**를 정합니다. 서버 비밀번호와 키는 이 비밀번호로 암호화되어 PC에 저장됩니다. Git 동기화를 켜면 지정한 저장소에도 암호화된 사본을 보관합니다. 이때 나오는 **복구 코드 24자리**는 꼭 따로 보관하세요. 마스터 비밀번호를 잊으면 이 코드로만 복구할 수 있습니다.
 
+### macOS 소스 빌드 및 설치
+
+Node.js 22.12 이상(권장 24 LTS)과 Xcode Command Line Tools(`xcode-select --install`)를 준비한 뒤, 프로젝트 폴더에서 실행하세요:
+
+```bash
+make install
+```
+
+현재 Node.js의 아키텍처(Apple Silicon 또는 Intel)로 앱을 빌드하고 `/Applications/BrightTerm.app`에 설치합니다. 일반 사용자로 실행하세요. 설치 폴더에 쓰기 권한이 없을 때만 sudo를 요청합니다. 실행 중인 BrightTerm은 먼저 종료하세요.
+
+`make build`는 앱 번들만 생성합니다. 관리자 권한 없이 사용자 응용 프로그램 폴더에 설치하려면 `make install MACOS_INSTALL_DIR="$HOME/Applications"`를 사용하세요. 설치 후 `open /Applications/BrightTerm.app`으로 실행할 수 있습니다.
+
+로컬 macOS 빌드는 `make install` / `make build` 실행 시 `BrightTerm Local Development` 자체 서명 인증서를 확인하고, 없으면 한 번 생성합니다. 이후에는 같은 인증서로 서명하며 타임스탬프·공증 서버에 요청하지 않습니다. 최초 인증서 신뢰 등록 때 macOS 승인이 필요할 수 있습니다. 인증서는 코드 서명 용도로만 신뢰합니다.
+
+인증서와 개인 키는 저장소 밖 `~/Library/Application Support/BrightTerm/build-signing/`의 전용 키체인에 보관합니다. 재설치해도 이 폴더는 유지됩니다. 같은 앱으로 인식되도록 이 폴더를 삭제하거나 매번 새 인증서를 만들지 마세요. 백업 시 폴더 전체를 안전하게 보관하세요. 정식 릴리즈 서명은 별도 작업입니다.
+
 ### Linux (Ubuntu / HamoniKR)
 
 Node.js 22.12 이상(권장 24 LTS)을 설치한 뒤, 프로젝트 폴더에서 `make install`로 빌드와 설치를 한 번에 실행할 수 있습니다. 현재 PC와 같은 아키텍처로 생성됩니다.
@@ -101,6 +117,24 @@ FUSE가 없는 환경에서는 AppImage의 `--appimage-extract-and-run` 옵션�
 | 시리얼 (RS-485/USB) | 프로토콜에서 "시리얼"을 고릅니다. Windows는 `COM3`, macOS는 `/dev/cu.usbserial-…` 형식입니다. baud, 패리티, 흐름 제어, Enter 전송값(CR/LF/CRLF), 로컬 에코를 설정할 수 있습니다. |
 | 잠금 해제 | 마스터 비밀번호 대신 **Windows 계정** 또는 **macOS Touch ID(키체인)**으로 열 수 있습니다(설정 → 보안). |
 | 기타 | EUC-KR(CP949) 장비, 스니펫, 세션 로그, 자동 잠금, 백업 내보내기/가져오기 |
+
+### 활성 서버 상태 표시줄
+
+하단 상태 표시줄은 현재 탭에서 포커스된 분할 창의 서버를 표시합니다. 서버 이름·연결 상태와 함께 **Ping / CPU / Memory / Disk / Uptime**을 보여 주며, 활성 세션만 약 5초 간격으로 조회합니다. 다른 창으로 이동하면 해당 서버의 정보로 바뀝니다.
+
+- **Ping**: 현재 SSH 연결의 명령 왕복 응답 시간(ms). 점프 호스트·프록시 경로와 서버의 명령 처리 시간을 포함하므로 ICMP ping과 다릅니다.
+- **CPU**: 서버 전체 CPU 사용률을 약 1초간 측정합니다.
+- **Memory**: Linux는 `MemAvailable` 기준, macOS는 여유·비활성·speculative 페이지를 제외한 메모리 비율입니다.
+- **Disk**: 루트(`/`) 파일시스템의 사용률(`df` 기준)입니다.
+- **Uptime**: 서버의 마지막 부팅 이후 경과한 시간입니다(예: `3일 2시간 15분`). SSH 연결 시간과 별개이며, Linux/macOS 서버 및 로컬 터미널에서 조회합니다.
+
+사용률은 Linux/macOS SSH 서버와 Linux/macOS 로컬 터미널에서 조회합니다. 별도 관리자 권한은 필요하지 않습니다. 연결이 끊겼거나 서버에서 조회를 지원하지 않는 항목은 `—`로 표시합니다. 로컬·Telnet·시리얼 연결의 Ping은 `—`입니다.
+
+### tmux에서 마우스 휠이 방향키처럼 동작할 때
+
+**tmux 마우스 모드를 끄면 휠은 스크롤 대신 ↑/↓ 방향키로 전달됩니다. Page Up/Down은 아닙니다.** tmux가 사용하는 대체 화면에는 BrightTerm 자체 스크롤 기록이 없어, 터미널 라이브러리(xterm)가 휠을 방향키 입력으로 바꿉니다. 따라서 셸에서는 이전 명령이 나오거나 실행 중인 프로그램의 커서가 움직일 수 있습니다.
+
+휠로 tmux 기록을 스크롤하려면 **패널 우클릭 → tmux 마우스 모드 켜기 (휠로 tmux 스크롤)**를 선택하세요. 서버·로컬 터미널 편집 → 기본 → 세션 유지에서도 설정할 수 있습니다. 마우스 모드를 켠 상태에서 텍스트를 선택하려면 macOS는 **⌥+드래그**, Windows/Linux는 **Shift+드래그**를 사용하세요.
 
 ## Claude Code 창 띄워 두기 (세션 유지)
 
@@ -193,6 +227,7 @@ APPLE_KEYCHAIN_PROFILE=<notarytool 프로필> npm run dist:mac:signed  # Develop
 - 구조: `src/main`(Electron 메인: SSH/시리얼/텔넷, 볼트, SFTP, 가져오기, AWS), `src/preload`, `src/renderer`(React + xterm.js UI, 키 판정은 `platform.ts`), `src/shared`(공용 타입).
 - Linux 실행 검증: `npm run test:linux` (그래픽 세션 필요). 패키지 검증: `BT_EXECUTABLE=dist/linux-unpacked/brightterm node test/e2e-linux.mjs`. 셸 대체 경로, PTY 입출력, 키링 미지원 시 볼트 동작, 시리얼 포트 열거를 확인합니다.
 - Git 동기화 검증: `npm run test:git-sync` (그래픽 세션 및 Git 필요). 임시 bare 저장소와 독립 앱 2개로 암호화, 설정 저장, 시작/변경 동기화, 충돌, 오프라인, 데이터 손상·중단 복구를 검증하며 실제 사용자 저장소를 사용하지 않습니다.
+- 상태 표시줄 검증: `node --experimental-strip-types --test test/metrics.test.mjs`로 측정값 파싱·SSH 조회·로컬 수집을 확인합니다. `npm run build && node test/e2e-statusbar.mjs`는 Linux/macOS 그래픽 환경에서 독립 앱과 임시 데이터로 실제 사용률 조회와 서로 다른 서버의 분할 창 포커스 전환을 확인합니다.
 - 테스트: `test/e2e.mjs`(Linux sshd 시나리오), `test/e2e-mac.mjs`(macOS 키 모델·붙여넣기·이미지 업로드 — 파일 머리 주석 참고), `test/importers.test.mjs`(가져오기 파서).
 - 요구 사항: Node 22.12+ (권장 24 LTS), Electron 43. Linux에서는 node-pty 빌드에 Python 3, make, C++ 컴파일러가 필요합니다.
 

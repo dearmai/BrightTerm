@@ -67,12 +67,12 @@ try {
   await a.call('vault:unlock', password)
   const cred = await a.call('cred:save', { name: 'private-credential-name', kind: 'password', username: 'private-user', password: 'never-plaintext-secret' })
   const host = { id: 'host-1', groupId: 'group-1', alias: 'private-production-host', protocol: 'ssh', host: 'private.example.invalid', port: 22,
-    username: 'private-user', authType: 'password', credentialId: cred.id, tags: [], encoding: 'utf-8', termType: 'xterm-256color', keepaliveSec: 30, forwards: [], sort: 0 }
+    username: 'private-user', authType: 'password', credentialId: cred.id, terminalTheme: 'Solarized Dark', tags: [], encoding: 'utf-8', termType: 'xterm-256color', keepaliveSec: 30, forwards: [], sort: 0 }
   await a.call('store:patch', { groups: [{ id: 'group-1', parentId: null, name: 'private-folder', sort: 0 }], hosts: [host] })
   await assert.rejects(a.call('git-sync:configure', { ...config, remote: 'https://token-secret@example.invalid/repo.git' }), /토큰/)
   await a.page.waitForSelector('.lock', { state: 'detached' })
   await a.page.keyboard.press('Escape')
-  await a.page.getByTitle('설정', { exact: true }).click()
+  await a.page.getByTitle(/^설정(?: \(|$)/).click()
   await a.page.getByRole('button', { name: 'Git 동기화', exact: true }).click()
   await a.page.getByLabel('Git URL', { exact: true }).fill(remote)
   await a.page.getByLabel('동기화 브랜치').fill('main')
@@ -97,6 +97,7 @@ try {
   assert.equal((await b.call('store:get')).hosts.length, 0)
   assert.equal((await b.call('git-sync:resolve', 'remote', password)).state, 'synced')
   assert.equal((await b.call('store:get')).hosts[0].alias, host.alias)
+  assert.equal((await b.call('store:get')).hosts[0].terminalTheme, 'Solarized Dark')
   assert.equal((await b.call('store:get')).settings.fontSize, 19)
   assert.equal((await b.call('cred:get', cred.id)).password, 'never-plaintext-secret')
   assert(readdirSync(join(b.data, 'git-sync', 'backups')).length > 0)

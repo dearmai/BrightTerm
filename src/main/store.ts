@@ -6,8 +6,19 @@ import { DEFAULT_SETTINGS, MAC_FONT_FAMILY, LINUX_FONT_FAMILY, StoreData, KnownH
 /** Defaults + saved values, with the Windows font stack swapped out on macOS (fresh install or a Windows backup). */
 function withDefaults(saved: Partial<Settings> | undefined): Settings {
   const s = { ...DEFAULT_SETTINGS, ...(saved ?? {}) }
-  if (process.platform === 'darwin' && s.fontFamily === DEFAULT_SETTINGS.fontFamily) s.fontFamily = MAC_FONT_FAMILY
-  if (process.platform === 'linux' && s.fontFamily === DEFAULT_SETTINGS.fontFamily) s.fontFamily = LINUX_FONT_FAMILY
+  const legacyDefaults = [
+    "'Cascadia Mono', 'D2Coding', Consolas, 'Malgun Gothic', monospace",
+    "Menlo, 'D2Coding', 'Apple SD Gothic Neo', monospace",
+    "'DejaVu Sans Mono', 'Noto Sans Mono', 'D2Coding', 'Noto Sans CJK KR', monospace"
+  ]
+  if (s.fontFamily === DEFAULT_SETTINGS.fontFamily || legacyDefaults.includes(s.fontFamily)) {
+    if (process.platform === 'darwin') s.fontFamily = MAC_FONT_FAMILY
+    else if (process.platform === 'linux') s.fontFamily = LINUX_FONT_FAMILY
+    else s.fontFamily = DEFAULT_SETTINGS.fontFamily
+  }
+  const fallback = s.fontFamily.split(',').map((f) => f.trim())
+    .filter((f) => !/^['"]?D2Coding(?: ligature)?['"]?$/i.test(f))
+  s.fontFamily = ["'D2Coding ligature'", "'D2Coding'", ...fallback].join(', ')
   return s
 }
 

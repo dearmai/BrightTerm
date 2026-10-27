@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto'
 import { store, dataDir } from './store'
 import { vault, VaultFile } from './vault'
 import { sessions } from './sessions'
+import { sessionMetrics } from './metrics'
 import * as sftp from './sftp'
 import { setWindow, respond, send } from './ui'
 import { scanPutty, scanSshConfig, scanPuttyHostKeys } from './importers'
@@ -147,6 +148,10 @@ function registerIpc(): void {
     await sessions.close(id, !!killTmux)
   })
   handle('session:reconnect', (id: string) => sessions.get(id)?.reconnectNow())
+  handle('session:metrics', (id: string) => {
+    const session = sessions.get(id)
+    return session ? sessionMetrics(session) : null
+  })
   handle('session:tmuxMouse', (id: string, on: boolean) => sessions.get(id)?.setTmuxMouse(on))
   ipcMain.on('session:write', (_e, id: string, data: string) => sessions.get(id)?.write(data))
   ipcMain.on('session:resize', (_e, id: string, cols: number, rows: number) => sessions.get(id)?.setSize(cols, rows))

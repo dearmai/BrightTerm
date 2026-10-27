@@ -23,7 +23,7 @@ function paneSpec(info: SessionInfo | undefined): SavedPane | null {
 function toSaved(n: LayoutNode, sessions: Record<string, SessionInfo>): SavedLayout | null {
   if (n.type === 'pane') {
     const p = paneSpec(sessions[n.sessionId])
-    return p ? { type: 'pane', pane: p, ...(n.color ? { color: n.color } : {}) } : null
+    return p ? { type: 'pane', pane: p, ...(n.color ? { color: n.color } : {}), ...(n.terminalTheme ? { terminalTheme: n.terminalTheme } : {}) } : null
   }
   const kids = n.children.map((c, i) => ({ c: toSaved(c, sessions), s: n.sizes[i] })).filter((x) => x.c) as { c: SavedLayout; s: number }[]
   if (!kids.length) return null
@@ -86,7 +86,7 @@ async function build(n: SavedLayout, out: PaneNode[]): Promise<LayoutNode | null
         info = await api.session.open({ adhoc: { host: '', protocol: 'local', cwd: p.local.cwd } })
       }
       useApp.setState((s) => ({ sessions: { ...s.sessions, [info.id]: info } }))
-      const pane: PaneNode = { type: 'pane', id: uid(), sessionId: info.id, ...(n.color ? { color: n.color } : {}) }
+      const pane: PaneNode = { type: 'pane', id: uid(), sessionId: info.id, ...(n.color ? { color: n.color } : {}), ...(n.terminalTheme ? { terminalTheme: n.terminalTheme } : {}) }
       out.push(pane)
       return pane
     } catch {

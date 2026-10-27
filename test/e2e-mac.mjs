@@ -141,7 +141,7 @@ const fs1 = await win.evaluate(() => window.bt.call('store:get').then((s) => s.s
 check('⌘= enlarges font', fs1 === fs0 + 1, `${fs0}->${fs1}`)
 await win.keyboard.press('Meta+0')
 const font = await win.evaluate(() => window.bt.call('store:get').then((s) => s.settings.fontFamily))
-check('macOS default font stack', font.startsWith('Menlo'), font)
+check('macOS default font stack', font.startsWith("'D2Coding ligature', 'D2Coding', Menlo"), font)
 await win.keyboard.press('Meta+,')
 await win.waitForSelector('.settings', { timeout: 3000 }).catch(() => {})
 check('⌘, opens settings', !!(await win.$('.settings')))

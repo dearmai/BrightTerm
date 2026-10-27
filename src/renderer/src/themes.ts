@@ -32,3 +32,8 @@ export const TERMINAL_THEMES: Record<string, ITheme> = {
     brightBlack: '#4c566a', brightRed: '#bf616a', brightGreen: '#a3be8c', brightYellow: '#ebcb8b', brightBlue: '#81a1c1', brightMagenta: '#b48ead', brightCyan: '#8fbcbb', brightWhite: '#eceff4'
   }
 }
+
+/** 패널 지정 → 서버 기본값 → 앱 기본값. 알 수 없는 테마는 다음 기본값으로 넘긴다. */
+export function resolveTerminalTheme(panel: string | undefined, host: string | undefined, app: string): string {
+  return [panel, host, app].find((name) => !!name && Object.hasOwn(TERMINAL_THEMES, name)) ?? 'BrightTerm Dark'
+}

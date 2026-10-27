@@ -28,8 +28,8 @@ export function LockScreen(props: { overlay: boolean }): JSX.Element {
   const [saved, setSaved] = useState(false)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
-  // Windows 는 볼트를 만들 때 Windows 계정 잠금 해제(DPAPI)를 기본으로 켠다
-  const [osUnlock, setOsUnlock] = useState(vault.osUnlockKind === 'windows')
+  // 이 PC에서 기억하기: 마스터 비밀번호 대신 OS 보안 저장소로 잠금 해제
+  const [osUnlock, setOsUnlock] = useState(vault.osUnlockEnabled || (vault.osUnlockAvailable && ['windows', 'touchid', 'keychain'].includes(vault.osUnlockKind ?? '')))
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 50) }, [mode])
@@ -45,6 +45,10 @@ export function LockScreen(props: { overlay: boolean }): JSX.Element {
     try {
       const ok = await api.vault.unlock(pw)
       if (!ok) { setErr('비밀번호가 올바르지 않습니다'); setPw(''); return }
+      if (osUnlock && vault.osUnlockAvailable && !vault.osUnlockEnabled) {
+        try { await api.vault.setOsUnlock(true) }
+        catch (e) { useApp.getState().toast('error', `이 PC에서 기억하지 못했습니다: ${(e as Error).message}`) }
+      }
       await refresh()
     } finally { setBusy(false) }
   }
@@ -86,6 +90,12 @@ export function LockScreen(props: { overlay: boolean }): JSX.Element {
             <h1><Lock size={18} style={{ verticalAlign: -2 }} /> BrightTerm 잠금</h1>
             <p>{props.overlay ? '세션은 계속 연결되어 있습니다. 마스터 비밀번호를 입력하면 다시 사용할 수 있습니다.' : '저장된 서버 계정을 열려면 마스터 비밀번호를 입력하세요.'}</p>
             <input ref={inputRef} className="input" type="password" placeholder="마스터 비밀번호" value={pw} onChange={(e) => setPw(e.target.value)} />
+            {vault.osUnlockAvailable && !vault.osUnlockEnabled && (
+              <label className="row" style={{ fontSize: 12.5, alignItems: 'flex-start' }}>
+                <input type="checkbox" checked={osUnlock} onChange={(e) => setOsUnlock(e.target.checked)} />
+                <span>이 {vault.osUnlockKind === 'windows' ? 'PC' : vault.osUnlockKind === 'linux' ? 'PC' : 'Mac'}에서 기억 <span className="muted">— 다음 실행부터 {osUnlockText(vault.osUnlockKind).button}</span></span>
+              </label>
+            )}
             {err && <div className="err">{err}</div>}
             <button className="btn primary" disabled={busy || !pw} style={{ justifyContent: 'center' }}>{busy ? '확인 중...' : '잠금 해제'}</button>
             {vault.osUnlockEnabled && (
@@ -108,10 +118,10 @@ export function LockScreen(props: { overlay: boolean }): JSX.Element {
               </div>
             )}
             <input className="input" type="password" placeholder="비밀번호 확인" value={pw2} onChange={(e) => setPw2(e.target.value)} />
-            {vault.osUnlockAvailable && vault.osUnlockKind === 'windows' && (
+            {vault.osUnlockAvailable && (
               <label className="row" style={{ fontSize: 12.5, alignItems: 'flex-start' }}>
                 <input type="checkbox" checked={osUnlock} onChange={(e) => setOsUnlock(e.target.checked)} style={{ marginTop: 2 }} />
-                <span>Windows 계정으로 잠금 해제 <span className="muted">— 이 PC의 Windows 로그인으로 볼트를 자동으로 엽니다. 나중에 설정 → 보안·계정에서 끌 수 있습니다</span></span>
+                <span>이 PC에서 기억 <span className="muted">— 다음 실행부터 {osUnlockText(vault.osUnlockKind).button}. 나중에 설정 → 보안·계정에서 끌 수 있습니다</span></span>
               </label>
             )}
             {err && <div className="err">{err}</div>}

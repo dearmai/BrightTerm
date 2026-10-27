@@ -1,5 +1,5 @@
 import type {
-  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, Host, ImportCandidate, LocalPublicKey, SessionInfo, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
+  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, Host, ImportCandidate, LocalPublicKey, SessionInfo, SessionMetrics, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
 } from '@shared/types'
 
 interface Bt {
@@ -63,6 +63,7 @@ export const api = {
     remove: (id: string) => bt.call<void>('cred:delete', id)
   },
   session: {
+    metrics: (id: string) => bt.call<SessionMetrics | null>('session:metrics', id),
     open: (o: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number; tmux?: TmuxPick; run?: string }) => bt.call<SessionInfo>('session:open', o),
     close: (id: string, killTmux?: boolean) => bt.call<void>('session:close', id, killTmux),
     reconnect: (id: string) => bt.call<void>('session:reconnect', id),

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { CredentialMeta, Group, Host, SessionInfo, Settings, Snippet, StoreData, Transfer, UiRequest, VaultStatus, AdhocTarget, TmuxPick } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { api } from './api'
-import { LayoutNode, PaneNode, uid, panes, splitPane, removePane, grid, Dir, findPane, setPaneColor, insertNode, type Side } from './layout'
+import { LayoutNode, PaneNode, uid, panes, splitPane, removePane, grid, Dir, findPane, setPaneColor, setPaneTheme, insertNode, type Side } from './layout'
 
 export interface Tab {
   id: string
@@ -125,6 +125,7 @@ interface State {
   setActiveTab(id: string): void
   updateTab(id: string, p: Partial<Tab>): void
   setPaneColor(tabId: string, paneId: string, color?: string): void
+  setPaneTheme(tabId: string, paneId: string, theme?: string): void
   moveTab(from: number, to: number): void
   gatherAll(): void
   splitToTabs(tabId: string): void
@@ -362,6 +363,10 @@ export const useApp = create<State>((set, get) => ({
 
   setPaneColor(tabId, paneId, color) {
     set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, root: setPaneColor(t.root, paneId, color) } : t)) }))
+  },
+
+  setPaneTheme(tabId, paneId, theme) {
+    set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, root: setPaneTheme(t.root, paneId, theme) } : t)) }))
   },
 
   moveTab(from, to) {

@@ -5,7 +5,7 @@ import { LayoutNode, PaneNode, panes, setSizes, type Side } from '../layout'
 import { attach, detach, fitEntry, getEntry, smartPaste, uploadAndInsert, disposeEntry } from '../terms'
 import { api } from '../api'
 import { ENV_COLORS, ENV_LABELS } from '@shared/types'
-import { TERMINAL_THEMES } from '../themes'
+import { TERMINAL_THEMES, resolveTerminalTheme } from '../themes'
 import { Welcome } from './Welcome'
 import { SC } from '../platform'
 
@@ -103,6 +103,8 @@ function SplitChild(props: { size: number; last: boolean; dragging: boolean; onD
 function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
   const info = useApp((s) => s.sessions[pane.sessionId])
   const settings = useApp((s) => s.settings)
+  const hostTheme = useApp((s) => s.hosts.find((h) => h.id === info?.hostId)?.terminalTheme)
+  const theme = resolveTerminalTheme(pane.terminalTheme, hostTheme, settings.terminalTheme)
   const focused = tab.focused === pane.id
   const multi = panes(tab.root).length > 1
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -123,6 +125,11 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
       detach(pane.sessionId, el)
     }
   }, [pane.sessionId])
+
+  useLayoutEffect(() => {
+    const entry = getEntry(pane.sessionId)
+    if (entry) entry.term.options.theme = TERMINAL_THEMES[theme]
+  }, [pane.sessionId, theme])
 
   // dispose terminal when session is gone for good
   useEffect(() => () => {
@@ -145,7 +152,7 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
 
   const color = pane.color ?? info?.color
   const env = info?.env && info.env !== 'none' ? info.env : null
-  const termBg = TERMINAL_THEMES[settings.terminalTheme]?.background ?? '#0d1117'
+  const termBg = TERMINAL_THEMES[theme]?.background ?? '#0d1117'
 
   // fromHead: 패널 머리말에서 연 메뉴 — 우클릭 붙여넣기 설정과 상관없이 항상 메뉴를 띄운다
   const onContext = (e: React.MouseEvent, fromHead = false): void => {
@@ -180,7 +187,7 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
         onClick: () => {
           const on = !info.tmuxMouse
           api.session.tmuxMouse(pane.sessionId, on)
-            .then(() => st().toast('info', on ? 'tmux 마우스 모드 켜짐' : 'tmux 마우스 모드 꺼짐 — 드래그로 선택한 블록이 유지됩니다'))
+            .then(() => st().toast('info', on ? 'tmux 마우스 모드 켜짐 — 휠로 tmux 기록을 스크롤합니다' : 'tmux 마우스 모드 꺼짐 — 드래그 선택이 유지되고, 휠은 ↑/↓ 방향키로 전달됩니다'))
             .catch((e) => st().toast('error', `마우스 모드를 바꾸지 못했습니다: ${(e as Error).message}`))
         }
       }] : []),
@@ -208,6 +215,7 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
       data-pane={pane.id}
       style={{ ['--pane-color' as string]: color ?? 'var(--accent)', ['--term-bg' as string]: termBg }}
       onMouseDown={() => { if (!focused || useApp.getState().activeTab !== tab.id) st().focusPane(tab.id, pane.id) }}
+      onFocusCapture={() => { if (!focused || useApp.getState().activeTab !== tab.id) st().focusPane(tab.id, pane.id) }}
       onDragOver={(e) => {
         const d = st().drag
         if (d) {
@@ -256,6 +264,12 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
           {info?.persist && <span className="ph-persist" title={`세션 유지(tmux${info.tmuxSession ? ` · ${info.tmuxSession}` : ''}) — 창을 닫아도 안의 프로그램은 계속 돕니다. 끝내려면 exit`}>유지{info.tmuxSession && /-\d+$/.test(info.tmuxSession) ? ` ${info.tmuxSession.match(/-(\d+)$/)![1]}` : ''}</span>}
           <span className="ph-target">{info?.target}</span>
           {tab.broadcast && <Radio size={12} color="var(--warn)" />}
+          <select className="select pane-theme" aria-label="패널 터미널 테마" title="이 패널의 테마 · 로컬에 저장됩니다"
+            value={pane.terminalTheme ?? ''} onChange={(e) => st().setPaneTheme(tab.id, pane.id, e.target.value || undefined)}
+            onMouseDown={(e) => e.stopPropagation()}>
+            <option value="">기본값 · {resolveTerminalTheme(undefined, hostTheme, settings.terminalTheme)}</option>
+            {Object.keys(TERMINAL_THEMES).map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
           <span className="ph-actions">
             {info && info.state !== 'connected' && <button className="ibtn sm" title="다시 접속" onClick={() => api.session.reconnect(pane.sessionId)}><RotateCw size={13} /></button>}
             {(info?.canSftp || info?.protocol === 'local') && <button className="ibtn sm" title={info?.protocol === 'local' ? `클립보드 이미지를 저장하고 경로 입력 (${SC.pasteImage})` : `클립보드 이미지 → 서버 업로드 후 경로 입력 (${SC.pasteImage})`} onClick={() => smartPaste(pane.sessionId, true)}><ImageUp size={13} /></button>}

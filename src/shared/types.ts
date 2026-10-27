@@ -82,6 +82,8 @@ export interface Host {
   tags: string[]
   encoding: 'utf-8' | 'euc-kr' | 'cp949' | 'shift_jis' | 'latin1'
   termType: string
+  /** 서버 기본 터미널 테마 — 비우면 앱 설정을 따른다. 서버와 함께 동기화 */
+  terminalTheme?: string
   startupCommand?: string
   keepaliveSec: number
   forwards: PortForward[]
@@ -163,8 +165,16 @@ export interface GitSyncStatus {
 /** 앱을 다시 켤 때 복원할 탭·분할 — 창마다 서버 id 또는 로컬 시작 폴더만 기억한다 */
 /** plain: 세션 유지 서버를 tmux 없이 일반 접속으로 연 창 */
 export type SavedPane = { hostId: string; tmux?: string; plain?: boolean } | { local: { cwd?: string } }
+
+export interface SessionMetrics {
+  pingMs: number | null
+  uptimeSec: number | null
+  cpu: number | null
+  memory: number | null
+  disk: number | null
+}
 export type SavedLayout =
-  | { type: 'pane'; pane: SavedPane; color?: string }
+  | { type: 'pane'; pane: SavedPane; color?: string; terminalTheme?: string }
   | { type: 'split'; dir: 'row' | 'col'; sizes: number[]; children: SavedLayout[] }
 export interface SavedTab { title?: string; color?: string; root: SavedLayout; focused: number; zoomed?: number | null }
 export interface SavedWorkspace { tabs: SavedTab[]; active: number; savedAt: number }
@@ -325,14 +335,14 @@ export interface ClipboardInfo {
   imageSize?: { width: number; height: number }
 }
 
-export const LINUX_FONT_FAMILY = "'DejaVu Sans Mono', 'Noto Sans Mono', 'D2Coding', 'Noto Sans CJK KR', monospace"
+export const LINUX_FONT_FAMILY = "'D2Coding ligature', 'D2Coding', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Noto Sans CJK KR', monospace"
 
-export const MAC_FONT_FAMILY = "Menlo, 'D2Coding', 'Apple SD Gothic Neo', monospace"
+export const MAC_FONT_FAMILY = "'D2Coding ligature', 'D2Coding', Menlo, 'Apple SD Gothic Neo', monospace"
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   terminalTheme: 'BrightTerm Dark',
-  fontFamily: "'Cascadia Mono', 'D2Coding', Consolas, 'Malgun Gothic', monospace",
+  fontFamily: "'D2Coding ligature', 'D2Coding', 'Cascadia Mono', Consolas, 'Malgun Gothic', monospace",
   fontSize: 14,
   lineHeight: 1.15,
   cursorStyle: 'block',

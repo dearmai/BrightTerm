@@ -6,7 +6,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { api } from './api'
 import { useApp } from './state'
-import { TERMINAL_THEMES } from './themes'
+import { TERMINAL_THEMES, resolveTerminalTheme } from './themes'
 import { panes, findPane } from './layout'
 import type { Settings } from '@shared/types'
 import { actionOf, combo, isMac } from './platform'
@@ -32,6 +32,13 @@ function parkingLot(): HTMLDivElement {
     document.body.appendChild(parking)
   }
   return parking
+}
+
+function sessionTheme(sessionId: string, s: Settings): string {
+  const st = useApp.getState()
+  const pane = st.tabs.flatMap((t) => panes(t.root)).find((p) => p.sessionId === sessionId)
+  const hostId = st.sessions[sessionId]?.hostId
+  return resolveTerminalTheme(pane?.terminalTheme, st.hosts.find((h) => h.id === hostId)?.terminalTheme, s.terminalTheme)
 }
 
 function termOptions(s: Settings): ConstructorParameters<typeof Terminal>[0] {
@@ -72,7 +79,7 @@ export function ensureEntry(sessionId: string): TermEntry {
   let e = entries.get(sessionId)
   if (e) return e
   const settings = useApp.getState().settings
-  const term = new Terminal(termOptions(settings))
+  const term = new Terminal({ ...termOptions(settings), theme: TERMINAL_THEMES[sessionTheme(sessionId, settings)] })
   const fit = new FitAddon()
   const search = new SearchAddon()
   term.loadAddon(fit)
@@ -172,7 +179,7 @@ export function applySettingsToAll(s: Settings): void {
     e.term.options.cursorStyle = o!.cursorStyle
     e.term.options.cursorBlink = o!.cursorBlink
     e.term.options.scrollback = o!.scrollback
-    e.term.options.theme = o!.theme
+    e.term.options.theme = TERMINAL_THEMES[sessionTheme(e.sessionId, s)]
     fitEntry(e)
   }
 }

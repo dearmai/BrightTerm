@@ -20,6 +20,7 @@ asarUnpack:
   - node_modules/cpu-features/**
   - node_modules/node-pty/**
 npmRebuild: false
+beforePack: scripts/prepare-macos-signing.cjs
 # 법적 고지 — 설치된 앱의 resources/legal/ 에 들어가고 설정 → 정보에서 연다
 extraResources:
   - from: LICENSE
@@ -58,9 +59,11 @@ mac:
   icon: build/icon.png
   category: public.app-category.developer-tools
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
-  # 사내 배포용: Developer ID 대신 ad-hoc 서명('-'). 서명이 아예 없으면 macOS 가
-  # 로컬 네트워크 권한 창을 띄우지 못해 192.168.x.x 접속이 "네트워크에 도달할 수 없습니다"로 막힌다.
-  identity: '-'
+  # 로컬 배포: 전용 자체 서명 인증서를 생성·재사용한다.
+  # custom sign이 실제 인증서를 지정하며, 로컬 빌드는 타임스탬프·공증을 요청하지 않는다.
+  identity: BrightTerm Local Development
+  sign: scripts/sign-macos-local.cjs
+  notarize: false
   hardenedRuntime: false
   extendInfo:
     NSLocalNetworkUsageDescription: 사내 네트워크(192.168.x.x 등)의 SSH·텔넷 서버에 접속하려면 로컬 네트워크 접근이 필요합니다.

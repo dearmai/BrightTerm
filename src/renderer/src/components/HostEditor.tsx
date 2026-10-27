@@ -6,6 +6,8 @@ import { Modal, Field, Seg, ColorPick, Switch } from './ui'
 import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJump, type ProxyConfig, type ProxyType, type SerialOptions, type TmuxCheck } from '@shared/types'
 import { isMac, isWindows } from '../platform'
 
+import { TERMINAL_THEMES } from '../themes'
+
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
 const DEFAULT_SERIAL: SerialOptions = { path: isWindows ? 'COM1' : '', baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none', enterSends: 'CR', localEcho: false }
 const BAUDS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
@@ -303,7 +305,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                   <div className="toggle">
                     <div className="t-label">
                       <span>tmux 마우스 모드</span>
-                      <small>켜면 마우스 휠로 tmux 화면을 스크롤합니다(드래그 선택은 손을 떼면 풀리고 {isMac ? '⌥' : 'Shift'}+드래그로 유지). 끄면 드래그 선택이 유지되고 휠은 위·아래 키로 보냅니다. 접속 중에는 패널 우클릭 메뉴에서 바꿀 수 있습니다.</small>
+                      <small>켜면 마우스 휠로 tmux 기록을 스크롤합니다(드래그 선택은 손을 떼면 풀리고 {isMac ? '⌥' : 'Shift'}+드래그로 유지). 끄면 드래그 선택이 유지되지만, tmux의 대체 화면에서는 터미널이 휠을 ↑/↓ 방향키로 바꿔 보냅니다(Page Up/Down 아님). 셸에서는 이전 명령이 나오거나 프로그램의 커서가 움직일 수 있습니다. 휠로 기록을 보려면 마우스 모드를 켜세요. 접속 중에도 패널 우클릭 메뉴에서 바꿀 수 있습니다.</small>
                     </div>
                     <Switch value={h.persistMouse ?? true} onChange={(v) => set('persistMouse', v)} />
                   </div>
@@ -330,6 +332,12 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
               <Seg value={h.env ?? 'none'} onChange={(v) => set('env', v)} options={ENVS.map((e) => ({ value: e, label: <><span className="dot" style={{ background: ENV_COLORS[e] }} />{ENV_LABELS[e]}</> }))} />
             </Field>
             <Field label="색상 (지정하지 않으면 환경/폴더 색을 따름)"><ColorPick value={h.color} onChange={(v) => set('color', v)} /></Field>
+            <Field label="기본 터미널 테마" hint="서버 설정과 함께 동기화됩니다. 패널에서 개별 변경할 수 있습니다.">
+              <select className="select" value={h.terminalTheme ?? ''} onChange={(e) => set('terminalTheme', e.target.value || undefined)}>
+                <option value="">앱 기본값 따르기</option>
+                {Object.keys(TERMINAL_THEMES).map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </Field>
             <Field label="메모"><textarea className="textarea" rows={2} style={{ fontFamily: 'inherit' }} value={h.notes ?? ''} onChange={(e) => set('notes', e.target.value)} /></Field>
           </>
         )}

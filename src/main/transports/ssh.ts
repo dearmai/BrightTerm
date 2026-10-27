@@ -4,6 +4,7 @@ import { createServer, Server, connect as netConnect } from 'net'
 import { Client, ClientChannel, ConnectConfig, SFTPWrapper, utils, AnyAuthMethod, AuthenticationType } from 'ssh2'
 import type { Host, CredentialSecret, TmuxPick, TmuxSessionInfo } from '@shared/types'
 import type { Transport } from './types'
+import { connectSshClient } from './sshConnection'
 import { ask } from '../ui'
 import { store } from '../store'
 import { vault } from '../vault'
@@ -229,12 +230,12 @@ export async function openClient(host: Host, ctx: SshContext, depth = 0): Promis
   } as ConnectConfig
 
   const client = new Client()
-  await new Promise<void>((resolve, reject) => {
-    client.once('ready', () => resolve())
-    client.once('error', (e) => reject(e))
-    client.connect(cfg)
-  })
-  client.on('error', () => { /* handled by close */ })
+  try {
+    await connectSshClient(client, cfg)
+  } catch (error) {
+    for (const jump of chain.reverse()) jump.end()
+    throw error
+  }
   if (typedPassword && saveTyped) ctx.onSavePassword?.(username, typedPassword)
   return { client, chain }
 }
