@@ -19,9 +19,12 @@ final class Tmux {
         return custom.isEmpty() ? "bt-" + base : base;
     }
     static String startup(JSONObject profile) {
+        return startup(profile, name(profile));
+    }
+    static String startup(JSONObject profile, String name) {
         String command = profile.optString("command", "").trim();
         if (!profile.optBoolean("persist", false)) return command;
-        String name = name(profile), target = quote("=" + name);
+        String target = quote("=" + name);
         String create = "tmux new-session -d -s " + quote(name) + " -c \"$PWD\" && tmux set-option -t " + target + " status off >/dev/null";
         if (!command.isEmpty()) create += " && tmux send-keys -t " + target + " -l " + quote(command) + " && tmux send-keys -t " + target + " Enter";
         String inner = "tmux has-session -t " + target + " 2>/dev/null || { " + create + "; }; tmux set-option -t " + target + " mouse " +

@@ -36,6 +36,38 @@ function fit(session) {
     /* First frame may have no dimensions. */
   }
 }
+let fontFrame = 0;
+function setFontSize(value) {
+  const size = Math.max(10, Math.min(28, Math.round(value)));
+  if (fontSize === size) return;
+  fontSize = size;
+  for (const s of sessions.values()) s.term.options.fontSize = size;
+  if (!fontFrame) fontFrame = requestAnimationFrame(() => {
+    fontFrame = 0;
+    fit(current());
+  });
+}
+function enablePinch(pane) {
+  let gesture = null, suppress = false;
+  const distance = (touches) => Math.hypot(
+    touches[0].clientX - touches[1].clientX,
+    touches[0].clientY - touches[1].clientY,
+  );
+  const handle = (event) => {
+    if (event.touches.length >= 2) {
+      suppress = true;
+      if (!gesture) gesture = { distance: Math.max(1, distance(event.touches)), size: fontSize };
+      if (event.type === "touchmove") setFontSize(gesture.size * distance(event.touches) / gesture.distance);
+    }
+    if (suppress) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!event.touches.length) { gesture = null; suppress = false; }
+    }
+  };
+  for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"])
+    pane.addEventListener(type, handle, { capture: true, passive: false });
+}
 function select(id) {
   active = id;
   for (const s of sessions.values()) {
@@ -87,6 +119,7 @@ function createSession(id, name) {
   });
   const fitAddon = new FitAddon.FitAddon();
   term.loadAddon(fitAddon);
+  enablePinch(pane);
   term.open(pane);
   const tab = document.createElement("div");
   tab.className = "tab";
@@ -412,12 +445,7 @@ document.addEventListener(
           ],
         );
     } else if (["+", "=", "-"].includes(event.key)) {
-      fontSize = Math.max(
-        10,
-        Math.min(28, fontSize + (event.key === "-" ? -1 : 1)),
-      );
-      for (const s of sessions.values()) s.term.options.fontSize = fontSize;
-      fit(current());
+      setFontSize(fontSize + (event.key === "-" ? -1 : 1));
     } else handled = false;
     if (handled) event.preventDefault();
   },

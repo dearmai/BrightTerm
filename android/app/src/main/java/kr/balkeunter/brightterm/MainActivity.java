@@ -24,6 +24,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     private boolean ready, bound, resumed;
     private final ExecutorService storage = Executors.newSingleThreadExecutor();
     private final java.util.Set<CompletableFuture<Boolean>> prompts = ConcurrentHashMap.newKeySet();
+    private final java.util.Set<CompletableFuture<String>> tmuxPrompts = ConcurrentHashMap.newKeySet();
     private final ServiceConnection connection = new ServiceConnection() {
         public void onServiceConnected(ComponentName name, IBinder binder) {
             service = ((TerminalService.LocalBinder)binder).service(); if (ready) service.attach(MainActivity.this);
@@ -100,6 +101,34 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         try { return answer.get(90, TimeUnit.SECONDS); }
         catch (Exception error) { answer.complete(false); return false; }
         finally { prompts.remove(answer); }
+    }
+    @Override public String chooseTmux(String host, java.util.List<String> names, java.util.function.BooleanSupplier alive) {
+        // null cancels, empty creates a new session, NUL selects a plain SSH shell.
+        CompletableFuture<String> answer = new CompletableFuture<>(); tmuxPrompts.add(answer);
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed() || answer.isDone()) { answer.complete(null); return; }
+            String[] choices = new String[names.size() + 2];
+            for (int i = 0; i < names.size(); i++) choices[i] = "기존 세션: " + names.get(i);
+            choices[names.size()] = "신규 tmux 세션 생성";
+            choices[names.size() + 1] = "일반 SSH 셸 (tmux 사용 안 함)";
+            int[] selected = { names.isEmpty() ? names.size() : 0 };
+            AlertDialog dialog = new AlertDialog.Builder(this).setTitle(host + " · 접속 방식")
+                .setSingleChoiceItems(choices, selected[0], (d, which) -> selected[0] = which)
+                .setPositiveButton("연결", (d, which) -> answer.complete(selected[0] < names.size() ? names.get(selected[0]) : selected[0] == names.size() ? "" : "\0"))
+                .setNegativeButton("취소", (d, which) -> answer.complete(null))
+                .setOnCancelListener(d -> answer.complete(null)).create();
+            dialog.show();
+            answer.whenComplete((value, error) -> runOnUiThread(dialog::dismiss));
+        });
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
+        try {
+            while (alive.getAsBoolean() && System.nanoTime() < deadline) {
+                try { return answer.get(250, TimeUnit.MILLISECONDS); }
+                catch (TimeoutException ignored) { }
+            }
+            return null;
+        } catch (Exception error) { return null; }
+        finally { answer.complete(null); tmuxPrompts.remove(answer); }
     }
     private void profiles() {
         storage.execute(() -> { try { event(eventOf("profiles", "", vault.publicProfiles().toString())); } catch (Exception error) { fail(error); } });
@@ -202,6 +231,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     }
     @Override public void onConfigurationChanged(Configuration configuration) { super.onConfigurationChanged(configuration); if (web != null) web.requestApplyInsets(); }
     @Override protected void onDestroy() {
+        for (CompletableFuture<String> prompt : tmuxPrompts) prompt.complete(null);
         for (CompletableFuture<Boolean> prompt : prompts) prompt.complete(false);
         if (service != null && service.listener == this) service.listener = null;
         if (gitSync != null) gitSync.detach(this);

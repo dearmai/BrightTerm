@@ -15,7 +15,7 @@ import java.util.concurrent.*;
 
 /** Owns sockets independently of the Activity so window resize/display changes preserve sessions. */
 public class TerminalService extends Service {
-    interface Listener { void event(JSONObject event); boolean trust(String host, String fingerprint); }
+    interface Listener { void event(JSONObject event); boolean trust(String host, String fingerprint); String chooseTmux(String host, List<String> names, java.util.function.BooleanSupplier alive); }
     volatile Listener listener;
     final ExecutorService workers = Executors.newCachedThreadPool();
     private final Map<String, Connection> connections = new ConcurrentHashMap<>();
@@ -116,11 +116,24 @@ public class TerminalService extends Service {
                 if (c.closed) return;
                 c.session.connect(25000);
                 if (c.closed) return;
+                String command;
+                if (profile.optBoolean("persist", false)) {
+                    List<String> names = tmuxSessions(c);
+                    Listener l = listener;
+                    String choice = l == null ? null : l.chooseTmux(c.name, names, () -> !c.closed);
+                    if (choice == null || c.closed) return;
+                    if (choice.equals("\0")) command = profile.optString("command", "").trim();
+                    else {
+                        String name = choice.isEmpty() ? Tmux.name(profile) : choice;
+                        if (choice.isEmpty() && names.contains(name)) name += "-" + UUID.randomUUID().toString().substring(0, 8);
+                        command = Tmux.startup(profile, name);
+                    }
+                } else command = Tmux.startup(profile);
+                if (c.closed) return;
                 c.shell = (ChannelShell)c.session.openChannel("shell");
                 c.shell.setPtyType("xterm-256color", c.cols, c.rows, 0, 0);
                 InputStream output = c.shell.getInputStream(); c.input = c.shell.getOutputStream(); c.shell.connect(15000);
                 c.state = "connected"; emit("state", c.id, c.state);
-                String command = Tmux.startup(profile);
                 if (!command.trim().isEmpty()) { c.input.write((command + "\r").getBytes(StandardCharsets.UTF_8)); c.input.flush(); }
                 byte[] buffer = new byte[16384]; int count;
                 while (!c.closed && (count = output.read(buffer)) != -1) {
@@ -133,6 +146,29 @@ public class TerminalService extends Service {
                 if (!c.closed) emit("error", c.id, error.getMessage() == null ? "SSH 연결 실패" : error.getMessage());
             } finally { c.close(); c.state = "disconnected"; emit("state", c.id, c.state); }
         });
+    }
+    private List<String> tmuxSessions(Connection c) throws Exception {
+        ChannelExec channel = (ChannelExec)c.session.openChannel("exec");
+        try {
+            channel.setCommand("if command -v tmux >/dev/null 2>&1; then tmux list-sessions -F '#S' 2>/dev/null; fi");
+            InputStream output = channel.getInputStream();
+            channel.connect(10000);
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (!c.closed) {
+                while (output.available() > 0) {
+                    bytes.write(output.read());
+                    if (bytes.size() > 65536) throw new IOException("tmux 세션 목록이 너무 큽니다.");
+                }
+                if (channel.isClosed() && output.available() == 0) break;
+                if (System.nanoTime() > deadline) throw new IOException("tmux 세션 조회 시간 초과");
+                Thread.sleep(25);
+            }
+            List<String> names = new ArrayList<>();
+            for (String name : bytes.toString("UTF-8").split("\n"))
+                if (!name.isEmpty() && !names.contains(name)) names.add(name);
+            return names;
+        } finally { channel.disconnect(); }
     }
     private static class PasswordInfo implements UserInfo, UIKeyboardInteractive {
         private final String password;

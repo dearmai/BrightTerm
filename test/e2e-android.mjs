@@ -18,7 +18,7 @@ let browserSocket, server, forwardedPort, connections=0, lastPty;
 let expectedPassword='android-test-secret';
 const identity=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs1',format:'pem'});
 const parsedIdentity=ssh2.utils.parseKey(identity);
-let received='';
+let received='', shells=0;
 let hostKey = () => generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs1',format:'pem'});
 async function startServer(port=0) {
   server = new Server({hostKeys:[hostKey()]}, client => {
@@ -40,7 +40,8 @@ async function startServer(port=0) {
         sftp.on('READDIR',(id)=>{ if(listed) sftp.status(id,ssh2.utils.sftp.STATUS_CODE.EOF); else {listed=true;sftp.name(id,[{filename:'hello.txt',longname:'-rw-r--r-- 1 tester tester 5 Jan 1 00:00 hello.txt',attrs:{mode:0o100644,size:5,uid:1000,gid:1000,atime:0,mtime:0}}]);} });
         sftp.on('CLOSE',(id)=>sftp.status(id,ssh2.utils.sftp.STATUS_CODE.OK));
       });
-      session.on('shell', accept => { const stream = accept(); stream.write('BrightTerm Android test shell\r\n'); stream.on('data', data => {received+=data.toString(); stream.write(data);}); });
+      session.on('exec', (accept, reject, info) => { const stream=accept(); assert.match(info.command,/tmux list-sessions/); stream.end("shared\nbt-Android-E2E\nodd'quote\n"); });
+      session.on('shell', accept => { shells++; const stream = accept(); stream.write('BrightTerm Android test shell\r\n'); stream.on('data', data => {received+=data.toString(); stream.write(data);}); });
     }); });
   });
   await new Promise(resolve => server.listen(port,'127.0.0.1',resolve));
@@ -71,16 +72,16 @@ async function attach() {
   await new Promise((resolve,reject) => {browserSocket.onopen=resolve; browserSocket.onerror=reject;});
   await until(() => evaluate('!!window.nativeEvent'), 'App script did not load');
 }
-async function clickTrust(accept=true) {
+async function clickNative(label) {
   await until(async () => {
     try { adb('shell','uiautomator','dump','/sdcard/brightterm-test.xml'); }
     catch (error) { if (!error.stdout?.includes('UI hierchary dumped')) return false; }
     const xml=adb('shell','cat','/sdcard/brightterm-test.xml');
-    const label=accept ? '신뢰하고 연결' : '취소';
-    const node=xml.match(new RegExp(`<node[^>]*text="${label}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`));
+    const escaped=label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const node=xml.match(new RegExp(`<node[^>]*text="${escaped}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`));
     if(!node) return false;
     adb('shell','input','tap',String((+node[1]+ +node[3])/2|0),String((+node[2]+ +node[4])/2|0));return true;
-  },'Host trust prompt did not appear');
+  },`Native option did not appear: ${label}`);
 }
 async function connectForm(port,remember=false) {
   await evaluate(`openEditor(); Object.assign($('form').elements.name,{value:'Android E2E'}); $('form').elements.host.value='127.0.0.1'; $('form').elements.port.value=${port}; $('form').elements.username.value='tester'; $('form').elements.password.value=${JSON.stringify(expectedPassword)}; $('form').elements.remember.checked=${remember}; $('form').requestSubmit();`);
@@ -93,9 +94,9 @@ try {
   await delay(300);
   await evaluate("for(const p of profiles.filter(p=>p.name==='Android E2E')) Android.delete(p.id)");
   await delay(300);
-  await evaluate("window.testEvents=[]; window.originalHandler=window.nativeEvent; window.nativeEvent=e=>{window.testEvents.push(e.type==='data'?{...e,value:'bytes'}:e);window.originalHandler(e)}");
+  await evaluate("window.testEvents=[]; window.originalHandler=window.nativeEvent; window.nativeEvent=e=>{window.testEvents.push(['data','key'].includes(e.type)?{...e,value:'redacted'}:e);window.originalHandler(e)}");
   assert(await evaluate("getComputedStyle($('sidebar')).display==='none'"),'Phone sidebar collapsed'); screenshot('phone.png');
-  await connectForm(port,true); await clickTrust();
+  await connectForm(port,true); await clickNative('신뢰하고 연결');
   await until(() => evaluate("current()?.state==='connected'"),'SSH did not connect');
   await until(() => evaluate("profiles.some(p=>p.name==='Android E2E')"),'Profile not saved');
   const encrypted=execFileSync(adbBin,['-s',serial,'shell','run-as',pkg,'cat','files/profiles.enc']);
@@ -105,6 +106,25 @@ try {
   assert.equal(connections,1);
   await evaluate("$('ctrl').click(); current().term.input('c')");
   await until(()=>received.includes('\x03'),'Touch Ctrl+C failed');
+  // Actual WebView multi-touch events resize glyphs and the remote PTY without reconnecting.
+  const center=await evaluate("(()=>{const r=current().pane.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+  const points=gap=>[{x:center.x,y:center.y-gap/2,id:1},{x:center.x,y:center.y+gap/2,id:2}];
+  const beforePinch=received;
+  await cdp('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:points(40)});
+  await cdp('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:points(240)});
+  await until(()=>evaluate('current().term.options.fontSize===28'),'Pinch out failed');
+  const enlargedCols=await evaluate('current().term.cols');
+  await cdp('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:points(2)});
+  await until(()=>evaluate('current().term.options.fontSize===10'),'Pinch in failed');
+  await cdp('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await until(()=>lastPty?.cols>enlargedCols,'Pinch did not resize remote PTY');
+  assert.equal(received,beforePinch,'Pinch sent terminal input');
+  assert.equal(connections,1,'Pinch reconnected SSH');
+  // One finger remains available to xterm and never changes font size.
+  await cdp('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:center.x,y:center.y,id:1}]});
+  await cdp('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:center.x,y:center.y-30,id:1}]});
+  await cdp('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.equal(await evaluate('current().term.options.fontSize'),10);
   await evaluate("$('sftp').click()");
   await until(()=>evaluate("$('file-list').textContent.includes('hello.txt')"),'SFTP listing failed');
   await evaluate("$('file-list').querySelector('button').click(); $('close-files').click()");
@@ -124,16 +144,37 @@ try {
   // Exercise real JSch private-key authentication using a fresh ephemeral identity.
   await evaluate(`openEditor(); $('form').elements.name.value='Key E2E'; $('form').elements.host.value='127.0.0.1'; $('form').elements.port.value=${port}; $('form').elements.username.value='tester'; $('form').elements.remember.checked=false; window.nativeEvent({type:'key',value:${JSON.stringify(identity)}}); $('form').requestSubmit();`);
   await until(()=>connections===3,'Private-key authentication failed');
+  // First connection offers exact existing targets, a distinct new session, or a plain shell.
+  async function tmuxConnect(option) {
+    await evaluate(`Android.connect(JSON.stringify({inheritId:${JSON.stringify(savedId)},persist:true,persistName:'shared',command:'echo startup'}),80,24)`);
+    await clickNative(option);
+    await clickNative('연결');
+    await until(()=>evaluate("current()?.state==='connected'"),'Tmux selection did not connect');
+  }
+  received=''; await tmuxConnect("기존 세션: odd'quote");
+  await until(()=>received.includes('attach-session'),'Existing tmux startup missing');
+  assert(received.includes("odd") && received.includes("quote") && !received.includes("odd-quote"), "Existing session name was altered");
+  received=''; await tmuxConnect('신규 tmux 세션 생성');
+  await until(()=>received.includes('attach-session'),'New tmux startup missing');
+  assert.match(received,/new-session -d -s.*shared-[a-f0-9]{8}/,'New session reused an existing name');
+  received=''; await tmuxConnect('일반 SSH 셸 (tmux 사용 안 함)');
+  await until(()=>received.includes('echo startup'),'Plain shell lost startup command');
+  assert(!received.includes('tmux'),'Plain SSH selection launched tmux');
+  const shellCount=shells;
+  await evaluate(`Android.connect(JSON.stringify({inheritId:${JSON.stringify(savedId)},persist:true}),80,24)`);
+  await clickNative('취소');
+  await until(()=>evaluate("current()?.state==='disconnected'"),'Cancelled selection stayed connecting');
+  assert.equal(shells,shellCount,'Cancel opened a shell');
   await evaluate("for(const id of [...sessions.keys()]) { Android.disconnect(id); } window.nativeEvent({type:'reset'});");
   await new Promise(resolve => server.close(resolve));
   // Same address + port, different host key must fail closed without asking to overwrite.
   await startServer(port);
   await evaluate(`Android.connect(JSON.stringify({savedId:${JSON.stringify(savedId)}}),80,24)`);
   await until(() => evaluate("current()?.state==='disconnected'"),'Changed key was not rejected');
-  assert.equal(connections,3,'Changed host key authenticated');
+  assert.equal(connections,7,'Changed host key authenticated');
   assert.match(await evaluate("$('toast').textContent"),/HostKey|host.?key|reject/i);
   await evaluate(`Android.delete(${JSON.stringify(savedId)}); for(const id of sessions.keys()) Android.disconnect(id);`);
-  console.log('PASS: phone/desktop layouts, encrypted profiles, password/key SSH, SFTP listing, UTF-8 I/O, touch Ctrl+C, PTY resize without reconnect, background retention, trusted reconnect, changed-host-key rejection.');
+  console.log('PASS: phone/desktop layouts, encrypted profiles, password/key SSH, SFTP listing, UTF-8 I/O, touch Ctrl+C, pinch font/PTY resize, tmux existing/new/plain/cancel selection, PTY resize without reconnect, background retention, trusted reconnect, changed-host-key rejection.');
 } finally {
   browserSocket?.close();
   server?.close();

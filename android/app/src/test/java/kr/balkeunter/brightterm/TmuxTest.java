@@ -38,6 +38,22 @@ public class TmuxTest {
             profile.put("persist", false); assertEquals(profile.getString("command"), Tmux.startup(profile));
         } finally { remove(root); }
     }
+    @Test public void selectedExistingNameIsPreservedAndShellQuoted() throws Exception {
+        Path root = Files.createTempDirectory("brightterm-tmux-name-");
+        try {
+            Path bin = root.resolve("tmux"), log = root.resolve("calls"), started = root.resolve("started");
+            Files.write(bin, ("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$BT_LOG\"\nexit 0\n").getBytes(StandardCharsets.UTF_8));
+            assertTrue(bin.toFile().setExecutable(true));
+            String name = "odd'quote; touch injected";
+            JSONObject profile = new JSONObject().put("persist", true).put("command", "echo should-not-run");
+            run(Tmux.startup(profile, name), root, log, started);
+            String calls = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
+            assertTrue(calls.contains("attach-session -t =" + name));
+            assertFalse(calls.contains("new-session"));
+            assertFalse(calls.contains("send-keys"));
+            assertFalse(Files.exists(root.resolve("injected")));
+        } finally { remove(root); }
+    }
     @Test public void namesAndQuotingMatchDesktopRules() throws Exception {
         JSONObject p = new JSONObject().put("name", "My Prod").put("id", "host-1");
         assertEquals("bt-My-Prod", Tmux.name(p)); p.put("persistName", "a'; touch bad");
@@ -45,7 +61,7 @@ public class TmuxTest {
         assertEquals("'a'\\''b'", Tmux.quote("a'b"));
     }
     private static void run(String script, Path root, Path log, Path session) throws Exception {
-        ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", script).redirectErrorStream(true);
+        ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", script).directory(root.toFile()).redirectErrorStream(true);
         builder.environment().put("PATH", root.toString() + ":/bin"); builder.environment().put("BT_LOG", log.toString()); builder.environment().put("BT_SESSION", session.toString());
         Process process = builder.start(); String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals(output, 0, process.waitFor());
