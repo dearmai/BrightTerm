@@ -3,10 +3,11 @@ import { KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOpen, Search, C
 import { useApp, newHost } from '../state'
 import { api } from '../api'
 import { Modal, Field, Seg, ColorPick, Switch } from './ui'
-import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJump, type ProxyConfig, type ProxyType, type SerialOptions, type TmuxCheck } from '@shared/types'
+import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJump, type KeyOptions, type ProxyConfig, type ProxyType, type SerialOptions, type TmuxCheck } from '@shared/types'
 import { isMac, isWindows } from '../platform'
 
 import { TERMINAL_THEMES } from '../themes'
+import { ENCODINGS, TERMINAL_PRESETS, applyPreset, hostKeys, matchPreset } from '@shared/terminal'
 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
 const DEFAULT_SERIAL: SerialOptions = { path: isWindows ? 'COM1' : '', baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none', enterSends: 'CR', localEcho: false }
@@ -26,7 +27,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   const { groups, hosts, creds, vault } = useApp()
   const isNew = !initial
   const [h, setH] = useState<Host>(() => initial ? structuredClone(initial) : newHost(groupId ?? null))
-  const [tab, setTab] = useState<'basic' | 'auth' | 'adv' | 'fw'>('basic')
+  const [tab, setTab] = useState<'basic' | 'auth' | 'term' | 'adv' | 'fw'>('basic')
   const [password, setPassword] = useState('')
   const [keyText, setKeyText] = useState('')
   const [keyPath, setKeyPath] = useState('')
@@ -66,6 +67,9 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   }, [])
 
   const set = <K extends keyof Host>(k: K, v: Host[K]): void => setH((x) => ({ ...x, [k]: v }))
+  const keys = hostKeys(h)
+  const setKeys = (p: Partial<KeyOptions>): void => set('keys', { ...keys, ...p })
+  const preset = matchPreset(h)
   const refreshPorts = (): void => { api.serial.list().then(setPorts) }
   useEffect(() => { if (h.protocol === 'serial') refreshPorts() }, [h.protocol])
   useEffect(() => { if (h.protocol === 'local' && !shells.length) api.local.shells().then(setShells) }, [h.protocol])
@@ -200,7 +204,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
         <button className="btn primary" onClick={() => save(true)}>저장 후 연결</button>
       </>}>
       <div className="mtabs">
-        {([['basic', '기본'], ['auth', '인증'], ['adv', '고급'], ['fw', '포트 포워딩']] as const).filter(([k]) => h.protocol === 'ssh' || (k !== 'auth' && k !== 'fw')).map(([k, l]) => (
+        {([['basic', '기본'], ['auth', '인증'], ['term', '터미널'], ['adv', '고급'], ['fw', '포트 포워딩']] as const).filter(([k]) => (h.protocol === 'ssh' || (k !== 'auth' && k !== 'fw')) && (h.protocol !== 'local' || k !== 'term')).map(([k, l]) => (
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -497,15 +501,48 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
             {h.protocol === 'local' ? (
               <Field label="터미널 종류"><input className="input mono" value={h.termType} onChange={(e) => set('termType', e.target.value)} /></Field>
             ) : (
-            <div className="grid3">
-              <Field label="문자 인코딩">
+              h.protocol !== 'serial' && <Field label="Keepalive (초)"><input className="input mono" type="number" value={h.keepaliveSec} onChange={(e) => set('keepaliveSec', +e.target.value || 0)} /></Field>
+            )}
+          </>
+        )}
+
+        {tab === 'term' && (
+          <>
+            <Field label="서버 종류 템플릿" hint={preset ? preset.hint : '사용자 지정 — 아래 값을 직접 바꿨습니다. 템플릿을 누르면 그 값으로 돌아갑니다.'}>
+              <div className="seg">
+                {TERMINAL_PRESETS.map((p) => (
+                  <button type="button" key={p.id} className={preset?.id === p.id ? 'on' : ''} title={p.hint} onClick={() => setH((x) => applyPreset(x, p))}>{p.label}</button>
+                ))}
+              </div>
+            </Field>
+            <div className="grid2">
+              <Field label="문자 인코딩" hint="한글이 깨지면 서버의 locale(LANG) 에 맞추세요. 예: ko_KR.UTF-8 → UTF-8, ko_KR.eucKR·IBM-eucKR → EUC-KR">
                 <select className="select" value={h.encoding} onChange={(e) => set('encoding', e.target.value as Host['encoding'])}>
-                  <option value="utf-8">UTF-8</option><option value="cp949">CP949 / EUC-KR (구형 장비)</option><option value="shift_jis">Shift_JIS</option><option value="latin1">Latin-1</option>
+                  {ENCODINGS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
                 </select>
               </Field>
-              <Field label="터미널 종류"><input className="input mono" value={h.termType} onChange={(e) => set('termType', e.target.value)} /></Field>
-              <Field label="Keepalive (초)"><input className="input mono" type="number" value={h.keepaliveSec} onChange={(e) => set('keepaliveSec', +e.target.value || 0)} /></Field>
+              {h.protocol !== 'serial' && (
+                <Field label="터미널 종류 (TERM)" hint="화면이 깨지거나 vi·smitty 가 이상하면 xterm 또는 vt100 으로">
+                  <input className="input mono" list="term-types" value={h.termType} onChange={(e) => set('termType', e.target.value)} />
+                  <datalist id="term-types">{['xterm-256color', 'xterm', 'vt100', 'vt220', 'ansi', 'dtterm', 'aixterm', 'linux', 'screen-256color'].map((t) => <option key={t} value={t} />)}</datalist>
+                </Field>
+              )}
             </div>
+            <Field label="Backspace 키" hint={h.protocol === 'ssh' ? 'SSH 는 접속할 때 서버의 stty erase 도 이 값으로 맞춥니다. 그래도 안 되면 서버 .profile 의 stty erase 를 확인하세요.' : '서버의 stty erase 값과 같아야 지워집니다. Ctrl+Backspace 는 반대 코드를 보냅니다.'}>
+              <Seg value={keys.backspace} onChange={(v) => setKeys({ backspace: v })} options={[{ value: 'del', label: '^? DEL (0x7F) — Linux' }, { value: 'ctrl-h', label: '^H (0x08) — AIX·HP-UX' }]} />
+            </Field>
+            <div className="grid2">
+              <Field label="Delete 키">
+                <Seg value={keys.delete} onChange={(v) => setKeys({ delete: v })} options={[{ value: 'vt220', label: 'ESC[3~' }, { value: 'del', label: '^? DEL' }]} />
+              </Field>
+              <Field label="Home / End 키">
+                <Seg value={keys.homeEnd} onChange={(v) => setKeys({ homeEnd: v })} options={[{ value: 'xterm', label: 'xterm (ESC[H)' }, { value: 'vt220', label: 'vt220 (ESC[1~)' }]} />
+              </Field>
+            </div>
+            {h.protocol !== 'serial' && (
+              <Field label="Enter 키" hint="일부 텔넷 장비는 CRLF 를 기다립니다">
+                <Seg value={keys.enter} onChange={(v) => setKeys({ enter: v })} options={[{ value: 'CR', label: 'CR' }, { value: 'CRLF', label: 'CRLF' }, { value: 'LF', label: 'LF' }]} />
+              </Field>
             )}
           </>
         )}

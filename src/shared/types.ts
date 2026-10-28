@@ -56,6 +56,21 @@ export interface ProxyConfig {
   insecure?: boolean
 }
 
+/** 서버 문자 인코딩 — AIX 의 IBM-eucKR 은 euc-kr, 윈도우 한글은 cp949 */
+export type Encoding = 'utf-8' | 'euc-kr' | 'cp949' | 'euc-jp' | 'shift_jis' | 'gbk' | 'big5' | 'latin1' | 'cp1252'
+
+/** 키 입력 코드 — 서버마다 기대하는 값이 다르다 (예: AIX 는 백스페이스가 ^H) */
+export interface KeyOptions {
+  /** del: ^? (0x7F, 리눅스 기본) / ctrl-h: ^H (0x08, AIX·HP-UX 등) */
+  backspace: 'del' | 'ctrl-h'
+  /** vt220: ESC[3~ / del: ^? */
+  delete: 'vt220' | 'del'
+  /** xterm: ESC[H·ESC[F / vt220: ESC[1~·ESC[4~ (PuTTY 기본) */
+  homeEnd: 'xterm' | 'vt220'
+  /** Enter 키 — SSH·텔넷 (시리얼은 시리얼 설정을 따른다) */
+  enter: 'CR' | 'CRLF' | 'LF'
+}
+
 /** 로컬 터미널 — 이 PC 의 셸. 빈 값이면 기본 셸 / 홈 폴더 */
 export interface LocalOptions {
   shell?: string
@@ -80,8 +95,12 @@ export interface Host {
   color?: string
   env?: Env
   tags: string[]
-  encoding: 'utf-8' | 'euc-kr' | 'cp949' | 'shift_jis' | 'latin1'
+  encoding: Encoding
   termType: string
+  /** 키 입력 코드 — 없으면 리눅스 기본값(DEFAULT_KEYS) */
+  keys?: KeyOptions
+  /** 고른 터미널 템플릿 id — 값이 같은 템플릿이 여럿일 때 표시용 */
+  terminalPreset?: string
   /** 서버 기본 터미널 테마 — 비우면 앱 설정을 따른다. 서버와 함께 동기화 */
   terminalTheme?: string
   startupCommand?: string

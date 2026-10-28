@@ -406,6 +406,7 @@ async function importApply(cands: ImportCandidate[], groupName: string): Promise
       tags: [c.source],
       encoding: h.encoding ?? 'utf-8',
       termType: h.termType ?? 'xterm-256color',
+      keys: h.keys,
       startupCommand: h.startupCommand,
       keepaliveSec: h.keepaliveSec ?? 30,
       forwards: h.forwards ?? [],

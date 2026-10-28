@@ -7,6 +7,13 @@ import java.util.*;
 /** Edits only Android-owned fields; preserves unsupported desktop hosts, groups and credentials. */
 final class SyncSnapshot {
     private static final String[] SECRETS = {"password", "privateKey", "passphrase"};
+    /** 서버 편집 → 터미널: 터미널 종류·인코딩·키 코드·고른 템플릿 */
+    static final String[] TERMINAL = {"termType", "encoding", "keys", "terminalPreset"};
+    private static void terminal(JSONObject p, JSONObject h) throws Exception {
+        p.put("termType", h.optString("termType", "xterm-256color")).put("encoding", h.optString("encoding", "utf-8"));
+        if (h.optJSONObject("keys") != null) p.put("keys", new JSONObject(h.getJSONObject("keys").toString()));
+        if (!h.optString("terminalPreset").isEmpty()) p.put("terminalPreset", h.getString("terminalPreset"));
+    }
     static JSONObject create(String password, byte[] key) throws Exception {
         JSONObject kdf = SyncCrypto.kdf(); byte[] kek = SyncCrypto.derive(password, kdf);
         try {
@@ -30,6 +37,7 @@ final class SyncSnapshot {
                 .put("host", h.getString("host")).put("port", h.getInt("port")).put("username", h.getString("username"))
                 .put("command", h.optString("startupCommand", "")).put("persist", h.optBoolean("persist", false))
                 .put("persistName", h.optString("persistName", "")).put("persistMouse", h.optBoolean("persistMouse", true));
+            terminal(p, h);
             if (credential != null) {
                 for (String secret : SECRETS) p.put(secret, credential.optString(secret, ""));
                 if (p.getString("username").isEmpty()) p.put("username", credential.optString("username", ""));
@@ -60,6 +68,11 @@ final class SyncSnapshot {
             }
             String[][] fields = {{"name", "alias"}, {"host", "host"}, {"port", "port"}, {"username", "username"}, {"command", "startupCommand"}, {"persist", "persist"}, {"persistName", "persistName"}, {"persistMouse", "persistMouse"}};
             for (String[] field : fields) if (fresh || changed(p, old, field[0])) host.put(field[1], p.opt(field[0]) == null ? (field[0].equals("persist") ? false : field[0].equals("persistMouse") ? true : "") : p.opt(field[0]));
+            for (String field : TERMINAL) if (fresh || changed(p, old, field)) {
+                if (p.opt(field) == null) host.remove(field); else host.put(field, p.get(field));
+            }
+            if (host.optString("encoding", "").isEmpty()) host.put("encoding", "utf-8");
+            if (host.optString("termType", "").isEmpty()) host.put("termType", "xterm-256color");
             boolean secretsChanged = fresh;
             for (String secret : SECRETS) secretsChanged |= changed(p, old, secret);
             if (secretsChanged) {
@@ -77,8 +90,8 @@ final class SyncSnapshot {
         SyncCrypto.validateSnapshot(snapshot); return snapshot;
     }
     private static String unsupported(JSONObject h) throws Exception {
-        return !h.isNull("jumpHostId") || !h.isNull("jump") || !h.isNull("proxy") || h.getJSONArray("forwards").length() > 0 || !"utf-8".equals(h.optString("encoding", "utf-8"))
-            ? "이 서버의 점프 호스트·프록시·포워딩·인코딩 설정은 Android에서 아직 지원하지 않습니다. 데스크톱 설정은 동기화에 보존됩니다." : "";
+        return !h.isNull("jumpHostId") || !h.isNull("jump") || !h.isNull("proxy") || h.getJSONArray("forwards").length() > 0
+            ? "이 서버의 점프 호스트·프록시·포워딩 설정은 Android에서 아직 지원하지 않습니다. 데스크톱 설정은 동기화에 보존됩니다." : "";
     }
     static void upgrade(Vault vault) throws Exception {
         synchronized (vault) {
@@ -101,6 +114,7 @@ final class SyncSnapshot {
             if (!p.has("persist")) p.put("persist", h != null && h.optBoolean("persist", false));
             if (!p.has("persistName")) p.put("persistName", h == null ? "" : h.optString("persistName", ""));
             if (!p.has("persistMouse")) p.put("persistMouse", h == null || h.optBoolean("persistMouse", true));
+            if (!p.has("encoding") && h != null) terminal(p, h);
             if (h != null) { String reason = unsupported(h); if (reason.isEmpty()) p.remove("unsupported"); else p.put("unsupported", reason); }
         }
         return !before.equals(profiles.toString());

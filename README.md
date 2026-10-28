@@ -107,7 +107,7 @@ FUSE가 없는 환경에서는 AppImage의 `--appimage-extract-and-run` 옵션�
 | 기능 | 사용법 |
 | --- | --- |
 | 로컬 터미널 | 내 PC의 셸(Linux: bash·zsh 등, macOS: zsh 등, Windows: PowerShell·cmd·WSL)을 엽니다. 바로 열려면 ⇧⌘T / Ctrl+Alt+T 또는 빠른 접속에서 "로컬". 자주 쓰는 폴더는 `+ 서버 → 프로토콜: 로컬`에서 **시작 폴더**와 셸을 정해 저장합니다. 예: `Work` 폴더에 프로젝트마다 하나씩 만들고 폴더 ▶로 4분할. 캡처를 붙여넣으면 `~/.brightterm/uploads/`에 저장하고 경로를 입력합니다. `exit` 후 Enter를 누르면 새 셸을 엽니다. |
-| 서버 가져오기 | `가져오기` 버튼. **PuTTY 세션**(Windows 레지스트리, macOS/Linux `~/.putty/sessions`)과 **`~/.ssh/config`**를 읽습니다. 호스트·포트·사용자·키·포트 포워딩(`LocalForward`/`RemoteForward`)·점프 호스트(`ProxyJump`)·시리얼·인코딩이 옮겨집니다. 처음 실행할 때 자동으로 제안합니다. |
+| 서버 가져오기 | `가져오기` 버튼. **PuTTY 세션**(Windows 레지스트리, macOS/Linux `~/.putty/sessions`)과 **`~/.ssh/config`**를 읽습니다. 호스트·포트·사용자·키·포트 포워딩(`LocalForward`/`RemoteForward`)·점프 호스트(`ProxyJump`)·시리얼·인코딩·백스페이스 키(`Control-H`) 설정이 옮겨집니다. 처음 실행할 때 자동으로 제안합니다. |
 | AWS EC2 가져오기 | `가져오기 → AWS EC2 불러오기`. 설치된 **aws CLI의 자격 증명**(`aws configure`)으로 모든 리전의 인스턴스를 읽습니다. 공인 IP가 없는 서버는 같은 VPC의 배스천(이름 앞부분이 같은 것 우선, 예: `shop-app` → `shop-bastion`)을 점프 호스트로 자동 연결합니다. 접속 계정은 AMI로 고르고(ubuntu/ec2-user 등), 키는 `~/.ssh/<키 페어 이름>.pem`에서 찾아 볼트에 넣습니다. |
 | 점프 호스트 (배스천 경유) | 서버 편집 → 고급 → 점프 호스트에서 먼저 거쳐 갈 서버를 고릅니다. 여러 단계도 됩니다. 베스천을 따로 등록하기 싫으면 **직접 입력**을 골라 베스천 주소·사용자·키를 그 자리에 적습니다(키는 볼트에 암호화). 서버를 더블클릭하면 베스천을 거쳐 한 번에 접속하고, 이 서버에 건 포트 포워딩(예: RDS 터널)도 같이 열립니다. |
 | 포트 포워딩 (터널링) | 서버 편집 → 고급 → 포트 포워딩. **L**(로컬: 내 PC 포트 → 서버 쪽 주소)과 **R**(원격: 서버 포트 → 내 PC 쪽 주소). 접속해 있는 동안 유지됩니다. 예: `L 127.0.0.1:9090 → 127.0.0.1:9090` 후 브라우저에서 `https://localhost:9090` |
@@ -126,6 +126,7 @@ FUSE가 없는 환경에서는 AppImage의 `--appimage-extract-and-run` 옵션�
 | 자동 재접속 | 연결이 끊기면 2·4·8…초 간격으로 다시 연결합니다. 끊긴 창에서 Enter를 누르면 바로 재접속합니다. |
 | 시리얼 (RS-485/USB) | 프로토콜에서 "시리얼"을 고릅니다. Windows는 `COM3`, macOS는 `/dev/cu.usbserial-…` 형식입니다. baud, 패리티, 흐름 제어, Enter 전송값(CR/LF/CRLF), 로컬 에코를 설정할 수 있습니다. |
 | 잠금 해제 | 마스터 비밀번호 대신 **Windows 계정** 또는 **macOS Touch ID(키체인)**으로 열 수 있습니다(설정 → 보안). |
+| 서버별 터미널 호환 | 서버 편집 → **터미널** 탭. Linux·AIX·HP-UX·Solaris·SCO·BusyBox·네트워크 장비 템플릿을 누르면 터미널 종류(TERM)·키 코드가 채워지고, Backspace(`^?`/`^H`)·Delete·Home/End·Enter 를 직접 고를 수도 있습니다. SSH 는 접속할 때 서버의 `stty erase` 도 Backspace 값으로 맞춥니다. 인코딩은 UTF-8·EUC-KR(AIX `IBM-eucKR`)·CP949·EUC-JP·Shift_JIS·GBK·Big5·Latin-1·Windows-1252 |
 | 기타 | EUC-KR(CP949) 장비, 스니펫, 세션 로그, 자동 잠금, 백업 내보내기/가져오기 |
 
 ### 활성 서버 상태 표시줄

@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import * as iconv from 'iconv-lite'
 import type { Host, ImportCandidate, SerialOptions } from '@shared/types'
+import { DEFAULT_KEYS } from '@shared/terminal'
 
 /** Decode bytes as UTF-8 if valid, otherwise as CP949 (Korean Windows console / PuTTY session names). */
 function decodeSmart(buf: Buffer): string {
@@ -56,7 +57,8 @@ export function parseRegOutput(out: string): Map<string, Record<string, string |
 }
 
 const CODEPAGE: Record<string, Host['encoding']> = {
-  'UTF-8': 'utf-8', 'CP949': 'cp949', 'EUC-KR': 'euc-kr', 'Shift_JIS': 'shift_jis', 'ISO-8859-1:1998 (Latin-1, West Europe)': 'latin1'
+  'UTF-8': 'utf-8', 'CP949': 'cp949', 'EUC-KR': 'euc-kr', 'EUC-JP': 'euc-jp', 'Shift_JIS': 'shift_jis', 'GBK': 'gbk', 'Big5': 'big5',
+  'ISO-8859-1:1998 (Latin-1, West Europe)': 'latin1', 'Win1252 (Western)': 'cp1252'
 }
 
 export function puttyToCandidates(map: Map<string, Record<string, string | number>>): ImportCandidate[] {
@@ -114,6 +116,8 @@ export function puttyToCandidates(map: Map<string, Record<string, string | numbe
         termType: String(v.TerminalType ?? 'xterm-256color') === 'xterm' ? 'xterm-256color' : String(v.TerminalType ?? 'xterm-256color'),
         keepaliveSec: Number(v.PingIntervalSecs ?? v.PingInterval ?? 0) || 30,
         encoding: CODEPAGE[cp] ?? (/949|euc-kr/i.test(cp) ? 'cp949' : 'utf-8'),
+        // PuTTY 의 "Backspace key: Control-H" (BackspaceIsDelete=0) — AIX 등에서 쓰던 설정을 그대로
+        keys: Number(v.BackspaceIsDelete ?? 1) === 0 ? { ...DEFAULT_KEYS, backspace: 'ctrl-h' } : undefined,
         startupCommand: v.RemoteCommand ? String(v.RemoteCommand) : undefined,
         forwards,
         serial,

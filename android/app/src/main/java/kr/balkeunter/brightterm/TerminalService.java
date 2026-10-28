@@ -28,8 +28,17 @@ public class TerminalService extends Service {
         volatile ChannelShell shell;
         volatile OutputStream input;
         volatile boolean closed;
-        final ExecutorService writes = Executors.newSingleThreadExecutor();
+        /** 화면 복귀 검사에서 끊긴 것으로 판정 — 오류 알림 없이 끊김으로 표시 */
+        volatile boolean stale;
+        volatile ExecutorService writes = Executors.newSingleThreadExecutor();
+        /** 다시 접속·같은 서버 새 탭에 쓰는 접속 정보와 붙었던 tmux 세션 */
+        JSONObject profile;
+        volatile String tmux;
         int cols = 80, rows = 24;
+        // 서버별 키 코드·인코딩 (서버 편집 → 터미널)
+        volatile JSONObject keys;
+        volatile java.nio.charset.Charset charset = StandardCharsets.UTF_8;
+        TermCompat.Decoder decoder;
         final ByteArrayOutputStream history = new ByteArrayOutputStream();
         synchronized void remember(byte[] bytes) {
             if (history.size() + bytes.length > 512 * 1024) {
@@ -77,7 +86,46 @@ public class TerminalService extends Service {
     void connect(JSONObject profile, int cols, int rows) {
         Connection c = new Connection(); c.id = UUID.randomUUID().toString();
         c.name = profile.optString("name", profile.optString("host")); c.cols = cols; c.rows = rows;
-        connections.put(c.id, c); emit("session", c.id, c.name); emit("state", c.id, c.state); updateNotification();
+        c.profile = profile;
+        c.keys = profile.optJSONObject("keys"); c.charset = TermCompat.charset(profile.optString("encoding", "utf-8"));
+        connections.put(c.id, c); emit("session", c.id, c.name); updateNotification();
+        start(c);
+    }
+    /** 끊긴 탭에서 같은 접속 정보로 다시 접속한다 — tmux 를 썼으면 그 세션에 다시 붙는다 */
+    void reconnect(String id, int cols, int rows) {
+        Connection c = connections.get(id);
+        if (c == null || !"disconnected".equals(c.state)) return;
+        c.cols = Math.max(2, cols); c.rows = Math.max(1, rows);
+        c.closed = false; c.stale = false; c.session = null; c.shell = null; c.input = null;
+        c.writes = Executors.newSingleThreadExecutor();
+        start(c);
+    }
+    /** 같은 서버를 새 탭으로 */
+    void duplicate(String id, int cols, int rows) {
+        Connection c = connections.get(id);
+        if (c != null) connect(c.profile, cols, rows);
+    }
+    /** 화면 복귀 때 세션 검사 — 잠든 동안 끊긴 TCP 는 읽기가 멈춰 있을 뿐이라 채널을 열어 본다 */
+    void check() {
+        for (Connection c : connections.values()) {
+            if (!"connected".equals(c.state)) continue;
+            workers.execute(() -> {
+                Session session = c.session;
+                boolean alive = session != null && session.isConnected() && c.shell != null && !c.shell.isClosed();
+                if (alive) {
+                    ChannelExec probe = null;
+                    try { probe = (ChannelExec)session.openChannel("exec"); probe.setCommand("true"); probe.connect(5000); }
+                    catch (Exception error) { alive = false; }
+                    finally { if (probe != null) probe.disconnect(); }
+                }
+                if (!alive && !c.closed) { c.stale = true; c.close(); }
+            });
+        }
+    }
+    private void start(Connection c) {
+        JSONObject profile = c.profile;
+        c.state = "connecting"; c.decoder = new TermCompat.Decoder(c.charset);
+        emit("state", c.id, c.state);
         workers.execute(() -> {
             try {
                 JSch jsch = new JSch();
@@ -117,7 +165,8 @@ public class TerminalService extends Service {
                 c.session.connect(25000);
                 if (c.closed) return;
                 String command;
-                if (profile.optBoolean("persist", false)) {
+                if (profile.optBoolean("persist", false) && c.tmux != null) command = Tmux.startup(profile, c.tmux);
+                else if (profile.optBoolean("persist", false)) {
                     List<String> names = tmuxSessions(c);
                     Listener l = listener;
                     String choice = l == null ? null : l.chooseTmux(c.name, names, () -> !c.closed);
@@ -126,18 +175,22 @@ public class TerminalService extends Service {
                     else {
                         String name = choice.isEmpty() ? Tmux.name(profile) : choice;
                         if (choice.isEmpty() && names.contains(name)) name += "-" + UUID.randomUUID().toString().substring(0, 8);
+                        c.tmux = name;
                         command = Tmux.startup(profile, name);
                     }
                 } else command = Tmux.startup(profile);
                 if (c.closed) return;
                 c.shell = (ChannelShell)c.session.openChannel("shell");
-                c.shell.setPtyType("xterm-256color", c.cols, c.rows, 0, 0);
+                String termType = profile.optString("termType", "").trim();
+                c.shell.setPtyType(termType.isEmpty() ? "xterm-256color" : termType, c.cols, c.rows, 0, 0);
+                c.shell.setTerminalMode(TermCompat.terminalModes(c.keys));
                 InputStream output = c.shell.getInputStream(); c.input = c.shell.getOutputStream(); c.shell.connect(15000);
                 c.state = "connected"; emit("state", c.id, c.state);
-                if (!command.trim().isEmpty()) { c.input.write((command + "\r").getBytes(StandardCharsets.UTF_8)); c.input.flush(); }
+                if (!command.trim().isEmpty()) { c.input.write((command + "\r").getBytes(c.charset)); c.input.flush(); }
                 byte[] buffer = new byte[16384]; int count;
                 while (!c.closed && (count = output.read(buffer)) != -1) {
-                    byte[] bytes = Arrays.copyOf(buffer, count);
+                    byte[] bytes = c.decoder.toUtf8(Arrays.copyOf(buffer, count));
+                    if (bytes.length == 0) continue;
                     synchronized (TerminalService.this) {
                         c.remember(bytes); emit("data", c.id, Base64.encodeToString(bytes, Base64.NO_WRAP));
                     }
@@ -187,7 +240,7 @@ public class TerminalService extends Service {
     void input(String id, String data) {
         Connection c = connections.get(id); if (c == null || c.closed) return;
         try {
-            c.writes.execute(() -> { try { if (c.input != null) { c.input.write(data.getBytes(StandardCharsets.UTF_8)); c.input.flush(); } } catch (IOException error) { emit("error", id, "입력 전송 실패"); } });
+            c.writes.execute(() -> { try { if (c.input != null) { c.input.write(TermCompat.mapKeys(data, c.keys).getBytes(c.charset)); c.input.flush(); } } catch (IOException error) { emit("error", id, "입력 전송 실패"); } });
         } catch (RejectedExecutionException ignored) { /* Session closed between lookup and enqueue. */ }
     }
     void resize(String id, int cols, int rows) {

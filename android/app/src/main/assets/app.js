@@ -229,15 +229,20 @@ function createSession(id, name) {
   const dot = document.createElement("span");
   dot.className = "dot";
   dot.textContent = "● ";
-  choose.append(dot, document.createTextNode(name));
+  const label = document.createTextNode(name);
+  choose.append(dot, label);
   choose.onclick = () => select(id);
-  const close = document.createElement("button");
-  close.className = "close";
-  close.textContent = "×";
-  close.setAttribute("aria-label", `${name} 연결 닫기`);
-  close.onclick = () => closeSession(id);
-  tab.append(choose, close);
+  choose.setAttribute("aria-label", `${name} — 길게 눌러 메뉴`);
+  tab.append(choose);
+  enableTabMenu(tab, id);
   $("tabs").append(tab);
+  // 끊기면 터미널 위에 띄우는 재접속 버튼
+  const again = document.createElement("button");
+  again.className = "reconnect primary";
+  again.textContent = "재접속";
+  again.hidden = true;
+  again.onclick = () => reconnect(id);
+  pane.append(again);
   const session = {
     id,
     name,
@@ -245,10 +250,16 @@ function createSession(id, name) {
     fit: fitAddon,
     pane,
     tab,
+    label,
+    again,
     state: "connecting",
   };
   sessions.set(id, session);
   term.onData((data) => {
+    if (session.state === "disconnected") {
+      if (data === "\r") reconnect(id);
+      return;
+    }
     if (ctrl && data.length === 1) {
       const code = data.toUpperCase().charCodeAt(0);
       if (code >= 64 && code <= 95) data = String.fromCharCode(code - 64);
@@ -359,6 +370,13 @@ function openEditor(profile) {
   $("form").elements.persist.checked = profile?.persist ?? false;
   $("form").elements.persistName.value = profile?.persistName ?? "";
   $("form").elements.persistMouse.checked = profile?.persistMouse ?? true;
+  const keys = { ...TERMINAL.defaultKeys, ...profile?.keys };
+  $("form").elements.encoding.value = profile?.encoding || "utf-8";
+  $("form").elements.termType.value = profile?.termType || "xterm-256color";
+  for (const key of KEY_FIELDS) $("form").elements[keyField(key)].value = keys[key];
+  terminalChosen = profile?.terminalPreset || "";
+  updateTerminalPreset();
+  $("terminal-settings").open = !!matchingPreset() && matchingPreset().id !== "linux";
   updateTmuxOptions();
   $("tmux-settings").open = !!profile?.persist;
   $("delete").hidden = !editing;
@@ -382,6 +400,10 @@ function getProfile() {
     persist: fields.persist.checked,
     persistName: fields.persistName.value.trim(),
     persistMouse: fields.persistMouse.checked,
+    termType: fields.termType.value.trim() || "xterm-256color",
+    encoding: fields.encoding.value,
+    keys: Object.fromEntries(KEY_FIELDS.map((key) => [key, fields[keyField(key)].value])),
+    ...(matchingPreset() ? { terminalPreset: matchingPreset().id } : {}),
   };
 }
 function submit(connect) {
@@ -433,9 +455,15 @@ window.nativeEvent = (event) => {
       break;
     case "state":
       if (s) {
+        const was = s.state;
         s.state = event.value;
         if (s.state === "connected") fit(s);
         s.tab.dataset.state = event.value;
+        s.again.hidden = s.state !== "disconnected";
+        if (s.state === "disconnected" && was !== "disconnected")
+          s.term.write(
+            "\r\n\x1b[33m● 연결이 끊어졌습니다 — 재접속이 필요합니다. [재접속] 버튼이나 Enter 를 누르세요.\x1b[0m\r\n",
+          );
         if (active === s.id)
           $("status").textContent = `${s.name} · ${s.state} · SSH`;
       }
@@ -887,3 +915,143 @@ function updateTmuxOptions() {
 $("tmux-enabled").onchange = updateTmuxOptions;
 $("form").elements.persistName.addEventListener("input", updateTmuxOptions);
 $("form").elements.name.addEventListener("input", updateTmuxOptions);
+
+// 서버 종류 템플릿 — 데스크톱 서버 편집의 "터미널" 탭과 같은 값 (terminal.js)
+const KEY_FIELDS = ["backspace", "delete", "homeEnd", "enter"];
+// form.elements.delete 는 삭제 버튼과 겹쳐 key 접두사를 붙인다
+const keyField = (key) => "key" + key[0].toUpperCase() + key.slice(1);
+let terminalChosen = "";
+function matchingPreset() {
+  const f = $("form").elements;
+  const same = (p) =>
+    p.termType === f.termType.value.trim() &&
+    (!p.encoding || p.encoding === f.encoding.value) &&
+    KEY_FIELDS.every((key) => p.keys[key] === f[keyField(key)].value);
+  const chosen = TERMINAL.presets.find((p) => p.id === terminalChosen);
+  return chosen && same(chosen) ? chosen : TERMINAL.presets.find(same);
+}
+function updateTerminalPreset() {
+  const preset = matchingPreset();
+  $("form").elements.terminalPreset.value = preset?.id || "";
+  $("terminal-hint").textContent = preset
+    ? preset.hint
+    : "사용자 지정 — 값을 직접 바꿨습니다. 템플릿을 고르면 그 값으로 돌아갑니다.";
+}
+{
+  const f = $("form").elements;
+  f.terminalPreset.append(
+    new Option("사용자 지정", ""),
+    ...TERMINAL.presets.map((p) => new Option(p.label, p.id)),
+  );
+  f.encoding.append(...TERMINAL.encodings.map((e) => new Option(e.label, e.value)));
+  $("term-types").append(
+    ...["xterm-256color", "xterm", "vt100", "vt220", "ansi", "dtterm", "aixterm", "linux", "screen-256color"].map((t) => new Option(t)),
+  );
+  f.terminalPreset.addEventListener("change", () => {
+    const preset = TERMINAL.presets.find((p) => p.id === f.terminalPreset.value);
+    if (!preset) return updateTerminalPreset();
+    terminalChosen = preset.id;
+    f.termType.value = preset.termType;
+    if (preset.encoding) f.encoding.value = preset.encoding;
+    for (const key of KEY_FIELDS) f[keyField(key)].value = preset.keys[key];
+    updateTerminalPreset();
+  });
+  for (const name of ["encoding", "termType", ...KEY_FIELDS.map(keyField)])
+    f[name].addEventListener(name === "termType" ? "input" : "change", updateTerminalPreset);
+}
+
+// 탭 메뉴 — 길게 누르기·마우스 오른쪽 클릭. 데스크톱 탭·패널 메뉴 중 모바일에서 쓸 만한 것
+function reconnect(id) {
+  const s = sessions.get(id);
+  if (!s || s.state !== "disconnected") return;
+  s.again.hidden = true;
+  s.term.write("\r\n\x1b[90m● 다시 접속 중...\x1b[0m\r\n");
+  invoke("reconnect", id, s.term.cols || 80, s.term.rows || 24);
+}
+function enableTabMenu(tab, id) {
+  let timer = 0, start = null;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  tab.addEventListener("touchstart", (event) => {
+    const t = event.touches[0];
+    start = { x: t.clientX, y: t.clientY };
+    cancel();
+    timer = setTimeout(() => { timer = 0; openTabMenu(id, start.x, start.y); }, 500);
+  }, { passive: true });
+  tab.addEventListener("touchmove", (event) => {
+    const t = event.touches[0];
+    if (start && Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10) cancel();
+  }, { passive: true });
+  tab.addEventListener("touchend", cancel);
+  tab.addEventListener("touchcancel", cancel);
+  // 마우스 오른쪽 클릭 (WebView 는 길게 누르기에도 contextmenu 를 보낸다)
+  tab.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    cancel();
+    openTabMenu(id, event.clientX, event.clientY);
+  });
+}
+let tabMenuOpenedAt = 0;
+function closeTabMenu() {
+  $("tab-menu").hidden = true;
+  $("tab-menu-backdrop").hidden = true;
+}
+function openTabMenu(id, x, y) {
+  const s = sessions.get(id);
+  if (!s) return;
+  select(id);
+  const others = [...sessions.keys()].filter((key) => key !== id);
+  const cols = () => s.term.cols || 80, rows = () => s.term.rows || 24;
+  const items = [
+    { label: "다시 접속", disabled: s.state !== "disconnected", run: () => reconnect(id) },
+    { label: "같은 서버 새 탭", run: () => invoke("duplicate", id, cols(), rows()) },
+    { label: "SFTP 파일", disabled: s.state !== "connected", run: () => $("sftp").click() },
+    null,
+    { label: "붙여넣기", disabled: s.state !== "connected", run: () => invoke("paste") },
+    { label: "화면 지우기", run: () => s.term.clear() },
+    { label: "탭 이름 바꾸기", run: () => {
+      const name = window.prompt("탭 이름", s.name);
+      if (name === null || !name.trim()) return;
+      s.name = name.trim();
+      s.label.textContent = s.name;
+      s.tab.querySelector(".select").title = s.name;
+      select(id);
+    } },
+    null,
+    { label: "다른 탭 모두 닫기", disabled: !others.length, run: () => {
+      if (!window.confirm(`다른 탭 ${others.length}개를 닫을까요?`)) return;
+      for (const key of others) {
+        const o = sessions.get(key);
+        if (o) o.state = "disconnected"; // 한 번에 확인했으니 탭마다 묻지 않는다
+        closeSession(key);
+      }
+    } },
+    { label: "탭 닫기", danger: true, run: () => closeSession(id) },
+  ];
+  const menu = $("tab-menu");
+  menu.replaceChildren(
+    ...items.map((item) => {
+      if (!item) return Object.assign(document.createElement("hr"), {});
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = item.label;
+      button.disabled = !!item.disabled;
+      if (item.danger) button.className = "danger";
+      button.onclick = () => { closeTabMenu(); item.run(); };
+      return button;
+    }),
+  );
+  tabMenuOpenedAt = Date.now();
+  $("tab-menu-backdrop").hidden = false;
+  menu.hidden = false;
+  const box = menu.getBoundingClientRect();
+  menu.style.left = Math.max(8, Math.min(x, innerWidth - box.width - 8)) + "px";
+  menu.style.top = Math.max(8, Math.min(y, innerHeight - box.height - 8)) + "px";
+}
+// 길게 누른 손가락을 뗄 때 오는 click 으로 바로 닫히지 않게
+$("tab-menu-backdrop").addEventListener("click", () => {
+  if (Date.now() - tabMenuOpenedAt > 400) closeTabMenu();
+});
+$("tab-menu-backdrop").addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+  closeTabMenu();
+});

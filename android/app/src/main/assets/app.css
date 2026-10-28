@@ -249,8 +249,54 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tab .close {
-  padding: 0 10px;
+#tab-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+#tab-menu {
+  position: fixed;
+  z-index: 41;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border-3);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+}
+#tab-menu[hidden],
+#tab-menu-backdrop[hidden] {
+  display: none;
+}
+#tab-menu button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  justify-content: flex-start;
+  padding: 0 14px;
+}
+#tab-menu button:disabled {
+  opacity: 0.4;
+}
+#tab-menu button.danger {
+  color: var(--danger);
+}
+#tab-menu hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+.terminal-pane .reconnect {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 5;
+  padding: 0 20px;
+}
+.terminal-pane .reconnect[hidden] {
+  display: none;
 }
 .tab .dot {
   color: var(--warn);

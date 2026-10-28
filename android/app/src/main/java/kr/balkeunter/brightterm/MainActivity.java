@@ -88,7 +88,11 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     @Override public void changed(JSONObject status, boolean profilesChanged) {
         event(eventOf("git-sync", "", status.toString())); if (profilesChanged) profiles();
     }
-    @Override protected void onResume() { super.onResume(); resumed = true; if (gitSync != null && ready) gitSync.foreground(true); }
+    @Override protected void onResume() {
+        super.onResume(); resumed = true; if (gitSync != null && ready) gitSync.foreground(true);
+        // 잠든 동안 끊긴 세션을 찾아 터미널에 재접속 안내를 띄운다
+        if (service != null && ready) service.check();
+    }
     @Override protected void onPause() { resumed = false; if (gitSync != null) gitSync.foreground(false); super.onPause(); }
     private static JSONObject eventOf(String type, String id, String value) {
         try { return new JSONObject().put("type", type).put("id", id).put("value", value); }
@@ -193,6 +197,8 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         }
         @JavascriptInterface public void input(String id, String data) { if (service != null) service.input(id, data); }
         @JavascriptInterface public void resize(String id, int cols, int rows) { if (service != null) service.resize(id, cols, rows); }
+        @JavascriptInterface public void reconnect(String id, int cols, int rows) { runOnUiThread(() -> { if (service != null) service.reconnect(id, cols, rows); }); }
+        @JavascriptInterface public void duplicate(String id, int cols, int rows) { runOnUiThread(() -> { if (service != null) service.duplicate(id, cols, rows); }); }
         @JavascriptInterface public void disconnect(String id) { runOnUiThread(() -> { if (service != null) service.disconnect(id); }); }
         @JavascriptInterface public void importKey() { runOnUiThread(() -> {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);

@@ -16,6 +16,7 @@
     <script defer src="vendor/xterm.js"></script>
     <script defer src="vendor/addon-fit.js"></script>
     <script defer src="themes.js"></script>
+    <script defer src="terminal.js"></script>
     <script defer src="app.js"></script>
   </head>
   <body>
@@ -49,6 +50,8 @@
       </aside>
       <main>
         <nav id="tabs" aria-label="터미널 세션"></nav>
+        <div id="tab-menu-backdrop" hidden></div>
+        <div id="tab-menu" role="menu" hidden></div>
         <div id="terminals">
           <div id="welcome">
             <div class="glyph">❯_</div>
@@ -131,6 +134,48 @@
               autocapitalize="off"
               spellcheck="false"
           /></label>
+        </details>
+        <details id="terminal-settings">
+          <summary>터미널 · 인코딩</summary>
+          <label
+            >서버 종류 템플릿<select name="terminalPreset"></select
+          ></label>
+          <p id="terminal-hint" class="hint"></p>
+          <label>문자 인코딩<select name="encoding"></select></label>
+          <label
+            >터미널 종류 (TERM)<input
+              name="termType"
+              list="term-types"
+              autocapitalize="off"
+              spellcheck="false" /></label
+          ><datalist id="term-types"></datalist>
+          <label
+            >Backspace 키<select name="keyBackspace">
+              <option value="del">^? DEL (0x7F) — Linux</option>
+              <option value="ctrl-h">^H (0x08) — AIX·HP-UX</option>
+            </select></label
+          ><label
+            >Delete 키<select name="keyDelete">
+              <option value="vt220">ESC[3~</option>
+              <option value="del">^? DEL</option>
+            </select></label
+          ><label
+            >Home / End 키<select name="keyHomeEnd">
+              <option value="xterm">xterm (ESC[H)</option>
+              <option value="vt220">vt220 (ESC[1~)</option>
+            </select></label
+          ><label
+            >Enter 키<select name="keyEnter">
+              <option value="CR">CR</option>
+              <option value="CRLF">CRLF</option>
+              <option value="LF">LF</option>
+            </select></label
+          >
+          <p class="hint">
+            접속할 때 서버의 stty erase 도 Backspace 값으로 맞춥니다. 한글이
+            깨지면 서버 locale(LANG)에 맞추세요 — ko_KR.eucKR·IBM-eucKR 은
+            EUC-KR.
+          </p>
         </details>
         <details id="tmux-settings">
           <summary>세션 유지 (tmux)</summary>

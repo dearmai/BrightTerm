@@ -4,6 +4,7 @@ import { join } from 'path'
 import * as iconv from 'iconv-lite'
 import type { AdhocTarget, Host, SessionInfo, SessionState, TmuxPick } from '@shared/types'
 import { ENV_COLORS } from '@shared/types'
+import { hostKeys, mapKeys } from '@shared/terminal'
 import type { Transport } from './transports/types'
 import { SshTransport } from './transports/ssh'
 import { TelnetTransport } from './transports/telnet'
@@ -287,6 +288,8 @@ export class Session {
       if (data === '\r' && this.info.state !== 'connecting') this.reconnectNow()
       return
     }
+    // 로컬 셸은 pty 가 알아서 하고, 시리얼 Enter 는 시리얼 설정을 따른다
+    if (this.host.protocol !== 'local') data = mapKeys(data, hostKeys(this.host), this.host.protocol !== 'serial')
     const enc = this.encoding()
     this.transport.write(enc === 'utf-8' ? Buffer.from(data, 'utf8') : iconv.encode(data, enc))
   }

@@ -4,6 +4,7 @@ import { createServer, Server, connect as netConnect } from 'net'
 import { Client, ClientChannel, ConnectConfig, SFTPWrapper, utils, AnyAuthMethod, AuthenticationType } from 'ssh2'
 import type { Host, CredentialSecret, TmuxPick, TmuxSessionInfo } from '@shared/types'
 import type { Transport } from './types'
+import { eraseChar, hostKeys } from '@shared/terminal'
 import { connectSshClient } from './sshConnection'
 import { ask } from '../ui'
 import { store } from '../store'
@@ -294,7 +295,7 @@ export class SshTransport extends EventEmitter implements Transport {
       throw e
     }
     this.stream = await new Promise<ClientChannel>((res, rej) =>
-      client.shell({ term: this.host.termType || 'xterm-256color', cols: this.ctx.cols, rows: this.ctx.rows }, (err, s) => (err ? rej(err) : res(s)))
+      client.shell({ term: this.host.termType || 'xterm-256color', cols: this.ctx.cols, rows: this.ctx.rows, modes: { VERASE: eraseChar(hostKeys(this.host)) } }, (err, s) => (err ? rej(err) : res(s)))
     )
     this.stream.on('data', (d: Buffer) => this.emit('data', d))
     this.stream.stderr.on('data', (d: Buffer) => this.emit('data', d))

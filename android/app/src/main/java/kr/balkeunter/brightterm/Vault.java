@@ -80,7 +80,7 @@ final class Vault {
             if (old.getString("id").equals(profile.getString("id"))) {
                 for (String secret : new String[]{"password", "privateKey", "passphrase"})
                     if (profile.optString(secret).isEmpty()) profile.put(secret, old.optString(secret));
-                for (String field : new String[]{"persist", "persistName", "persistMouse"}) if (!profile.has(field) && old.has(field)) profile.put(field, old.get(field));
+                for (String field : new String[]{"persist", "persistName", "persistMouse", "termType", "encoding", "keys", "terminalPreset"}) if (!profile.has(field) && old.has(field)) profile.put(field, old.get(field));
                 if (old.has("unsupported")) profile.put("unsupported", old.get("unsupported"));
                 profiles.put(i, profile); write(profiles); return;
             }
