@@ -34,24 +34,32 @@ export const tmuxMouse = (h: Host): boolean => h.persistMouse ?? true
 /** 이미 있는 tmux 세션의 마우스 모드를 바꾸는 sh 스크립트 */
 export const tmuxMouseScript = (name: string, on: boolean): string => `tmux set-option -t ${q(`=${name}`)} mouse ${on ? 'on' : 'off'} >/dev/null\n`
 
-/** 접속 직후 셸에 입력할 한 줄 — 세션 유지가 아니면 자동 실행 명령 그대로. session 은 고른 tmux 세션(없으면 기본 이름) */
-export function startupLine(h: Host, session?: string): string | undefined {
-  const startup = h.startupCommand?.trim() || undefined
-  if (!persistSupported(h)) return startup
+/** 자동 실행 명령을 줄 단위로 — 빈 줄과 # 주석 줄은 뺀다 */
+export function startupLines(h: Pick<Host, 'startupCommand'>): string[] {
+  return (h.startupCommand ?? '').split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim() && !/^\s*#/.test(l))
+}
+
+/**
+ * 접속 직후 셸에 입력할 줄들 — 세션 유지가 아니면 자동 실행 명령 그대로(한 줄씩 보낸다).
+ * 세션 유지면 tmux 에 붙는 한 줄. 자동 실행 명령은 새 tmux 세션을 만들 때만, 붙은 뒤 1초 간격으로 한 줄씩 넣는다
+ * (sleep 1 — AIX 등은 소수 초를 못 쓴다). session 은 고른 tmux 세션(없으면 기본 이름)
+ */
+export function startupPlan(h: Host, session?: string): string[] {
+  const lines = startupLines(h)
+  if (!persistSupported(h)) return lines
   const n = session || tmuxName(h)
   const t = q(`=${n}`)
-  const create = [
-    `tmux new-session -d -s ${q(n)} -c "$PWD"`,
-    `tmux set-option -t ${q(n)} status off >/dev/null`,
-    ...(startup ? [`tmux send-keys -t ${q(n)} -l ${q(startup)}`, `tmux send-keys -t ${q(n)} Enter`] : [])
-  ].join(' && ')
+  const typing = lines.map((l) => `sleep 1; tmux send-keys -t ${t} -l ${q(l)}; tmux send-keys -t ${t} Enter`).join('; ')
+  // 입력은 백그라운드로 — 세션을 만든 뒤 바로 붙고, 줄은 붙은 화면에 차례로 들어온다
+  const create = `tmux new-session -d -s ${q(n)} -c "$PWD" && tmux set-option -t ${q(n)} status off >/dev/null; ` +
+    (typing ? `{ ${typing}; } >/dev/null 2>&1 & ` : '')
   // 마우스 모드는 붙을 때마다 서버 설정대로 — 이미 있던 세션도 맞춘다
   const mouse = `tmux set-option -t ${t} mouse ${tmuxMouse(h) ? 'on' : 'off'} >/dev/null 2>&1`
-  const inner = `tmux has-session -t ${t} 2>/dev/null || { ${create}; }; ${mouse}; TMUX= exec tmux attach-session -t ${t}`
+  const inner = `tmux has-session -t ${t} 2>/dev/null || { ${create}}; ${mouse}; TMUX= exec tmux attach-session -t ${t}`
   const missing = h.protocol === 'ssh'
     ? `echo 'BrightTerm: 서버에 tmux 가 없어 세션 유지를 쓰지 않습니다 (서버 편집 → 세션 유지 → 서버 확인에서 설치할 수 있습니다)'`
     : `echo 'BrightTerm: tmux 가 없어 세션 유지를 쓰지 않습니다 (설치: macOS brew install tmux / Ubuntu sudo apt install tmux)'`
-  return ` if command -v tmux >/dev/null 2>&1; then sh -c ${q(inner)}; else ${missing}${startup ? `; ${startup}` : ''}; fi`
+  return [` if command -v tmux >/dev/null 2>&1; then sh -c ${q(inner)}; else ${missing}${lines.length ? `; ${lines.join('; ')}` : ''}; fi`]
 }
 
 /* ── SSH 서버의 tmux 세션 고르기 ── 서버마다 기본 이름(bt-별칭) 과 새로 만든 bt-별칭-2, -3 … 을 그 서버 것으로 본다 */

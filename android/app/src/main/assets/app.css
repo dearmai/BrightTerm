@@ -84,7 +84,8 @@ body {
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 button {
@@ -164,7 +165,8 @@ h2 {
   margin: 8px 0 16px;
 }
 input,
-select {
+select,
+textarea {
   border: 1px solid var(--border-3);
   background: var(--bg);
   border-radius: 7px;
@@ -609,4 +611,13 @@ button:disabled {
 }
 #settings {
   font-size: 18px;
+}
+textarea {
+  resize: vertical;
+  min-height: 72px;
+  font-family: "D2Coding", monospace;
+  font-size: 13px;
+}
+#sftp.unavailable {
+  opacity: 0.4;
 }

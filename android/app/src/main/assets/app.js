@@ -185,6 +185,7 @@ function select(id) {
     s.tab.classList.toggle("active", s.id === id);
   }
   const s = current();
+  updateSftpButton();
   $("welcome").hidden = !!s;
   $("status").textContent = s
     ? `${s.name} · ${s.state} · SSH`
@@ -468,6 +469,12 @@ window.nativeEvent = (event) => {
           $("status").textContent = `${s.name} · ${s.state} · SSH`;
       }
       break;
+    case "sftp":
+      if (s) {
+        s.sftp = event.value;
+        updateSftpButton();
+      }
+      break;
     case "files":
       if (event.id === filesSession) showFiles(JSON.parse(event.value));
       break;
@@ -734,7 +741,10 @@ function showFiles(data) {
     button.onclick = () => {
       const path = data.path.replace(/\/$/, "") + "/" + entry.name;
       if (entry.directory) {
-        $("transfer-status").textContent = "폴더 여는 중…";
+        $("transfer-status").textContent =
+    current().sftp === "shell"
+      ? "SFTP가 없어 SSH 명령으로 엽니다… (큰 파일은 느릴 수 있음)"
+      : "폴더 여는 중…";
         invoke("list", filesSession, path);
       } else $("remote-file").value = path;
     };
@@ -746,6 +756,10 @@ function showFiles(data) {
 $("sftp").onclick = () => {
   if (current()?.state !== "connected") {
     toast("SSH 서버에 먼저 연결하세요.");
+    return;
+  }
+  if (current().sftp === "unavailable") {
+    toast("이 서버는 파일을 주고받을 수 없습니다 (SFTP·명령 채널 모두 막힘).");
     return;
   }
   filesSession = active;
@@ -1004,7 +1018,7 @@ function openTabMenu(id, x, y) {
   const items = [
     { label: "다시 접속", disabled: s.state !== "disconnected", run: () => reconnect(id) },
     { label: "같은 서버 새 탭", run: () => invoke("duplicate", id, cols(), rows()) },
-    { label: "SFTP 파일", disabled: s.state !== "connected", run: () => $("sftp").click() },
+    { label: "SFTP 파일", disabled: s.state !== "connected" || s.sftp === "unavailable", run: () => $("sftp").click() },
     null,
     { label: "붙여넣기", disabled: s.state !== "connected", run: () => invoke("paste") },
     { label: "화면 지우기", run: () => s.term.clear() },
@@ -1055,3 +1069,14 @@ $("tab-menu-backdrop").addEventListener("contextmenu", (event) => {
   event.preventDefault();
   closeTabMenu();
 });
+
+// 지금 세션이 SFTP 를 못 쓰면 파일 버튼을 흐리게 (누르면 이유를 알린다)
+function updateSftpButton() {
+  const unavailable = current()?.sftp === "unavailable";
+  $("sftp").classList.toggle("unavailable", unavailable);
+  $("sftp").title = unavailable
+    ? "이 서버는 파일을 주고받을 수 없습니다 (SFTP·명령 채널 모두 막힘)"
+    : current()?.sftp === "shell"
+      ? "SFTP 없이 SSH 명령(cat·ls)으로 파일 전송"
+      : "SFTP 파일 전송";
+}

@@ -12,10 +12,19 @@ import { SerialTransport } from './transports/serial'
 import { LocalTransport, execLocalSh } from './transports/local'
 import { execSh } from './transports/ssh'
 import { proxyLabel } from './proxy'
-import { persistSupported, startupLine, tmuxMouse, tmuxMouseScript, tmuxName } from './persist'
+import { typeStartup } from './startup'
+import { persistSupported, startupPlan, tmuxMouse, tmuxMouseScript, tmuxName } from './persist'
 import { send } from './ui'
 import { store, dataDir } from './store'
 import { vault } from './vault'
+
+/** SFTP 확인을 기다리는 시간 — 응답이 없으면 쓸 수 없는 것으로 본다 */
+const SFTP_CHECK_MS = 10000
+
+function withTimeout<T>(p: Promise<T>, fallback: T, ms = SFTP_CHECK_MS): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  return Promise.race([p, new Promise<T>((res) => { timer = setTimeout(() => res(fallback), ms) })]).finally(() => clearTimeout(timer))
+}
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[=>78DEHMc]/g
 
@@ -96,6 +105,8 @@ export class Session {
   private retry = 0
   private retryTimer: NodeJS.Timeout | null = null
   private log: WriteStream | null = null
+  private lastOutputAt = 0
+  private outputTail = ''
 
   /** 세션 유지 서버에서 붙을 tmux 세션 — 한 번 붙으면 그 이름으로 고정해 재접속 때 묻지 않는다 */
   private tmux?: TmuxPick
@@ -150,6 +161,7 @@ export class Session {
     this.decoder = iconv.getDecoder(enc) as unknown as iconv.DecoderStream
     try {
       let t: Transport
+      let startup: string[] = []
       if (h.protocol === 'ssh') {
         const st = new SshTransport(h, {
           title: h.alias,
@@ -170,13 +182,13 @@ export class Session {
           this.info = { ...this.info, persist: false }
         }
         this.info = { ...this.info, tmuxMouse: st.tmuxSession ? tmuxMouse(h) : undefined }
+        startup = startupPlan(st.plain ? { ...h, persist: false } : h, st.tmuxSession)
         t = st
       } else if (h.protocol === 'local') {
         const lt = new LocalTransport(h.local ?? {}, h.termType)
         await lt.start(this.cols, this.rows)
         if (lt.cwdFallback) this.info_(`시작 폴더(${h.local?.cwd})가 없어 홈 폴더에서 엽니다`, '33')
-        const line = startupLine(h)
-        if (line) setTimeout(() => lt.write(Buffer.from(line.replace(/\r?\n/g, '\r') + '\r')), 300)
+        startup = startupPlan(h)
         this.info = { ...this.info, tmuxMouse: persistSupported(h) ? tmuxMouse(h) : undefined }
         t = lt
       } else if (h.protocol === 'telnet') {
@@ -200,6 +212,8 @@ export class Session {
       if (h.protocol !== 'local') this.emitText('\x1b[2K\r')
       if (this.persistent) store.touchHost(h.id)
       if (store.get().settings.sessionLog) this.openLog()
+      if (t instanceof SshTransport) void this.checkSftp(t)
+      if (startup.length) void this.typeStartup(startup)
     } catch (e) {
       const msg = (e as Error).message || String(e)
       this.info_(`${h.protocol === 'local' ? '셸 실행 실패' : '접속 실패'}: ${translateError(msg)}`, '31')
@@ -233,10 +247,36 @@ export class Session {
 
   private onData(d: Buffer): void {
     const s = this.decoder ? this.decoder.write(d) : d.toString('utf8')
+    this.lastOutputAt = Date.now()
     if (s) {
+      this.outputTail = (this.outputTail + s).slice(-300)
       this.emitText(s)
       this.log?.write(s.replace(ANSI, '').replace(/\r/g, ''))
     }
+  }
+
+  /** 서버가 SFTP 서브시스템을 여는지 백그라운드로 확인 — 연 채널은 파일 패널이 그대로 쓴다.
+   *  안 되면 명령 채널(exec)을 확인해, 되면 셸 명령으로 파일을 다룬다 */
+  private async checkSftp(t: SshTransport): Promise<void> {
+    this.info = { ...this.info, sftp: 'checking', canSftp: true }
+    send('session:state', this.info)
+    const ok = await withTimeout(t.sftp().then(() => true, () => false), false)
+    const shell = !ok && (await withTimeout(t.exec('echo BT_OK').then((out) => out.includes('BT_OK'), () => false), false))
+    if (this.transport !== t) return
+    this.info = { ...this.info, sftp: ok ? 'ok' : shell ? 'shell' : 'unavailable', canSftp: ok || shell }
+    send('session:state', this.info)
+  }
+
+  /** 접속 후 실행 명령을 한 줄씩 (startup.ts) — 재접속·종료되면 멈춘다 */
+  private typeStartup(lines: string[]): Promise<number> {
+    const t = this.transport
+    return typeStartup(lines, {
+      write: (line) => this.write(line),
+      lastOutputAt: () => this.lastOutputAt,
+      tail: () => this.outputTail,
+      alive: () => !!t && this.transport === t,
+      notice: (m) => this.info_(m, '33')
+    })
   }
 
   private onClose(reason?: string): void {

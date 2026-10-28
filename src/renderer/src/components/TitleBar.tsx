@@ -136,7 +136,8 @@ export function TitleBar(): JSX.Element {
       <div className="tb-right">
         <GitSyncIndicator />
         {tabs.length > 1 && <button className="ibtn" title="모든 탭을 그리드로 모으기" onClick={() => st().gatherAll()}><LayoutGrid size={15} /></button>}
-        <button className="ibtn" title={`SFTP 패널 (${SC.sftp})`} onClick={() => useApp.setState((s) => ({ rightPanel: s.rightPanel ? null : 'sftp' }))}><FolderTree size={15} /></button>
+        {/* 패널에는 스니펫도 있어 누를 수는 있게 두고, 지금 세션이 SFTP 를 못 쓰면 흐리게 */}
+        <button className="ibtn" style={st().focusedSession()?.sftp === 'unavailable' ? { opacity: 0.35 } : undefined} title={st().focusedSession()?.sftp === 'unavailable' ? '이 서버는 파일을 주고받을 수 없습니다 — 패널에서 스니펫은 쓸 수 있습니다' : `SFTP 패널 (${SC.sftp})`} onClick={() => useApp.setState((s) => ({ rightPanel: s.rightPanel ? null : 'sftp' }))}><FolderTree size={15} /></button>
         {vault.unlocked && <button className="ibtn" title="지금 잠그기" onClick={() => api.vault.lock()}><Lock size={15} /></button>}
         <button className="ibtn" title={isMac ? `설정 (${SC.settings})` : '설정'} onClick={() => useApp.setState({ dialog: { kind: 'settings' } })}><Settings size={15} /></button>
       </div>

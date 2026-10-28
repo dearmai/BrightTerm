@@ -251,6 +251,9 @@ export interface SessionInfo {
   connectedAt?: number
   message?: string
   canSftp: boolean
+  /** 접속 뒤 백그라운드로 SFTP 채널을 열어 본 결과 — shell: SFTP 는 안 되지만 SSH 명령(cat·ls)으로 파일을 다룬다,
+   *  unavailable: 명령 채널도 안 돼 파일 버튼을 흐리게 */
+  sftp?: 'checking' | 'ok' | 'shell' | 'unavailable'
   /** 세션 유지(tmux) 로 연 창 */
   persist?: boolean
   /** 붙은 tmux 세션 이름(SSH) — 재접속·탭 복원 때 같은 세션으로 */

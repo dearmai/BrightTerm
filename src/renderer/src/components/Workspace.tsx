@@ -274,7 +274,7 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
             {info && info.state !== 'connected' && <button className="ibtn sm" title="다시 접속" onClick={() => api.session.reconnect(pane.sessionId)}><RotateCw size={13} /></button>}
             {(info?.canSftp || info?.protocol === 'local') && <button className="ibtn sm" title={info?.protocol === 'local' ? `클립보드 이미지를 저장하고 경로 입력 (${SC.pasteImage})` : `클립보드 이미지 → 서버 업로드 후 경로 입력 (${SC.pasteImage})`} onClick={() => smartPaste(pane.sessionId, true)}><ImageUp size={13} /></button>}
             <button className="ibtn sm" title={`찾기 (${SC.find})`} onClick={() => { setFind(''); setTimeout(() => findRef.current?.focus(), 20) }}><Search size={13} /></button>
-            {info?.canSftp && <button className="ibtn sm" title={`SFTP (${SC.sftp})`} onClick={() => { st().focusPane(tab.id, pane.id); useApp.setState({ rightPanel: 'sftp' }) }}><FolderTree size={13} /></button>}
+            {info?.protocol === 'ssh' && <button className="ibtn sm" disabled={info.sftp === 'unavailable'} title={info.sftp === 'unavailable' ? '이 서버는 파일을 주고받을 수 없습니다 (SFTP·명령 채널 모두 막힘)' : info.sftp === 'shell' ? `파일 — SFTP 없이 SSH 명령으로 전송 (${SC.sftp})` : `SFTP (${SC.sftp})`} onClick={() => { st().focusPane(tab.id, pane.id); useApp.setState({ rightPanel: 'sftp' }) }}><FolderTree size={13} /></button>}
             <button className="ibtn sm" title={`오른쪽으로 분할 (${SC.splitRight})`} onClick={() => { st().focusPane(tab.id, pane.id); st().duplicatePane('row') }}><Columns2 size={13} /></button>
             <button className="ibtn sm" title={`아래로 분할 (${SC.splitDown})`} onClick={() => { st().focusPane(tab.id, pane.id); st().duplicatePane('col') }}><Rows2 size={13} /></button>
             {multi && (

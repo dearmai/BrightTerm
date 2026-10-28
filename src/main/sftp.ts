@@ -3,21 +3,56 @@ import { app, clipboard, shell } from 'electron'
 import { promises as fs, watch, FSWatcher, statSync } from 'fs'
 import { join, basename, extname, posix } from 'path'
 import type { SFTPWrapper, Stats } from 'ssh2'
+import { ShellFs, type Progress, type RemoteDirEntry, type RemoteFs, type RemoteStat } from './shellfs'
 import type { ClipboardInfo, SftpEntry, Transfer } from '@shared/types'
 import { sessions } from './sessions'
 import { send } from './ui'
 import { store } from './store'
 import { expandHome } from './transports/local'
 
-function sftpOf(sessionId: string): Promise<SFTPWrapper> {
-  const s = sessions.get(sessionId)
-  const t = s?.sshTransport()
-  if (!t) return Promise.reject(new Error('SSH로 연결된 세션에서만 사용할 수 있습니다'))
-  return t.sftp()
-}
-
 const p = <T>(fn: (cb: (err: Error | null | undefined, v: T) => void) => void): Promise<T> =>
   new Promise((res, rej) => fn((err, v) => (err ? rej(err) : res(v))))
+
+/** ssh2 SFTP 를 RemoteFs 로 */
+class SftpFs implements RemoteFs {
+  readonly kind = 'sftp' as const
+  constructor(private s: SFTPWrapper) {}
+  realpath(path: string): Promise<string> { return p<string>((cb) => this.s.realpath(path, cb)) }
+  readdir(path: string): Promise<RemoteDirEntry[]> {
+    return p<{ filename: string; attrs: Stats }[]>((cb) => this.s.readdir(path, cb as never)).then((items) =>
+      items.map((i) => ({ filename: i.filename, attrs: i.attrs as unknown as RemoteStat })))
+  }
+  stat(path: string): Promise<RemoteStat> { return p<Stats>((cb) => this.s.stat(path, cb)) as unknown as Promise<RemoteStat> }
+  lstat(path: string): Promise<RemoteStat> { return p<Stats>((cb) => this.s.lstat(path, cb)) as unknown as Promise<RemoteStat> }
+  mkdir(path: string): Promise<void> { return p<void>((cb) => this.s.mkdir(path, cb as never)) }
+  rmdir(path: string): Promise<void> { return p<void>((cb) => this.s.rmdir(path, cb as never)) }
+  unlink(path: string): Promise<void> { return p<void>((cb) => this.s.unlink(path, cb as never)) }
+  rename(from: string, to: string): Promise<void> { return p<void>((cb) => this.s.rename(from, to, cb as never)) }
+  chmod(path: string, mode: number): Promise<void> { return p<void>((cb) => this.s.chmod(path, mode, cb as never)) }
+  readFile(path: string): Promise<Buffer> { return p<Buffer>((cb) => this.s.readFile(path, cb as never)) }
+  writeFile(path: string, data: Buffer): Promise<void> { return p<void>((cb) => this.s.writeFile(path, data, cb as never)) }
+  get(remote: string, local: string, step?: Progress): Promise<void> {
+    return p<void>((cb) => this.s.fastGet(remote, local, { concurrency: 32, step: (done: number, _c: number, total: number) => step?.(done, total) }, cb as never))
+  }
+  put(local: string, remote: string, step?: Progress): Promise<void> {
+    return p<void>((cb) => this.s.fastPut(local, remote, { concurrency: 32, step: (done: number, _c: number, total: number) => step?.(done, total) }, cb as never))
+  }
+}
+
+const shellFs = new WeakMap<object, ShellFs>()
+
+/** SFTP 가 되면 SFTP, 서버가 SFTP 를 못 열면 같은 SSH 연결의 셸 명령으로 */
+async function sftpOf(sessionId: string): Promise<RemoteFs> {
+  const s = sessions.get(sessionId)
+  const t = s?.sshTransport()
+  if (!t?.client) throw new Error('SSH로 연결된 세션에서만 사용할 수 있습니다')
+  if (s!.info.sftp !== 'shell') {
+    try { return new SftpFs(await t.sftp()) } catch (e) { if (s!.info.sftp !== 'unavailable') throw e }
+  }
+  let fs = shellFs.get(t.client)
+  if (!fs) shellFs.set(t.client, (fs = new ShellFs(t.client)))
+  return fs
+}
 
 function permString(mode: number): string {
   const t = (mode & 0o170000) === 0o040000 ? 'd' : (mode & 0o170000) === 0o120000 ? 'l' : '-'
@@ -31,7 +66,7 @@ export async function home(sessionId: string): Promise<string> {
   const c = homeCache.get(sessionId)
   if (c) return c
   const s = await sftpOf(sessionId)
-  const h = await p<string>((cb) => s.realpath('.', cb))
+  const h = await s.realpath('.')
   homeCache.set(sessionId, h)
   return h
 }
@@ -44,8 +79,8 @@ async function expand(sessionId: string, path: string): Promise<string> {
 export async function list(sessionId: string, path: string): Promise<{ path: string; entries: SftpEntry[] }> {
   const s = await sftpOf(sessionId)
   const expanded = await expand(sessionId, path || '~')
-  const real = await p<string>((cb) => s.realpath(expanded, cb)).catch(() => expanded)
-  const items = await p<{ filename: string; attrs: Stats }[]>((cb) => s.readdir(real, cb as never))
+  const real = await s.realpath(expanded).catch(() => expanded)
+  const items = await s.readdir(real)
   const entries: SftpEntry[] = items
     .filter((i) => i.filename !== '.' && i.filename !== '..')
     .map((i) => {
@@ -66,7 +101,7 @@ export async function list(sessionId: string, path: string): Promise<{ path: str
   await Promise.all(
     entries.filter((e) => e.isLink).map(async (e) => {
       try {
-        const st = await p<Stats>((cb) => s.stat(e.path, cb))
+        const st = await s.stat(e.path)
         e.isDir = st.isDirectory()
       } catch { /* broken link */ }
     })
@@ -77,40 +112,40 @@ export async function list(sessionId: string, path: string): Promise<{ path: str
 
 export async function mkdir(sessionId: string, path: string): Promise<void> {
   const s = await sftpOf(sessionId)
-  await p<void>((cb) => s.mkdir(path, cb as never))
+  await s.mkdir(path)
 }
 
-async function mkdirp(s: SFTPWrapper, path: string): Promise<void> {
+async function mkdirp(s: RemoteFs, path: string): Promise<void> {
   const parts = path.split('/').filter(Boolean)
   let cur = path.startsWith('/') ? '' : '.'
   for (const part of parts) {
     cur = cur === '' ? '/' + part : cur + '/' + part
     try {
-      await p<Stats>((cb) => s.stat(cur, cb))
+      await s.stat(cur)
     } catch {
-      await p<void>((cb) => s.mkdir(cur, cb as never)).catch(() => {})
+      await s.mkdir(cur).catch(() => {})
     }
   }
 }
 
 export async function rename(sessionId: string, from: string, to: string): Promise<void> {
   const s = await sftpOf(sessionId)
-  await p<void>((cb) => s.rename(from, to, cb as never))
+  await s.rename(from, to)
 }
 
 export async function chmod(sessionId: string, path: string, mode: number): Promise<void> {
   const s = await sftpOf(sessionId)
-  await p<void>((cb) => s.chmod(path, mode, cb as never))
+  await s.chmod(path, mode)
 }
 
-async function removeRec(s: SFTPWrapper, path: string): Promise<void> {
-  const st = await p<Stats>((cb) => s.lstat(path, cb))
+async function removeRec(s: RemoteFs, path: string): Promise<void> {
+  const st = await s.lstat(path)
   if (st.isDirectory()) {
-    const items = await p<{ filename: string }[]>((cb) => s.readdir(path, cb as never))
+    const items = await s.readdir(path)
     for (const i of items) if (i.filename !== '.' && i.filename !== '..') await removeRec(s, posix.join(path, i.filename))
-    await p<void>((cb) => s.rmdir(path, cb as never))
+    await s.rmdir(path)
   } else {
-    await p<void>((cb) => s.unlink(path, cb as never))
+    await s.unlink(path)
   }
 }
 
@@ -134,45 +169,33 @@ function update(t: Transfer): void {
   send('transfer:update', { ...t })
 }
 
-async function putFile(s: SFTPWrapper, t: Transfer, local: string, remote: string): Promise<void> {
-  t.state = 'running'
-  update(t)
+function progress(t: Transfer): Progress {
   let last = 0
-  await p<void>((cb) =>
-    s.fastPut(local, remote, {
-      concurrency: 32,
-      step: (done: number, _chunk: number, total: number) => {
-        t.bytes = done
-        t.total = total
-        const now = Date.now()
-        if (now - last > 150) { last = now; update(t) }
-      }
-    }, cb as never)
-  )
+  return (done, total) => {
+    t.bytes = done
+    t.total = total
+    const now = Date.now()
+    if (now - last > 150) { last = now; update(t) }
+  }
 }
 
-async function getFile(s: SFTPWrapper, t: Transfer, remote: string, local: string): Promise<void> {
+async function putFile(s: RemoteFs, t: Transfer, local: string, remote: string): Promise<void> {
   t.state = 'running'
   update(t)
-  let last = 0
-  await p<void>((cb) =>
-    s.fastGet(remote, local, {
-      concurrency: 32,
-      step: (done: number, _chunk: number, total: number) => {
-        t.bytes = done
-        t.total = total
-        const now = Date.now()
-        if (now - last > 150) { last = now; update(t) }
-      }
-    }, cb as never)
-  )
+  await s.put(local, remote, progress(t))
 }
 
-async function uploadPath(s: SFTPWrapper, sessionId: string, local: string, remoteDir: string): Promise<string> {
+async function getFile(s: RemoteFs, t: Transfer, remote: string, local: string): Promise<void> {
+  t.state = 'running'
+  update(t)
+  await s.get(remote, local, progress(t))
+}
+
+async function uploadPath(s: RemoteFs, sessionId: string, local: string, remoteDir: string): Promise<string> {
   const st = await fs.stat(local)
   const remote = posix.join(remoteDir, basename(local))
   if (st.isDirectory()) {
-    await p<void>((cb) => s.mkdir(remote, cb as never)).catch(() => {})
+    await s.mkdir(remote).catch(() => {})
     for (const f of await fs.readdir(local)) await uploadPath(s, sessionId, join(local, f), remote)
     return remote
   }
@@ -201,12 +224,12 @@ export function upload(sessionId: string, localPaths: string[], remoteDir: strin
   })
 }
 
-async function downloadPath(s: SFTPWrapper, sessionId: string, remote: string, localDir: string): Promise<void> {
-  const st = await p<Stats>((cb) => s.stat(remote, cb))
+async function downloadPath(s: RemoteFs, sessionId: string, remote: string, localDir: string): Promise<void> {
+  const st = await s.stat(remote)
   const local = join(localDir, posix.basename(remote))
   if (st.isDirectory()) {
     await fs.mkdir(local, { recursive: true })
-    const items = await p<{ filename: string }[]>((cb) => s.readdir(remote, cb as never))
+    const items = await s.readdir(remote)
     for (const i of items) if (i.filename !== '.' && i.filename !== '..') await downloadPath(s, sessionId, posix.join(remote, i.filename), local)
     return
   }
@@ -274,14 +297,14 @@ function stamp(): string {
   return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`
 }
 
-async function cleanup(s: SFTPWrapper, dir: string, days: number): Promise<void> {
+async function cleanup(s: RemoteFs, dir: string, days: number): Promise<void> {
   if (!days || days <= 0) return
   try {
-    const items = await p<{ filename: string; attrs: Stats }[]>((cb) => s.readdir(dir, cb as never))
+    const items = await s.readdir(dir)
     const cutoff = Date.now() / 1000 - days * 86400
     for (const i of items) {
       if (i.filename.startsWith('bt-') && (i.attrs.mtime ?? 0) < cutoff) {
-        await p<void>((cb) => s.unlink(posix.join(dir, i.filename), cb as never)).catch(() => {})
+        await s.unlink(posix.join(dir, i.filename)).catch(() => {})
       }
     }
   } catch { /* */ }
@@ -304,7 +327,7 @@ export function uploadForPrompt(sessionId: string, source: { kind: 'clipboardIma
       const remote = posix.join(dir, name)
       const t: Transfer = { id: randomUUID(), sessionId, name, direction: 'up', bytes: 0, total: data.length, state: 'running', remotePath: remote }
       update(t)
-      await p<void>((cb) => s.writeFile(remote, data, cb as never))
+      await s.writeFile(remote, data)
       t.state = 'done'
       t.bytes = data.length
       update(t)
@@ -346,15 +369,15 @@ const IMG_MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/j
 
 export async function preview(sessionId: string, path: string): Promise<{ kind: 'image' | 'text'; data: string } | null> {
   const s = await sftpOf(sessionId)
-  const st = await p<Stats>((cb) => s.stat(path, cb))
+  const st = await s.stat(path)
   const ext = extname(path).toLowerCase()
   if (IMG_MIME[ext]) {
     if ((st.size ?? 0) > 20 * 1024 * 1024) return null
-    const buf = await p<Buffer>((cb) => s.readFile(path, cb as never))
+    const buf = await s.readFile(path)
     return { kind: 'image', data: `data:${IMG_MIME[ext]};base64,${buf.toString('base64')}` }
   }
   if ((st.size ?? 0) > 512 * 1024) return null
-  const buf = await p<Buffer>((cb) => s.readFile(path, cb as never))
+  const buf = await s.readFile(path)
   if (buf.includes(0)) return null
   return { kind: 'text', data: buf.toString('utf8') }
 }
@@ -367,7 +390,7 @@ export async function editRemote(sessionId: string, remote: string): Promise<str
   const dir = join(app.getPath('temp'), 'brightterm-edit', randomUUID().slice(0, 8))
   await fs.mkdir(dir, { recursive: true })
   const local = join(dir, posix.basename(remote))
-  await p<void>((cb) => s.fastGet(remote, local, cb as never))
+  await s.get(remote, local)
   const key = sessionId + ':' + remote
   watchers.get(key)?.close()
   let timer: NodeJS.Timeout | null = null
@@ -380,7 +403,7 @@ export async function editRemote(sessionId: string, remote: string): Promise<str
         if (m === lastMtime) return
         lastMtime = m
         const s2 = await sftpOf(sessionId)
-        await p<void>((cb) => s2.fastPut(local, remote, cb as never))
+        await s2.put(local, remote)
         send('toast', { kind: 'ok', text: `${posix.basename(remote)} 저장됨 → 서버에 업로드 완료` })
       } catch (e) {
         send('toast', { kind: 'error', text: `업로드 실패: ${(e as Error).message}` })

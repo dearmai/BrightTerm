@@ -10,7 +10,7 @@ import { ask } from '../ui'
 import { store } from '../store'
 import { vault } from '../vault'
 import { proxyConnect, proxyLabel } from '../proxy'
-import { startupLine, persistSupported, tmuxName, TMUX_LIST_SCRIPT, parseTmuxList, nextTmuxName, tmuxKillScript } from '../persist'
+import { persistSupported, tmuxName, TMUX_LIST_SCRIPT, parseTmuxList, nextTmuxName, tmuxKillScript } from '../persist'
 
 export interface SshContext {
   title: string
@@ -302,8 +302,6 @@ export class SshTransport extends EventEmitter implements Transport {
     this.stream.on('close', () => this.finish())
     client.on('close', () => this.finish('연결이 종료되었습니다'))
     this.setupForwards()
-    const line = startupLine(this.plain ? { ...this.host, persist: false } : this.host, this.tmuxSession)
-    if (line) setTimeout(() => this.stream?.write(line.replace(/\r?\n/g, '\r') + '\r'), 400)
   }
 
   private setupForwards(): void {

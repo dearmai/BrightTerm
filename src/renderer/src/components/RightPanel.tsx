@@ -89,6 +89,7 @@ function SftpPanel(): JSX.Element {
   useEffect(() => { if (sid && path && doneCount) load(path) }, [doneCount])
 
   if (!session) return <div className="empty">세션을 선택하면 해당 서버의 파일이 표시됩니다.</div>
+  if (session.sftp === 'unavailable') return <div className="empty">이 서버는 파일을 주고받을 수 없습니다.<br />(SFTP 와 SSH 명령 채널이 모두 막혀 있음)</div>
   if (!session.canSftp) return <div className="empty">SFTP는 SSH 세션에서만 사용할 수 있습니다.<br />({session.protocol.toUpperCase()} 세션)</div>
   if (!sid) return <div className="empty">연결되면 파일 목록이 표시됩니다.</div>
 
@@ -151,6 +152,7 @@ function SftpPanel(): JSX.Element {
 
   return (
     <>
+      {session.sftp === 'shell' && <div className="notice warn" style={{ margin: '8px 8px 0', fontSize: 12 }}>이 서버는 SFTP 가 없어 SSH 명령(cat·ls)으로 파일을 주고받습니다. 큰 파일은 느릴 수 있습니다.</div>}
       <div className="sftp-bar">
         <button className="ibtn sm" title="상위 폴더" onClick={() => load(parent)}><ArrowUp size={14} /></button>
         <button className="ibtn sm" title="홈" onClick={() => load('~')}><Home size={14} /></button>

@@ -1,9 +1,11 @@
 // Run against an isolated Android emulator with the debug APK already installed.
 // ANDROID_SERIAL=emulator-5554 node test/e2e-android.mjs
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawn} from 'node:child_process';
 import {generateKeyPairSync} from 'node:crypto';
-import {mkdirSync,writeFileSync} from 'node:fs';
+import {mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import ssh2 from 'ssh2';
 const {Server} = ssh2;
 const serial = process.env.ANDROID_SERIAL;
@@ -18,7 +20,10 @@ let browserSocket, server, forwardedPort, connections=0, lastPty;
 let expectedPassword='android-test-secret';
 const identity=generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs1',format:'pem'});
 const parsedIdentity=ssh2.utils.parseKey(identity);
-let received='', shells=0, raw=Buffer.alloc(0), probes=0, lastClient, ptyRequest;
+let received='', shells=0, raw=Buffer.alloc(0), probes=0, lastClient, ptyRequest, sftpEnabled=true, execFiles=false;
+// Files for the "SFTP missing, exec works" server: commands run here in a real sh.
+const remoteRoot=realpathSync(mkdtempSync(join(tmpdir(),'bt-android-remote-')));
+writeFileSync(join(remoteRoot,'hello.txt'),'hello from server\n');
 let hostKey = () => generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs1',format:'pem'});
 async function startServer(port=0) {
   server = new Server({hostKeys:[hostKey()]}, client => {
@@ -32,7 +37,8 @@ async function startServer(port=0) {
       const session = accept();
       session.on('pty',(accept,reject,info) => { lastPty=ptyRequest=info; accept(); });
       session.on('window-change',(accept,reject,info) => {lastPty=info; accept?.();});
-      session.on('sftp', accept => {
+      session.on('sftp', (accept, reject) => {
+        if(!sftpEnabled) return reject();
         const sftp=accept(); let listed=false;
         sftp.on('REALPATH',(id,path)=>sftp.name(id,[{filename:'/home/tester',longname:'/home/tester',attrs:{}}]));
         for(const type of ['STAT','LSTAT']) sftp.on(type,(id,path)=>sftp.attrs(id,{mode:0o40755,size:0,uid:1000,gid:1000,atime:0,mtime:0}));
@@ -40,11 +46,20 @@ async function startServer(port=0) {
         sftp.on('READDIR',(id)=>{ if(listed) sftp.status(id,ssh2.utils.sftp.STATUS_CODE.EOF); else {listed=true;sftp.name(id,[{filename:'hello.txt',longname:'-rw-r--r-- 1 tester tester 5 Jan 1 00:00 hello.txt',attrs:{mode:0o100644,size:5,uid:1000,gid:1000,atime:0,mtime:0}}]);} });
         sftp.on('CLOSE',(id)=>sftp.status(id,ssh2.utils.sftp.STATUS_CODE.OK));
       });
-      session.on('exec', (accept, reject, info) => { const stream=accept();
+      session.on('exec', (accept, reject, info) => {
         // Resume health check opens a throwaway channel.
-        if(info.command==='true') { probes++; stream.exit(0); stream.end(); return; }
+        if(info.command==='true') { const stream=accept(); probes++; stream.exit(0); stream.end(); return; }
+        if(!/tmux list-sessions/.test(info.command)) {
+          if(!execFiles) return reject();
+          const stream=accept(), child=spawn('sh',['-c',info.command],{cwd:remoteRoot});
+          child.stdout.on('data',d=>stream.write(d)); child.stderr.on('data',d=>stream.stderr.write(d));
+          stream.on('data',d=>child.stdin.write(d)); stream.on('end',()=>child.stdin.end());
+          child.on('close',code=>{stream.exit(code??1); stream.end();});
+          return;
+        }
+        const stream=accept();
         assert.match(info.command,/tmux list-sessions/); stream.end("shared\nbt-Android-E2E\nodd'quote\n"); });
-      session.on('shell', accept => { shells++; const stream = accept(); stream.write('BrightTerm Android test shell\r\n'); stream.on('data', data => {received+=data.toString(); raw=Buffer.concat([raw,data]); stream.write(data);}); });
+      session.on('shell', accept => { shells++; const stream = accept(); stream.write('BrightTerm Android test shell\r\n'); stream.on('data', data => {received+=data.toString(); raw=Buffer.concat([raw,data]); stream.write(data); if(data.toString().includes('sudo -i\r')) stream.write('\r\n[sudo] password for tester: ');}); });
     }); });
   });
   await new Promise(resolve => server.listen(port,'127.0.0.1',resolve));
@@ -176,9 +191,30 @@ try {
   await clickNative('취소');
   await until(()=>evaluate("current()?.state==='disconnected'"),'Cancelled selection stayed connecting');
   assert.equal(shells,shellCount,'Cancel opened a shell');
+  // Multi-line startup: one line at a time after the prompt settles, stopping at a password prompt.
+  // The same server refuses the SFTP subsystem, so the file button is dimmed.
+  received=''; sftpEnabled=false;
+  await evaluate(`Android.connect(JSON.stringify({inheritId:${JSON.stringify(savedId)},persist:false,command:'echo one\\n# skip\\n\\necho two\\nsudo -i\\nwhoami'}),80,24)`);
+  await until(()=>received.includes('sudo -i\r'),'Multi-line startup not sent');
+  await delay(1500);
+  assert.equal(received,'echo one\recho two\rsudo -i\r','Startup lines were not sent one by one or kept going after the password prompt');
+  await until(()=>evaluate("Array.from({length:current().term.buffer.active.length},(_,i)=>current().term.buffer.active.getLine(i).translateToString()).join('').includes('1줄은 보내지 않았습니다')"),'Password stop notice missing');
+  await until(()=>evaluate("current().sftp==='unavailable' && $('sftp').classList.contains('unavailable')"),'File button not dimmed without SFTP');
+  // SFTP missing but exec works: files go over SSH commands (cat·ls) and the button stays enabled.
+  execFiles=true;
+  const beforeShell=connections;
+  await evaluate(`Android.connect(JSON.stringify({inheritId:${JSON.stringify(savedId)},persist:false,command:''}),80,24)`);
+  await until(async()=>connections===beforeShell+1 && await evaluate("current()?.sftp==='shell' && !$('sftp').classList.contains('unavailable')"),'Exec file fallback not detected');
+  await evaluate("$('sftp').click()");
+  await until(()=>evaluate("$('file-list').textContent.includes('hello.txt')"),'File list over SSH commands failed');
+  await evaluate(`Android.list(active, ${JSON.stringify(remoteRoot)})`);
+  await until(()=>evaluate(`$('remote-directory').value===${JSON.stringify(remoteRoot)} || $('file-list').textContent.includes('hello.txt')`),'Absolute path listing failed');
+  await evaluate("$('close-files').click()");
+  execFiles=false; sftpEnabled=true;
+  const beforeAix=connections;
   // AIX template: Backspace ^H with matching pty VERASE, vt220 Home, EUC-KR both ways.
   await evaluate(`Android.connect(JSON.stringify({inheritId:${JSON.stringify(savedId)},persist:false,termType:'xterm',encoding:'euc-kr',keys:{backspace:'ctrl-h',delete:'vt220',homeEnd:'vt220',enter:'CR'}}),80,24)`);
-  await until(()=>evaluate("current()?.state==='connected'"),'AIX profile did not connect');
+  await until(async()=>connections===beforeAix+1 && await evaluate("current()?.state==='connected'"),'AIX profile did not connect');
   // VERASE is not asserted: the ssh2 server parser starts the modes string at offset 1, dropping the first opcode.
   assert.equal(ptyRequest.term,'xterm');
   received=''; raw=Buffer.alloc(0);
@@ -195,6 +231,7 @@ try {
   await evaluate("current().again.click()");
   await until(()=>connections===beforeDrop+1,'Reconnect failed');
   await until(()=>evaluate(`active===${JSON.stringify(aixId)} && current().state==='connected' && current().again.hidden`),'Reconnect did not reuse the tab');
+  await until(()=>evaluate("current().sftp==='ok' && !$('sftp').classList.contains('unavailable')"),'SFTP check did not pass on a capable server');
   // Tab menu by right click / long press: duplicate the same server into a new tab.
   await evaluate("current().tab.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:20,clientY:20}))");
   assert(await evaluate("!$('tab-menu').hidden && [...$('tab-menu').querySelectorAll('button')].map(b=>b.textContent).join('|').includes('같은 서버 새 탭')"),'Tab menu not shown');
@@ -212,7 +249,7 @@ try {
   assert.equal(connections,beforeChangedKey,'Changed host key authenticated');
   assert.match(await evaluate("$('toast').textContent"),/HostKey|host.?key|reject/i);
   await evaluate(`Android.delete(${JSON.stringify(savedId)}); for(const id of sessions.keys()) Android.disconnect(id);`);
-  console.log('PASS: phone/desktop layouts, encrypted profiles, password/key SSH, SFTP listing, UTF-8 I/O, touch Ctrl+C, pinch font/PTY resize, tmux existing/new/plain/cancel selection, AIX keys/EUC-KR, reconnect button, tab menu duplicate, resume health check, PTY resize without reconnect, background retention, trusted reconnect, changed-host-key rejection.');
+  console.log('PASS: phone/desktop layouts, encrypted profiles, password/key SSH, SFTP listing, UTF-8 I/O, touch Ctrl+C, pinch font/PTY resize, tmux existing/new/plain/cancel selection, multi-line startup, SFTP availability, file list over SSH commands without SFTP, AIX keys/EUC-KR, reconnect button, tab menu duplicate, resume health check, PTY resize without reconnect, background retention, trusted reconnect, changed-host-key rejection.');
 } catch(error) {
   console.error(error); process.exitCode=1; try { screenshot('failure.png'); } catch {}
 } finally {
@@ -222,6 +259,7 @@ try {
   adb('shell','wm','size','reset'); adb('shell','wm','density','reset');
   if(forwardedPort) adb('reverse','--remove',`tcp:${forwardedPort}`);
   adb('forward','--remove','tcp:9223');
+  rmSync(remoteRoot,{recursive:true,force:true});
 }
 // Lingering SSH sockets from the emulator must not keep the run alive.
 process.exit();

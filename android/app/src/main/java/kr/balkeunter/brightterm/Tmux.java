@@ -2,6 +2,7 @@ package kr.balkeunter.brightterm;
 
 import org.json.JSONObject;
 import java.text.Normalizer;
+import java.util.*;
 
 /** Matches desktop persist.ts: exact session targets, startup once, reattach without restarting jobs. */
 final class Tmux {
@@ -18,19 +19,34 @@ final class Tmux {
         if (base.isEmpty()) base = "terminal";
         return custom.isEmpty() ? "bt-" + base : base;
     }
-    static String startup(JSONObject profile) {
+    /** 자동 실행 명령을 줄 단위로 — 빈 줄과 # 주석 줄은 뺀다 (persist.ts startupLines) */
+    static List<String> lines(JSONObject profile) {
+        List<String> lines = new ArrayList<>();
+        for (String line : profile.optString("command", "").split("\\r?\\n")) {
+            String value = line.replaceAll("\\s+$", "");
+            if (!value.trim().isEmpty() && !value.trim().startsWith("#")) lines.add(value);
+        }
+        return lines;
+    }
+    static List<String> startup(JSONObject profile) {
         return startup(profile, name(profile));
     }
-    static String startup(JSONObject profile, String name) {
-        String command = profile.optString("command", "").trim();
-        if (!profile.optBoolean("persist", false)) return command;
+    /** 접속 직후 셸에 입력할 줄들 (persist.ts startupPlan) — 새 tmux 세션에는 붙은 뒤 1초 간격으로 한 줄씩 넣는다 */
+    static List<String> startup(JSONObject profile, String name) {
+        List<String> lines = lines(profile);
+        if (!profile.optBoolean("persist", false)) return lines;
         String target = quote("=" + name);
-        String create = "tmux new-session -d -s " + quote(name) + " -c \"$PWD\" && tmux set-option -t " + target + " status off >/dev/null";
-        if (!command.isEmpty()) create += " && tmux send-keys -t " + target + " -l " + quote(command) + " && tmux send-keys -t " + target + " Enter";
-        String inner = "tmux has-session -t " + target + " 2>/dev/null || { " + create + "; }; tmux set-option -t " + target + " mouse " +
+        StringBuilder typing = new StringBuilder();
+        for (String line : lines) {
+            if (typing.length() > 0) typing.append("; ");
+            typing.append("sleep 1; tmux send-keys -t ").append(target).append(" -l ").append(quote(line)).append("; tmux send-keys -t ").append(target).append(" Enter");
+        }
+        String create = "tmux new-session -d -s " + quote(name) + " -c \"$PWD\" && tmux set-option -t " + quote(name) + " status off >/dev/null; " +
+            (typing.length() == 0 ? "" : "{ " + typing + "; } >/dev/null 2>&1 & ");
+        String inner = "tmux has-session -t " + target + " 2>/dev/null || { " + create + "}; tmux set-option -t " + target + " mouse " +
             (profile.optBoolean("persistMouse", true) ? "on" : "off") + " >/dev/null 2>&1; TMUX= exec tmux attach-session -t " + target;
-        return " if command -v tmux >/dev/null 2>&1; then sh -c " + quote(inner) + "; else printf '%s\\n' " +
+        return Collections.singletonList(" if command -v tmux >/dev/null 2>&1; then sh -c " + quote(inner) + "; else printf '%s\\n' " +
             quote("BrightTerm: 서버에 tmux가 없어 일반 셸로 연결합니다. Ubuntu/Debian: sudo apt install tmux / macOS: brew install tmux") +
-            (command.isEmpty() ? "" : "; " + command) + "; fi";
+            (lines.isEmpty() ? "" : "; " + String.join("; ", lines)) + "; fi");
     }
 }

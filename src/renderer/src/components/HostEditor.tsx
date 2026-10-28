@@ -495,8 +495,8 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                 </div>
               </div>
             )}
-            <Field label={h.protocol === 'local' ? '셸 시작 후 자동 실행 명령' : '접속 후 자동 실행 명령'} hint={h.persist && h.protocol !== 'telnet' && h.protocol !== 'serial' ? '세션 유지가 켜져 있으면 tmux 세션을 처음 만들 때만 실행됩니다 — 다시 붙을 때는 돌던 프로그램에 그대로 붙습니다' : h.protocol === 'local' ? '창을 열 때마다 실행됩니다. 예: nvm use && claude' : '예: cd /var/www && sudo -i'}>
-              <input className="input mono" value={h.startupCommand ?? ''} onChange={(e) => set('startupCommand', e.target.value)} placeholder={h.protocol === 'local' ? 'claude --continue' : 'cd /var/www && sudo -i'} />
+            <Field label={h.protocol === 'local' ? '셸 시작 후 자동 실행 명령' : '접속 후 자동 실행 명령'} hint={<>여러 줄이면 한 줄씩 보내고, 출력이 멈추면(프롬프트) 다음 줄을 보냅니다. 비밀번호 프롬프트가 나오면 남은 줄은 보내지 않습니다. 빈 줄과 # 주석은 건너뜁니다.{h.persist && h.protocol !== 'telnet' && h.protocol !== 'serial' ? ' 세션 유지가 켜져 있으면 tmux 세션을 처음 만들 때만 1초 간격으로 실행됩니다 — 다시 붙을 때는 돌던 프로그램에 그대로 붙습니다.' : h.protocol === 'local' ? ' 창을 열 때마다 실행됩니다.' : ''}</>}>
+              <textarea className="textarea" rows={Math.min(8, Math.max(3, (h.startupCommand ?? '').split('\n').length + 1))} spellCheck={false} value={h.startupCommand ?? ''} onChange={(e) => set('startupCommand', e.target.value)} placeholder={h.protocol === 'local' ? 'nvm use\nclaude --continue' : 'export LANG=ko_KR.UTF-8\nexport TZ=Asia/Seoul\ncd /var/www'} />
             </Field>
             {h.protocol === 'local' ? (
               <Field label="터미널 종류"><input className="input mono" value={h.termType} onChange={(e) => set('termType', e.target.value)} /></Field>

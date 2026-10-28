@@ -128,12 +128,20 @@
               type="password"
               autocomplete="off" /></label
           ><label
-            >연결 후 실행할 명령<input
+            >연결 후 실행할 명령<textarea
               name="command"
-              placeholder="예: tmux new-session -A -s brightterm"
+              rows="3"
+              placeholder="한 줄에 하나씩&#10;export LANG=ko_KR.UTF-8&#10;cd /var/www"
               autocapitalize="off"
               spellcheck="false"
-          /></label>
+            ></textarea></label
+          >
+          <p class="hint">
+            한 줄씩 보내고 출력이 멈추면(프롬프트) 다음 줄을 보냅니다. 비밀번호
+            프롬프트가 나오면 남은 줄은 보내지 않습니다. 빈 줄과 # 주석은
+            건너뜁니다. 세션 유지(tmux)는 새 세션을 만들 때만 1초 간격으로
+            실행합니다.
+          </p>
         </details>
         <details id="terminal-settings">
           <summary>터미널 · 인코딩</summary>

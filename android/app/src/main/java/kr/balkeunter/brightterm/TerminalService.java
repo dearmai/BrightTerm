@@ -34,6 +34,11 @@ public class TerminalService extends Service {
         /** 다시 접속·같은 서버 새 탭에 쓰는 접속 정보와 붙었던 tmux 세션 */
         JSONObject profile;
         volatile String tmux;
+        /** SFTP 확인 결과 — 화면을 다시 붙일 때 다시 보낸다 */
+        volatile String sftp = "checking";
+        /** 자동 실행 명령을 한 줄씩 보낼 때 — 마지막 출력 시각과 끝부분(비밀번호 프롬프트 확인) */
+        volatile long lastOutput;
+        final StringBuilder tail = new StringBuilder();
         int cols = 80, rows = 24;
         // 서버별 키 코드·인코딩 (서버 편집 → 터미널)
         volatile JSONObject keys;
@@ -80,7 +85,7 @@ public class TerminalService extends Service {
     synchronized void attach(Listener l) {
         listener = l;
         for (Connection c : connections.values()) {
-            emit("session", c.id, c.name); emit("data", c.id, c.replay()); emit("state", c.id, c.state);
+            emit("session", c.id, c.name); emit("data", c.id, c.replay()); emit("state", c.id, c.state); emit("sftp", c.id, c.sftp);
         }
     }
     void connect(JSONObject profile, int cols, int rows) {
@@ -96,7 +101,7 @@ public class TerminalService extends Service {
         Connection c = connections.get(id);
         if (c == null || !"disconnected".equals(c.state)) return;
         c.cols = Math.max(2, cols); c.rows = Math.max(1, rows);
-        c.closed = false; c.stale = false; c.session = null; c.shell = null; c.input = null;
+        c.closed = false; c.stale = false; c.sftp = "checking"; c.session = null; c.shell = null; c.input = null;
         c.writes = Executors.newSingleThreadExecutor();
         start(c);
     }
@@ -164,14 +169,14 @@ public class TerminalService extends Service {
                 if (c.closed) return;
                 c.session.connect(25000);
                 if (c.closed) return;
-                String command;
+                List<String> command;
                 if (profile.optBoolean("persist", false) && c.tmux != null) command = Tmux.startup(profile, c.tmux);
                 else if (profile.optBoolean("persist", false)) {
                     List<String> names = tmuxSessions(c);
                     Listener l = listener;
                     String choice = l == null ? null : l.chooseTmux(c.name, names, () -> !c.closed);
                     if (choice == null || c.closed) return;
-                    if (choice.equals("\0")) command = profile.optString("command", "").trim();
+                    if (choice.equals("\0")) command = Tmux.lines(profile);
                     else {
                         String name = choice.isEmpty() ? Tmux.name(profile) : choice;
                         if (choice.isEmpty() && names.contains(name)) name += "-" + UUID.randomUUID().toString().substring(0, 8);
@@ -186,11 +191,17 @@ public class TerminalService extends Service {
                 c.shell.setTerminalMode(TermCompat.terminalModes(c.keys));
                 InputStream output = c.shell.getInputStream(); c.input = c.shell.getOutputStream(); c.shell.connect(15000);
                 c.state = "connected"; emit("state", c.id, c.state);
-                if (!command.trim().isEmpty()) { c.input.write((command + "\r").getBytes(c.charset)); c.input.flush(); }
+                if (!command.isEmpty()) { final List<String> lines = command; workers.execute(() -> typeStartup(c, lines)); }
+                workers.execute(() -> checkSftp(c));
                 byte[] buffer = new byte[16384]; int count;
                 while (!c.closed && (count = output.read(buffer)) != -1) {
                     byte[] bytes = c.decoder.toUtf8(Arrays.copyOf(buffer, count));
+                    c.lastOutput = System.currentTimeMillis();
                     if (bytes.length == 0) continue;
+                    synchronized (c.tail) {
+                        c.tail.append(new String(bytes, StandardCharsets.UTF_8));
+                        if (c.tail.length() > 300) c.tail.delete(0, c.tail.length() - 300);
+                    }
                     synchronized (TerminalService.this) {
                         c.remember(bytes); emit("data", c.id, Base64.encodeToString(bytes, Base64.NO_WRAP));
                     }
@@ -199,6 +210,47 @@ public class TerminalService extends Service {
                 if (!c.closed) emit("error", c.id, error.getMessage() == null ? "SSH 연결 실패" : error.getMessage());
             } finally { c.close(); c.state = "disconnected"; emit("state", c.id, c.state); }
         });
+    }
+    /** 다음 줄이 비밀번호로 들어가지 않게 멈출 프롬프트 (sessions.ts SECRET_PROMPT) */
+    private static final java.util.regex.Pattern SECRET_PROMPT =
+        java.util.regex.Pattern.compile("(password|passphrase|passcode|암호|비밀번호)[^\\n]*[:：]\\s*$", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final String ANSI = "\u001b\\[[0-9;?]*[ -/]*[@-~]|\u001b\\][^\u0007\u001b]*(\u0007|\u001b\\\\)|\u001b[()][0-9A-Za-z]|\u001b[=>78DEHMc]";
+    /** 접속 후 실행 명령을 한 줄씩 — 출력이 300ms 잠잠하면(프롬프트) 다음 줄, 출력이 계속돼도 5초 뒤에는 보낸다 */
+    private void typeStartup(Connection c, List<String> lines) {
+        ChannelShell shell = c.shell;
+        c.lastOutput = System.currentTimeMillis();
+        try {
+            for (int i = 0; i < lines.size(); i++) {
+                long start = System.currentTimeMillis(), min = i == 0 ? 400 : 0;
+                while (true) {
+                    long now = System.currentTimeMillis();
+                    if (now - start >= 5000 || (now - start >= min && now - c.lastOutput >= 300)) break;
+                    Thread.sleep(50);
+                }
+                if (c.closed || c.shell != shell) return;
+                String tail; synchronized (c.tail) { tail = c.tail.toString().replaceAll(ANSI, ""); }
+                if (i > 0 && SECRET_PROMPT.matcher(tail).find()) {
+                    byte[] notice = ("\r\n\u001b[33m● 비밀번호 입력을 기다려 남은 자동 실행 명령 " + (lines.size() - i) + "줄은 보내지 않았습니다\u001b[0m\r\n").getBytes(StandardCharsets.UTF_8);
+                    synchronized (this) { c.remember(notice); emit("data", c.id, Base64.encodeToString(notice, Base64.NO_WRAP)); }
+                    return;
+                }
+                input(c.id, lines.get(i) + "\r");
+                c.lastOutput = System.currentTimeMillis();
+            }
+        } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+    }
+    /** 서버가 SFTP 서브시스템을 여는지 백그라운드로 확인 (sessions.ts checkSftp).
+     *  안 되면 명령 채널을 확인해 되면 셸 명령(cat·ls)으로 파일을 다루고(shell), 그것도 안 되면 파일 버튼을 흐리게 */
+    private void checkSftp(Connection c) {
+        Session session = c.session;
+        emit("sftp", c.id, "checking");
+        ChannelSftp sftp = null;
+        boolean ok;
+        try { sftp = (ChannelSftp)session.openChannel("sftp"); sftp.connect(10000); ok = true; }
+        catch (Exception error) { ok = false; }
+        finally { if (sftp != null) sftp.disconnect(); }
+        boolean shell = !ok && session != null && ShellFiles.available(session);
+        if (c.session == session && !c.closed) { c.sftp = ok ? "ok" : shell ? "shell" : "unavailable"; emit("sftp", c.id, c.sftp); }
     }
     private List<String> tmuxSessions(Connection c) throws Exception {
         ChannelExec channel = (ChannelExec)c.session.openChannel("exec");
@@ -259,10 +311,19 @@ public class TerminalService extends Service {
         try { sftp.connect(15000); return sftp; }
         catch (Exception error) { sftp.disconnect(); throw error; }
     }
+    /** SFTP 가 없는 서버면 같은 SSH 연결의 셸 명령으로 */
+    private Session shellFiles(String id) throws IOException {
+        Connection c = connections.get(id);
+        if (c == null || !"shell".equals(c.sftp)) return null;
+        if (c.closed || c.session == null || !c.session.isConnected()) throw new IOException("SSH 서버에 먼저 연결하세요.");
+        return c.session;
+    }
     void list(String id, String path) {
         workers.execute(() -> {
             ChannelSftp sftp = null;
             try {
+                Session shell = shellFiles(id);
+                if (shell != null) { emit("files", id, ShellFiles.list(shell, path).toString()); return; }
                 sftp = sftp(id); String resolved = sftp.realpath(path);
                 JSONArray entries = new JSONArray();
                 for (ChannelSftp.LsEntry entry : sftp.ls(resolved)) {
@@ -280,6 +341,22 @@ public class TerminalService extends Service {
             ChannelSftp sftp = null;
             emit("transfer", id, upload ? "업로드 중…" : "다운로드 중…");
             try {
+                Session shell = shellFiles(id);
+                if (shell != null) {
+                    if (upload) {
+                        try (InputStream input = getContentResolver().openInputStream(local)) {
+                            if (input == null) throw new IOException("파일을 열 수 없습니다.");
+                            ShellFiles.upload(shell, input, path);
+                        }
+                    } else {
+                        try (OutputStream output = getContentResolver().openOutputStream(local, "wt")) {
+                            if (output == null) throw new IOException("파일을 저장할 수 없습니다.");
+                            ShellFiles.download(shell, path, output);
+                        }
+                    }
+                    emit("transfer", id, "전송 완료 (SSH 명령): " + path);
+                    return;
+                }
                 sftp = sftp(id);
                 if (upload) {
                     try (InputStream input = getContentResolver().openInputStream(local)) {
