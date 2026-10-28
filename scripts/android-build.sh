@@ -29,9 +29,27 @@ if [[ -z "${ANDROID_HOME:-}" ]]; then
     done
   fi
 fi
-if [[ -z "${JAVA_HOME:-}" && -x /usr/libexec/java_home ]]; then
-  android_jdk="$(/usr/libexec/java_home -v 17 2>/dev/null || true)"
-  if [[ -n "$android_jdk" ]]; then export JAVA_HOME="$android_jdk"; fi
+# AGP needs JDK 17: a newer or GraalVM JAVA_HOME (e.g. sdkman 21-graalce) breaks jlink on android-36.
+# ANDROID_JAVA_HOME forces a specific JDK.
+jdk_major() { "$1/bin/java" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java.specification.version = //p'; }
+if [[ -n "${ANDROID_JAVA_HOME:-}" ]]; then
+  export JAVA_HOME="$ANDROID_JAVA_HOME"
+elif [[ -z "${JAVA_HOME:-}" || ! -x "$JAVA_HOME/bin/java" || "$(jdk_major "$JAVA_HOME")" != 17 ]]; then
+  android_jdk=""
+  for candidate in \
+    "$( [[ -x /usr/libexec/java_home ]] && /usr/libexec/java_home -v 17 2>/dev/null || true)" \
+    "$HOME"/.sdkman/candidates/java/17* \
+    /usr/lib/jvm/*17* \
+    "/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+    "$HOME/.local/share/JetBrains/Toolbox/apps/android-studio/jbr"; do
+    if [[ -n "$candidate" && -x "$candidate/bin/java" && "$(jdk_major "$candidate")" == 17 ]]; then android_jdk="$candidate"; break; fi
+  done
+  if [[ -n "$android_jdk" ]]; then
+    [[ -n "${JAVA_HOME:-}" ]] && printf 'JAVA_HOME(%s)은 JDK 17이 아니어서 Android 빌드에 %s 를 씁니다.\n' "$JAVA_HOME" "$android_jdk" >&2
+    export JAVA_HOME="$android_jdk"
+  elif [[ -n "${JAVA_HOME:-}" ]]; then
+    printf '%s\n' "경고: JDK 17을 찾지 못해 JAVA_HOME($JAVA_HOME)으로 빌드합니다. 실패하면 JDK 17을 설치하거나 ANDROID_JAVA_HOME 을 지정하세요." >&2
+  fi
 fi
 
 marker=node_modules/.brightterm-android-deps

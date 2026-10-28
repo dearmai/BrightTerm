@@ -27,7 +27,7 @@ adb -s <기기_ID> install -r android/app/build/outputs/apk/debug/app-debug.apk
 
 GitHub HTTPS 인증은 **Fine-grained personal access token**을 사용합니다. GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens에서 소유자 `dearmai`, 저장소 `bright-term-vault`만 선택하고 **Contents: Read and write**로 만드세요. 앱의 Git 사용자명·HTTPS 토큰에 입력합니다. 토큰은 기기에 암호화해 저장하며 `adb install -r` 업데이트 시 유지됩니다. 토큰 만료·폐기 시 새 토큰으로 바꾸면 됩니다. 앱 제거/데이터 초기화 시에는 다시 입력해야 합니다. SSH 개인키와 볼트 마스터 비밀번호는 이 토큰과 별개입니다.
 
-Make 빌드는 기본 Android SDK 경로(macOS `~/Library/Android/sdk`, Linux `~/Android/Sdk`)를 확인합니다. macOS에서 `JAVA_HOME`이 없으면 설치된 JDK 17을 사용하고, PATH의 Node.js가 실행되지 않거나 버전이 낮으면 설치된 NVM 버전 중 지원 버전을 선택합니다. 환경 변경은 해당 빌드에만 적용합니다. 별도 SDK/JDK는 `ANDROID_HOME`, `JAVA_HOME`으로 지정하세요.
+Make 빌드는 기본 Android SDK 경로(macOS `~/Library/Android/sdk`, Linux `~/Android/Sdk`)를 확인합니다. `JAVA_HOME`이 없거나 JDK 17이 아니면(예: sdkman GraalVM 21) 설치된 JDK 17(`java_home -v 17`, sdkman `17*`, `/usr/lib/jvm`, Android Studio 내장 JBR)을 찾아 사용하고, PATH의 Node.js가 실행되지 않거나 버전이 낮으면 설치된 NVM 버전 중 지원 버전을 선택합니다. 환경 변경은 해당 빌드에만 적용합니다. 별도 SDK는 `ANDROID_HOME`, 특정 JDK를 강제하려면 `ANDROID_JAVA_HOME`으로 지정하세요.
 
 `npm ci --ignore-scripts`는 Android 빌드에 필요 없는 Electron/node-pty 설치 작업을 건너뜁니다. 빌드에는 Gradle wrapper가 포함되며 SDK/Java 경로는 저장소에 고정하지 않습니다. APK는 개발용 debug 서명입니다. 스토어 배포용 서명·AAB와 게시 작업은 포함하지 않습니다.
 
