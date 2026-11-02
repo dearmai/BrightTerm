@@ -22,6 +22,8 @@ export interface SshContext {
   onInfo?: (msg: string) => void
   /** 세션 유지 서버에서 붙을 tmux 세션 — 없으면 이전 세션이 있을 때 물어본다 */
   tmux?: TmuxPick
+  /** 볼트 대신 쓸 비밀번호·키 — 실행 인자(-pw, /PASSWORD 등)로 받은 것. 점프 호스트에는 넘기지 않는다 */
+  secret?: CredentialSecret
 }
 
 /**
@@ -102,14 +104,14 @@ export async function openClient(host: Host, ctx: SshContext, depth = 0): Promis
   if (jh) {
     ctx.onInfo?.(`점프 호스트 ${jh.alias} 경유 중...`)
     // 베스천에서 입력한 비밀번호를 이 서버 계정에 저장하면 안 된다 — 저장 콜백은 넘기지 않는다
-    const j = await openClient(jh, { ...ctx, title: jh.alias, onSavePassword: undefined }, depth + 1)
+    const j = await openClient(jh, { ...ctx, title: jh.alias, onSavePassword: undefined, secret: undefined }, depth + 1)
     chain.push(...j.chain, j.client)
     sock = await new Promise<ClientChannel>((res, rej) =>
       j.client.forwardOut('127.0.0.1', 0, host.host, host.port, (err, ch) => (err ? rej(err) : res(ch)))
     )
   }
 
-  const secret = secretFor(host)
+  const secret = { ...secretFor(host), ...ctx.secret }
   let username = host.username || secret.username || ''
   if (!username) {
     const u = await ask<string>({ kind: 'username', sessionTitle: ctx.title })

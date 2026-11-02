@@ -17,6 +17,8 @@ import { persistSupported, startupPlan, tmuxMouse, tmuxMouseScript, tmuxName } f
 import { send } from './ui'
 import { store, dataDir } from './store'
 import { vault } from './vault'
+import { claimLaunch, type LaunchClaim } from './launch'
+import { localNetworkHelp } from './localNetworkHelp'
 
 /** SFTP 확인을 기다리는 시간 — 응답이 없으면 쓸 수 없는 것으로 본다 */
 const SFTP_CHECK_MS = 10000
@@ -80,7 +82,7 @@ function adhocHost(t: AdhocTarget): Host {
   return {
     id: 'adhoc-' + randomUUID(),
     groupId: null,
-    alias: `${t.username ? t.username + '@' : ''}${t.host}`,
+    alias: t.title || `${t.username ? t.username + '@' : ''}${t.host}`,
     protocol,
     host: t.host,
     port: t.port ?? (protocol === 'telnet' ? 23 : 22),
@@ -110,9 +112,15 @@ export class Session {
 
   /** 세션 유지 서버에서 붙을 tmux 세션 — 한 번 붙으면 그 이름으로 고정해 재접속 때 묻지 않는다 */
   private tmux?: TmuxPick
+  /** 실행 인자로 받은 비밀번호·키 — 볼트 대신 쓴다 */
+  private secret?: LaunchClaim['secret']
+  /** 실행 인자로 연 세션 — 일회용 토큰일 수 있어 자동 재접속하지 않는다 */
+  private launched: boolean
 
-  constructor(public host: Host, public persistent: boolean, tmux?: TmuxPick) {
+  constructor(public host: Host, public persistent: boolean, tmux?: TmuxPick, launch?: LaunchClaim) {
     this.tmux = tmux
+    this.secret = launch?.secret
+    this.launched = !!launch
     this.info = {
       id: randomUUID(),
       hostId: persistent ? host.id : null,
@@ -169,7 +177,8 @@ export class Session {
           rows: this.rows,
           onInfo: (m) => this.info_(m, '90'),
           onSavePassword: (username, password) => this.savePassword(username, password),
-          tmux: this.tmux
+          tmux: this.tmux,
+          secret: this.secret
         })
         await st.start()
         if (st.tmuxSession) {
@@ -217,6 +226,8 @@ export class Session {
     } catch (e) {
       const msg = (e as Error).message || String(e)
       this.info_(`${h.protocol === 'local' ? '셸 실행 실패' : '접속 실패'}: ${translateError(msg)}`, '31')
+      const help = localNetworkHelp(e, h.protocol)
+      if (help) this.info_(help, '33')
       this.transport = null
       this.scheduleReconnect(true)
     }
@@ -294,7 +305,7 @@ export class Session {
   }
 
   private scheduleReconnect(failed: boolean): void {
-    const auto = store.get().settings.autoReconnect && this.host.protocol !== 'serial'
+    const auto = store.get().settings.autoReconnect && this.host.protocol !== 'serial' && !this.launched
     // only auto-retry when a previously working session drops (or retries in progress)
     if (auto && (!failed || this.retry > 0) && this.retry < 8) {
       const delay = Math.min(30, 2 ** this.retry * 2)
@@ -375,9 +386,11 @@ function translateError(m: string): string {
 
 class SessionManager {
   sessions = new Map<string, Session>()
+  /** 실행 인자로 연 세션의 브릿지 파이프 */
+  private bridges = new Map<string, LaunchClaim['bridge']>()
 
-  /** run: 세션 유지 없이 접속해 이 명령만 입력한다(서버에 tmux 설치 등) */
-  open(opts: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number; tmux?: TmuxPick; run?: string }): SessionInfo {
+  /** run: 세션 유지 없이 접속해 이 명령만 입력한다(서버에 tmux 설치 등). launch: 실행 인자로 들어온 요청 id */
+  open(opts: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number; tmux?: TmuxPick; run?: string; launch?: string }): SessionInfo {
     let host: Host | undefined
     let persistent = true
     if (opts.hostId) host = store.get().hosts.find((h) => h.id === opts.hostId)
@@ -389,9 +402,11 @@ class SessionManager {
     const h = structuredClone(host)
     if (opts.run) Object.assign(h, { persist: false, startupCommand: opts.run })
     if (opts.tmux === 'none') h.persist = false
-    const s = new Session(h, persistent, opts.tmux)
+    const claim = opts.launch ? claimLaunch(opts.launch) : undefined
+    const s = new Session(h, persistent, opts.tmux, claim)
     if (opts.cols && opts.rows) s.setSize(opts.cols, opts.rows)
     this.sessions.set(s.info.id, s)
+    if (claim?.bridge) this.bindBridge(s.info.id, claim.bridge)
     // give renderer a tick to register the terminal before data arrives
     setTimeout(() => s.connect(), 30)
     return s.info
@@ -404,12 +419,28 @@ class SessionManager {
   async close(id: string, killTmux = false): Promise<void> {
     const s = this.sessions.get(id)
     this.sessions.delete(id)
+    const b = this.bridges.get(id)
+    this.bridges.delete(id)
+    b?.destroy()
     await s?.close(killTmux)
+  }
+
+  /** 브릿지(putty.exe 등)가 끝나면(보안 프로그램이 접속 시간 만료로 끝내는 경우 등) 세션도 닫는다 */
+  private bindBridge(id: string, sock: NonNullable<LaunchClaim['bridge']>): void {
+    if (sock.destroyed) return
+    this.bridges.set(id, sock)
+    sock.on('close', () => {
+      if (!this.bridges.delete(id)) return
+      this.close(id)
+      send('launch:closed', id)
+    })
   }
 
   closeAll(): void {
     for (const s of this.sessions.values()) s.close()
     this.sessions.clear()
+    for (const b of this.bridges.values()) b?.destroy()
+    this.bridges.clear()
   }
 }
 

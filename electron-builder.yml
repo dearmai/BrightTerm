@@ -43,6 +43,11 @@ win:
       arch: [x64]
   icon: build/icon.png
   artifactName: ${productName}-${version}-${arch}-${target}.${ext}
+  # 보안 프로그램 연동 브릿지 — 설치 폴더\bridge\putty.exe 등 (scripts/build-bridge.mjs)
+  extraFiles:
+    - from: build/bridge
+      to: bridge
+      filter: ['*.exe']
 nsis:
   oneClick: false
   perMachine: false

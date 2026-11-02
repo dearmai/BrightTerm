@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CredentialMeta, Group, Host, SessionInfo, Settings, Snippet, StoreData, Transfer, UiRequest, VaultStatus, AdhocTarget, TmuxPick } from '@shared/types'
+import type { CredentialMeta, Group, Host, SessionInfo, Settings, Snippet, StoreData, Transfer, UiRequest, VaultStatus, AdhocTarget, TmuxPick, LaunchItem } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { api } from './api'
 import { LayoutNode, PaneNode, uid, panes, splitPane, removePane, grid, Dir, findPane, setPaneColor, setPaneTheme, insertNode, type Side } from './layout'
@@ -115,6 +115,8 @@ interface State {
   /** 포커스된 패널의 서버 id — 사이드바 선택 동기화용 */
   focusedHostId(): string | null
   openAdhoc(t: AdhocTarget, where?: 'tab' | Dir): Promise<void>
+  /** 실행 인자(PuTTY·Xshell·SecureCRT 형식)로 들어온 접속을 새 탭으로 */
+  openLaunch(item: LaunchItem): Promise<void>
   openGroupGrid(groupId: string): Promise<void>
   /** choice 가 없으면 서버에 연결된 세션을 닫기 전에 확인한다 */
   closePane(paneId: string, tabId?: string, choice?: CloseChoice): Promise<void>
@@ -258,6 +260,16 @@ export const useApp = create<State>((set, get) => ({
     try {
       const info = await api.session.open({ adhoc: t })
       placeSession(info, where)
+    } catch (e) {
+      get().toast('error', (e as Error).message)
+    }
+  },
+
+  async openLaunch(item) {
+    if (item.error) return get().toast('error', item.error)
+    try {
+      const info = await api.session.open({ hostId: item.hostId, adhoc: item.target, launch: item.id })
+      placeSession(info, 'tab')
     } catch (e) {
       get().toast('error', (e as Error).message)
     }

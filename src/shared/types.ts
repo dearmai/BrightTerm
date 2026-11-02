@@ -295,6 +295,16 @@ export interface AdhocTarget {
   port?: number
   username?: string
   protocol?: Protocol
+  /** 탭 이름 — 비우면 user@host */
+  title?: string
+}
+
+/** 실행 인자(PuTTY·Xshell·SecureCRT 형식)로 들어온 접속 — 비밀번호·키는 메인에만 두고 id 로 찾는다 */
+export interface LaunchItem {
+  id: string
+  hostId?: string
+  target?: AdhocTarget
+  error?: string
 }
 
 export interface SftpEntry {

@@ -1,5 +1,5 @@
 import type {
-  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, Host, ImportCandidate, LocalPublicKey, SessionInfo, SessionMetrics, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
+  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, Host, ImportCandidate, LaunchItem, LocalPublicKey, SessionInfo, SessionMetrics, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
 } from '@shared/types'
 
 interface Bt {
@@ -34,7 +34,9 @@ export const api = {
     storeChanged: (cb: () => void) => bt.on('store:changed', cb as never),
     toast: (cb: (t: { kind: 'ok' | 'error' | 'info'; text: string }) => void) => bt.on('toast', cb as never),
     menu: (cb: (action: string) => void) => bt.on('menu:action', cb as never),
-    update: (cb: (u: UpdateInfo | null) => void) => bt.on('update:changed', cb as never)
+    update: (cb: (u: UpdateInfo | null) => void) => bt.on('update:changed', cb as never),
+    launch: (cb: () => void) => bt.on('launch:pending', cb as never),
+    launchClosed: (cb: (sessionId: string) => void) => bt.on('launch:closed', cb as never)
   },
   store: {
     get: () => bt.call<StoreData>('store:get'),
@@ -64,10 +66,13 @@ export const api = {
   },
   session: {
     metrics: (id: string) => bt.call<SessionMetrics | null>('session:metrics', id),
-    open: (o: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number; tmux?: TmuxPick; run?: string }) => bt.call<SessionInfo>('session:open', o),
+    open: (o: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number; tmux?: TmuxPick; run?: string; launch?: string }) => bt.call<SessionInfo>('session:open', o),
     close: (id: string, killTmux?: boolean) => bt.call<void>('session:close', id, killTmux),
     reconnect: (id: string) => bt.call<void>('session:reconnect', id),
     tmuxMouse: (id: string, on: boolean) => bt.call<void>('session:tmuxMouse', id, on)
+  },
+  launch: {
+    take: () => bt.call<LaunchItem[]>('launch:take')
   },
   sshKey: {
     list: () => bt.call<LocalPublicKey[]>('sshkey:list'),

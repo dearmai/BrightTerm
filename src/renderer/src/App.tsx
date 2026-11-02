@@ -34,10 +34,23 @@ function useGlobalWiring(): void {
         useApp.getState().refreshCreds()
       }),
       api.on.storeChanged(() => useApp.getState().reloadStore()),
+      api.on.launch(() => { if (useApp.getState().vault.unlocked) openLaunches() }),
+      api.on.launchClosed((sessionId) => {
+        // 브릿지(putty.exe 등)가 끝났다 — 묻지 않고 그 패널을 닫는다
+        const st = useApp.getState()
+        const tab = st.tabOfSession(sessionId)
+        const pane = tab && panes(tab.root).find((p) => p.sessionId === sessionId)
+        if (tab && pane) st.closePane(pane.id, tab.id, { killTmux: false })
+      }),
       api.on.toast((t) => useApp.getState().toast(t.kind, t.text))
     ]
     return () => offs.forEach((f) => f())
   }, [])
+}
+
+/** 실행 인자로 들어온 접속 — 볼트가 열려 있을 때 가져와 탭으로 연다 */
+async function openLaunches(): Promise<void> {
+  for (const item of await api.launch.take()) await useApp.getState().openLaunch(item)
 }
 
 /** Run an app command; shared by the keyboard handler and the macOS menu bar. */
@@ -153,7 +166,8 @@ export default function App(): JSX.Element {
   useEffect(() => startWorkspaceSaving(), [])
   useEffect(() => {
     if (!loaded || !vault.unlocked) return
-    api.store.get().then((d) => restoreWorkspace(d.workspace, useApp.getState().settings.restoreTabs))
+    // 지난 탭을 먼저 복원하고 실행 인자로 들어온 접속을 그 뒤에 연다 — 새 탭이 활성 탭이 된다
+    api.store.get().then((d) => restoreWorkspace(d.workspace, useApp.getState().settings.restoreTabs)).finally(openLaunches)
   }, [loaded, vault.unlocked])
 
   // first run: offer PuTTY / ssh config import

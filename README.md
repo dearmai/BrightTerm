@@ -211,6 +211,30 @@ macOS에서는 앱 단축키가 모두 **⌘** 에 있어서 Ctrl+C/K/U/V/W 같�
 
 Windows/Linux에서 `vim` 등에 Ctrl+V를 보내야 한다면 설정 → 입력에서 "Ctrl+V로 붙여넣기"를 끄세요. 그러면 붙여넣기는 Ctrl+Shift+V로 합니다.
 
+## 서버 접근제어(보안) 프로그램 연동
+
+PuTTY·Xshell·SecureCRT 를 실행해 서버에 접속시키는 보안 프로그램에서 BrightTerm 을 대신 쓸 수 있습니다. 같은 실행 인자를 받아 새 탭으로 접속합니다.
+
+**브릿지 실행 파일 (Windows)** — 설치 폴더의 `bridge\` 에 `putty.exe`, `Xshell.exe`, `SecureCRT.exe` 가 들어 있습니다. 보안 프로그램의 클라이언트 경로를 이 파일로 바꾸면 됩니다 (설치형 기본: `%LOCALAPPDATA%\Programs\BrightTerm\bridge\putty.exe`).
+
+- 받은 명령줄을 그대로 BrightTerm 에 넘기고, **그 탭을 닫을 때까지 끝나지 않습니다**. 클라이언트 프로세스 종료로 접속 종료를 기록하는 보안 프로그램과 맞추기 위해서입니다.
+- 반대로 보안 프로그램이 브릿지 프로세스를 끝내면(접속 시간 만료 등) BrightTerm 도 그 탭을 닫습니다.
+- 인자 형식은 파일 이름으로 정합니다. 다른 이름으로 복사하면 인자를 보고 판단합니다.
+- 브릿지를 다른 폴더에 두려면 `BRIGHTTERM_EXE` 환경 변수에 `BrightTerm.exe` 경로를 지정하세요.
+- 포터블 실행 파일에는 브릿지가 없습니다. 설치형을 쓰거나 `BRIGHTTERM_EXE` 를 지정하세요.
+
+| 형식 | 지원 인자 |
+| --- | --- |
+| PuTTY | `-ssh` `-telnet` `-l 사용자` `-pw 비밀번호` `-pwfile 파일` `-P 포트` `-i 키파일` `-load 세션` `[사용자@]호스트` `telnet://호스트:포트` |
+| Xshell | `-url ssh://사용자:비밀번호@호스트:포트` `-url telnet://…` `-newtab 탭이름` `세션파일.xsh` `세션이름` |
+| SecureCRT | `/SSH2` `/TELNET 호스트 포트` `/L 사용자` `/PASSWORD 비밀번호` `/P 포트` `/I 키파일` `/S 세션` `/F 설정폴더` `/T` `[사용자@]호스트` |
+
+- `-load`·`/S`·Xshell 세션 이름은 BrightTerm 에 **같은 이름의 서버**가 있으면 그 설정(볼트 비밀번호·점프 호스트)으로 엽니다. 없으면 원래 프로그램의 세션(PuTTY 레지스트리, SecureCRT `Sessions\*.ini`, Xshell `.xsh`)에서 주소·포트·사용자를 읽습니다. 그 파일에 암호화돼 저장된 비밀번호는 쓰지 않습니다.
+- 인자로 받은 비밀번호·키는 메인 프로세스 메모리에서만 쓰고 볼트·로그·탭 복원 정보에 남기지 않습니다. 일회용 토큰일 수 있어서 이렇게 연 탭은 자동 재접속하지 않습니다. 끊긴 뒤 Enter 를 누르면 다시 접속합니다.
+- 지원하지 않는 방식: serial, raw, rlogin. 포트 포워딩(`-L`/`-R`/`-D`), 스크립트(`/SCRIPT`), 로그 옵션 같은 인자는 무시합니다.
+- 브릿지는 PuTTY 등과 파일 해시·서명이 다릅니다. 실행 파일 해시로 클라이언트를 검사하는 보안 프로그램이라면 관리자에게 브릿지 파일을 허용 목록에 등록해 달라고 요청해야 합니다.
+- 인자 형식은 Windows 외 OS 에서도 받습니다. 예: `open -a BrightTerm --args -ssh user@host`.
+
 ## 보안 구조
 
 - 마스터 비밀번호는 scrypt(N=2^17)로 키 암호화 키가 됩니다. 이 키로 무작위 256비트 볼트 키를 AES-256-GCM으로 감쌉니다. 각 계정은 그 볼트 키로 AES-256-GCM 암호화됩니다.
@@ -239,6 +263,7 @@ APPLE_KEYCHAIN_PROFILE=<notarytool 프로필> npm run dist:mac:signed  # Develop
 - Linux 실행 검증: `npm run test:linux` (그래픽 세션 필요). 패키지 검증: `BT_EXECUTABLE=dist/linux-unpacked/brightterm node test/e2e-linux.mjs`. 셸 대체 경로, PTY 입출력, 키링 미지원 시 볼트 동작, 시리얼 포트 열거를 확인합니다.
 - Git 동기화 검증: `npm run test:git-sync` (그래픽 세션 및 Git 필요). 임시 bare 저장소와 독립 앱 2개로 암호화, 설정 저장, 시작/변경 동기화, 충돌, 오프라인, 데이터 손상·중단 복구를 검증하며 실제 사용자 저장소를 사용하지 않습니다.
 - 상태 표시줄 검증: `node --experimental-strip-types --test test/metrics.test.mjs`로 측정값 파싱·SSH 조회·로컬 수집을 확인합니다. `npm run build && node test/e2e-statusbar.mjs`는 Linux/macOS 그래픽 환경에서 독립 앱과 임시 데이터로 실제 사용률 조회와 서로 다른 서버의 분할 창 포커스 전환을 확인합니다.
+- 보안 프로그램 연동 브릿지: `npm run bridge`로 `bridge/main.go`를 `build/bridge/`에 빌드합니다(Go 필요, 어느 OS에서든 교차 빌드). `dist:win*`에 포함돼 있습니다. 인자 파서 검증: `node --test test/launch-args.test.mjs`.
 - 테스트: `test/e2e.mjs`(Linux sshd 시나리오), `test/e2e-mac.mjs`(macOS 키 모델·붙여넣기·이미지 업로드 — 파일 머리 주석 참고), `test/importers.test.mjs`(가져오기 파서).
 - 요구 사항: Node 22.12+ (권장 24 LTS), Electron 43. Linux에서는 node-pty 빌드에 Python 3, make, C++ 컴파일러가 필요합니다.
 

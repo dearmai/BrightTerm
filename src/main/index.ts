@@ -17,6 +17,7 @@ import { scanAws } from './aws'
 import { checkUpdate, startUpdateCheck, updateInfo } from './update'
 import { gitSync } from './gitSync'
 import { listPublicKeys, installPublicKey, checkTmux } from './sshKeys'
+import { handleLaunch, takeLaunches } from './launch'
 import type { AdhocTarget, CredentialInput, GitSyncConfig, Group, Host, ImportCandidate, StoreData } from '@shared/types'
 
 let win: BrowserWindow | null = null
@@ -24,11 +25,17 @@ let win: BrowserWindow | null = null
 // 테스트·개발·포터블(portable.ts): 데이터 폴더를 따로 주면 Chromium 프로필도 분리해 실행 중인 앱과 별개 인스턴스로 뜬다
 if (process.env.BRIGHTTERM_DATA) app.setPath('userData', join(process.env.BRIGHTTERM_DATA, 'userdata'))
 
+/** 실행 인자에서 실행 파일(개발 중에는 앱 경로까지)을 뺀 나머지 */
+const launchArgv = (argv: string[]): string[] => argv.slice(process.defaultApp ? 2 : 1)
+
 // Single instance – second launch focuses the existing window
-if (!app.requestSingleInstanceLock()) {
+// 두 번째 실행의 인자(putty.exe -ssh … 등)는 additionalData 로 받는다 — second-instance argv 는 Chromium 이 스위치를 덧붙이거나 순서를 바꿀 수 있다
+if (!app.requestSingleInstanceLock({ argv: process.argv })) {
   app.quit()
 }
-app.on('second-instance', () => {
+app.on('second-instance', (_e, argv, _cwd, data) => {
+  const raw = (data as { argv?: unknown } | null)?.argv
+  handleLaunch(launchArgv(Array.isArray(raw) ? raw.map(String) : argv))
   if (win) {
     if (win.isMinimized()) win.restore()
     win.focus()
@@ -143,6 +150,7 @@ function registerIpc(): void {
 
   // sessions
   handle('session:open', (o: Parameters<typeof sessions.open>[0]) => sessions.open(o))
+  handle('launch:take', () => takeLaunches())
   handle('session:close', async (id: string, killTmux?: boolean) => {
     sftp.forgetSession(id)
     await sessions.close(id, !!killTmux)
@@ -463,6 +471,7 @@ app.whenReady().then(() => {
   }
   registerIpc()
   createWindow()
+  handleLaunch(launchArgv(process.argv))
   startAutoLock()
   startUpdateCheck()
   gitSync.schedule(0)

@@ -1,6 +1,7 @@
 node_modules/
 out/
 dist/
+build/bridge/
 test/.imp.mjs
 test/.*.mjs
 test/.*.cjs
