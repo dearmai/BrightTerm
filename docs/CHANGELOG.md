@@ -4,6 +4,12 @@
 
 ## 다음 버전 (미배포, 1.2.3 이후)
 
+### Linux ARM64 deb 빌드 및 PRoot 실행 안내
+
+- `make deb ARCH=arm64`, `npm run dist:linux:deb:arm64`로 ARM64 deb를 빌드할 수 있습니다. x64 Linux 교차 빌드에 필요한 컴파일러와 사용법을 README에 추가했습니다.
+- 패키지의 `node-pty` 바이너리 아키텍처를 확인하고 필요하면 대상 아키텍처로 빌드합니다. 개발용 호스트 모듈은 유지합니다.
+- PRoot-Distro에서 기본 실행이 종료되는 경우 사용자가 확인한 `--no-sandbox` 실행법을 안내합니다. 일반 Linux의 실행 기본값은 유지합니다.
+
 ### 포터블 버전은 실행 파일 옆에 설정 저장 (Windows)
 
 `BrightTerm-Portable-*.exe`는 설정·볼트·창 위치·Git 동기화·세션 로그를 실행 파일과 같은 폴더의 `BrightTerm-data\`에 저장합니다. exe 와 폴더를 함께 USB 등으로 옮기면 설정도 따라갑니다.

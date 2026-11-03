@@ -24,6 +24,7 @@
     "dist:mac:signed": "npm run notices && electron-vite build && electron-builder --mac -c electron-builder.signed.yml",
     "dist:linux": "npm run notices && electron-vite build && electron-builder --linux",
     "dist:linux:deb": "npm run notices && electron-vite build && electron-builder --linux deb",
+    "dist:linux:deb:arm64": "npm run dist:linux:deb -- --arm64",
     "dist:linux:dir": "npm run notices && electron-vite build && electron-builder --linux --dir",
     "test:linux": "npm run build && node test/e2e-linux.mjs",
     "test:git-sync": "npm run build && node test/e2e-git-sync.mjs",

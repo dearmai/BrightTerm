@@ -64,6 +64,29 @@ make install
 
 설치 후 앱 메뉴 또는 `brightterm` 명령으로 실행합니다. 삭제는 `sudo apt remove brightterm`입니다. `make build`는 실행 폴더만, `make deb`는 설치 패키지만 만들고 `make test`는 리눅스 실행 테스트를 수행합니다.
 
+ARM64 Linux에서도 `make deb` / `make install`을 그대로 사용할 수 있습니다. x64 Linux에서 ARM64 deb를 교차 빌드하려면 크로스 컴파일러를 설치하고 아키텍처를 지정하세요:
+
+```bash
+sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+make deb ARCH=arm64
+# 의존성이 이미 설치되어 있다면:
+npm run dist:linux:deb:arm64
+```
+
+결과는 `dist/BrightTerm-1.2.3-linux-arm64.deb`입니다. 패키징 과정에서 로컬 터미널용 `node-pty`도 대상 아키텍처로 컴파일합니다. 교차 빌드한 패키지는 ARM64 장치에서 설치·실행하세요.
+
+#### PRoot-Distro에서 실행
+
+Ubuntu 24.04.5 / aarch64 / `6.17.0-PRoot-Distro` 환경에서 기본 실행 시 `Trace/breakpoint trap`과 Chromium zygote의 `Broken pipe`가 발생하고, 아래 옵션으로 실행에 성공한 사례가 확인됐습니다:
+
+```bash
+brightterm --no-sandbox
+# 설치 폴더에서 직접 실행할 때:
+/opt/BrightTerm/brightterm --no-sandbox
+```
+
+PRoot 환경의 Chromium 샌드박스 호환 문제로 보입니다. 이 옵션은 Chromium 프로세스의 샌드박스 보호를 해제하므로 필요한 PRoot 환경에서만 사용하세요. 앱 메뉴에서도 필요하면 사용자 바로가기의 실행 명령에 `--no-sandbox`를 추가합니다. 일반 Linux 패키지에는 기본 적용하지 않습니다. 옵션의 동작은 [Electron 공식 문서](https://www.electronjs.org/docs/latest/tutorial/sandbox/)를 참고하세요.
+
 설치 없이 실행하려면 `npm run dist:linux`로 AppImage를 생성하고 실행 권한을 부여하세요:
 
 ```bash
@@ -253,6 +276,7 @@ npm run typecheck
 npm run dist:win     # Windows 설치형 + 포터블 (dist/)
 npm run dist:win:signed # 위와 같고 셀프 인증서로 서명 (사내 배포용, docs/codesign.md)
 npm run dist:linux   # Linux AppImage + deb (dist/) — 빌드한 PC의 아키텍처
+npm run dist:linux:deb:arm64 # Linux ARM64 deb (Linux에서 빌드, 교차 빌드는 위 컴파일러 필요)
 npm run dist:linux:dir # Linux 실행 폴더 (dist/linux-unpacked/)
 npm run dist:mac     # macOS dmg x64 + arm64 (dist/) — ad-hoc 서명(인증서 없이)
 APPLE_KEYCHAIN_PROFILE=<notarytool 프로필> npm run dist:mac:signed  # Developer ID 서명 + 공증 (electron-builder.signed.yml)

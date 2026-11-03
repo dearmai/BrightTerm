@@ -21,6 +21,7 @@ asarUnpack:
   - node_modules/node-pty/**
 npmRebuild: false
 beforePack: scripts/prepare-macos-signing.cjs
+afterPack: scripts/prepare-linux-native.cjs
 # 법적 고지 — 설치된 앱의 resources/legal/ 에 들어가고 설정 → 정보에서 연다
 extraResources:
   - from: LICENSE

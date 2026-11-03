@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 
 NPM ?= npm
+ARCH ?= $(shell node -p 'process.arch')
 HOST_OS := $(shell uname -s)
 MACOS_INSTALL_DIR ?= /Applications
 ANDROID_GIT_REMOTE ?= https://github.com/dearmai/bright-term-vault.git
@@ -13,7 +14,7 @@ export ADB ANDROID_SERIAL ANDROID_APK NPM ANDROID_GIT_REMOTE ANDROID_GIT_USERNAM
 help:
 	@printf '%s\n' \
 	  'make build    Build the application directory for macOS or Linux' \
-	  'make deb      Build a Linux deb package' \
+	  'make deb      Build a Linux deb package (ARCH=arm64 for ARM64)' \
 	  'make install  Build and install on macOS or Ubuntu/Debian/HamoniKR' \
 	  'make test     Build and run Linux tests (graphical session required)' \
 	  'make android-build  Build the Android debug APK (JDK 17 / SDK 36)' \
@@ -35,7 +36,7 @@ install: build
 	bash scripts/install-macos.sh "$(MACOS_INSTALL_DIR)"
 else ifeq ($(HOST_OS),Linux)
 build: deps
-	$(NPM) run dist:linux:dir
+	$(NPM) run dist:linux:dir -- --$(ARCH)
 
 install: deb
 	bash scripts/install-linux.sh
@@ -45,7 +46,7 @@ build install:
 endif
 
 deb: deps
-	$(NPM) run dist:linux:deb
+	$(NPM) run dist:linux:deb -- --$(ARCH)
 
 test: deps
 	$(NPM) run test:linux
