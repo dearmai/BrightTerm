@@ -80,12 +80,30 @@ export function filterSections(sections: ManualSection[], query: string): Manual
   })
 }
 
-export type ManualId = 'aix' | 'ksh'
+/** 버전별 문서의 차이점 뒤에 공통 절을 넣는다. 마지막 절(공식 문서)은 맨 뒤에 둔다 */
+export function withCommon(specific: string, common: string): ManualSection[] {
+  const sections = parseManual(specific)
+  return [...sections.slice(0, -1), ...parseManual(common), ...sections.slice(-1)]
+}
 
-/** 이 서버에 맞는 매뉴얼 — AIX 는 7.2·7.3 만, 쉘은 AIX 가 아니어도 ksh 면 */
+export type ManualId = 'aix' | 'rhel9' | 'rhel10' | 'ksh' | 'bash' | 'zsh'
+
+/** RHEL 메이저 버전 — 호환 배포판(Rocky, Alma 등)은 ID_LIKE 에 rhel 이 있다. RHEL 자체의 ID_LIKE 에는 없다 */
+function rhelMajor(env: ServerEnv): string {
+  const d = env.distro
+  if (env.os !== 'Linux' || !d) return ''
+  return d.id === 'rhel' || d.like.split(/\s+/).includes('rhel') ? d.version.split('.')[0] : ''
+}
+
+/** 이 서버에 맞는 매뉴얼 — OS 문서를 먼저. AIX 는 7.2·7.3 만, 쉘은 OS 와 상관없이 */
 export function manualsFor(env: ServerEnv): ManualId[] {
   const out: ManualId[] = []
   if (env.os === 'AIX' && /^7\.[23]$/.test(env.osVersion)) out.push('aix')
+  const rhel = rhelMajor(env)
+  if (rhel === '9') out.push('rhel9')
+  if (rhel === '10') out.push('rhel10')
   if (/(^|\/)r?ksh(88|93)?$/.test(env.shell)) out.push('ksh')
+  if (/(^|\/)r?bash$/.test(env.shell)) out.push('bash')
+  if (/(^|\/)zsh$/.test(env.shell)) out.push('zsh')
   return out
 }

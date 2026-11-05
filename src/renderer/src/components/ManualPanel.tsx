@@ -69,7 +69,7 @@ export function ManualPanel(): JSX.Element {
 
   const status = !session ? '세션을 선택하면 해당 서버의 OS·쉘에 맞는 문서를 먼저 보여 줍니다.'
     : env === undefined ? '서버의 OS·쉘을 확인하는 중…'
-    : env ? `이 서버: ${env.os} ${env.osVersion}${env.shell ? ` · ${env.shell}` : ''}${matched.length ? '' : ' — 이 서버용 매뉴얼은 아직 없습니다'}`
+    : env ? `이 서버: ${env.distro?.name || `${env.os} ${env.osVersion}`}${env.shell ? ` · ${env.shell}` : ''}${matched.length ? '' : ' — 이 서버용 매뉴얼은 아직 없습니다'}`
     : session.protocol !== 'ssh' ? `${session.protocol.toUpperCase()} 세션은 OS·쉘을 자동으로 확인할 수 없습니다. 문서를 직접 고르세요.`
     : canAsk ? '서버의 OS·쉘을 확인하지 못했습니다. 문서를 직접 고르세요.'
     : '연결되면 서버의 OS·쉘을 확인합니다.'

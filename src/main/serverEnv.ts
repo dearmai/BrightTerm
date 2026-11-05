@@ -7,6 +7,9 @@ printf 'BT_OS %s\\n' "$(uname -s)"
 printf 'BT_REL %s\\n' "$(uname -r)"
 printf 'BT_VER %s\\n' "$(uname -v)"
 printf 'BT_SHELL %s\\n' "\${SHELL:-$(awk -F: -v u="$(id -un)" '$1==u {print $7}' /etc/passwd)}"
+if [ -r /etc/os-release ]; then
+  sed -n -e 's/^ID=/BT_DIST_ID /p' -e 's/^ID_LIKE=/BT_DIST_LIKE /p' -e 's/^VERSION_ID=/BT_DIST_VER /p' -e 's/^PRETTY_NAME=/BT_DIST_NAME /p' /etc/os-release
+fi
 `
 
 /** 접속 때 로그인 스크립트가 찍는 글이 섞여도 되도록 BT_ 줄만 읽는다. OS 를 모르면 null */
@@ -16,5 +19,10 @@ export function parseServerEnv(output: string): ServerEnv | null {
   if (!os) return null
   // AIX 는 uname -v 가 주 버전, -r 이 부 버전이다 (7.3 이면 7 과 3)
   const osVersion = os === 'AIX' ? `${read('BT_VER')}.${read('BT_REL')}` : read('BT_REL')
-  return { os, osVersion, shell: read('BT_SHELL') }
+  const env: ServerEnv = { os, osVersion, shell: read('BT_SHELL') }
+  // /etc/os-release 는 값을 따옴표로 묶기도 한다
+  const dist = (key: string): string => read(key).replace(/^(["'])(.*)\1$/, '$2')
+  const id = dist('BT_DIST_ID')
+  if (id) env.distro = { id, like: dist('BT_DIST_LIKE'), version: dist('BT_DIST_VER'), name: dist('BT_DIST_NAME') }
+  return env
 }

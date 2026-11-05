@@ -269,7 +269,13 @@ export interface SessionInfo {
 }
 
 /** 접속한 서버의 OS·로그인 쉘 — os 는 uname -s, osVersion 은 AIX 면 7.3, 그 밖에는 uname -r */
-export interface ServerEnv { os: string; osVersion: string; shell: string }
+export interface ServerEnv {
+  os: string
+  osVersion: string
+  shell: string
+  /** Linux 배포판 (/etc/os-release) */
+  distro?: { id: string; like: string; version: string; name: string }
+}
 
 /** 세션 유지 창을 열 때 tmux 세션 고르기 — name: 그 세션에, 'auto': 묻지 않고 쉬는 세션에(없으면 새로), 'none': tmux 없이 일반 접속, 없으면 물어본다 */
 export type TmuxPick = { name: string } | 'auto' | 'none'

@@ -1,5 +1,36 @@
 # 작업내역서
 
+## 2026-11-05 — 매뉴얼 탭에 RHEL 9·10, bash, zsh 추가
+
+### 요청 및 변경
+
+- 우측 패널 매뉴얼에 RHEL 9, RHEL 10, bash, zsh 문서를 추가했다(`src/renderer/src/manuals/`). 두 RHEL 문서의 공통 절은 `rhel-common.md` 한 파일에 두고 `withCommon`으로 합친다.
+- 서버 감지가 `/etc/os-release`도 읽는다(`serverEnv.ts`, `ServerEnv.distro`). RHEL과 `ID_LIKE`에 `rhel`이 있는 호환 배포판은 메이저 버전으로 문서를 고르고, 상태 줄에 배포판 이름을 표시한다.
+- bash·zsh 로그인 쉘이면 OS와 상관없이 해당 문서를 고른다.
+
+### 직접 검증한 결과
+
+- Windows 11 x64: 타입 검사, 빌드, `manual`·`terminal` 단위 테스트 15개, `e2e-manual` 통과. 전체 e2e는 다시 돌리지 않았다.
+- 사용자 서버 soyo(Rocky Linux 9.8, podman 5.8.2)에서 Red Hat UBI 9.8, 10.2 이미지를 임시 컨테이너로 실행해 확인했다.
+  - 패키지 버전, `/etc/os-release`, `/etc/skel`, `sshd_config` 기본값, `update-crypto-policies --show`.
+  - bash·zsh 문서의 동작과 RHEL 패키지 도구 등 약 100개 항목. 실패 5건은 시험 오류 1건(`ERR_EXIT`로 먼저 종료), 시험 환경 1건(`script` 사용 불가, pty로 재시험 통과), 문서 오류 1건, UBI 저장소에 없는 패키지 2건이었다. 문서 오류(`sshd -T`의 `without-password` 표시)는 본문에 반영했고, 패키지 2건은 soyo의 패키지 정보로 확인했다.
+  - `TMOUT` 종료, `TRAPALRM`, 시작 파일 순서는 pty를 붙여 시험했다. bash·zsh는 경고 없이 바로 종료함을 확인했다.
+  - 코드 블록 57개의 `bash -n`, `zsh -n` 문법 검사.
+- 감지 스크립트를 soyo와 두 UBI 이미지에서 실행했다. RHEL 9의 `ID_LIKE`는 `fedora`, RHEL 10은 `centos fedora`, Rocky는 `rhel centos fedora`로, RHEL 자체는 `ID_LIKE`만으로 판별할 수 없음을 확인했다.
+
+### 사용자 확인
+
+- 검증 환경으로 soyo의 podman을 지정하고, 이 PC의 ssh 키를 soyo에 등록했다. 키는 서버에 남아 있다. 받은 UBI 이미지는 지웠고 실행 중인 컨테이너 14개는 그대로다.
+
+### 검증 범위와 산출물
+
+- **실제 RHEL 서버에서 실행하지 않았다.** 시스템을 바꾸는 `nmcli modify`, `firewall-cmd`, `semanage`, `lvextend`, `update-crypto-policies --set` 등은 실행하지 않았고, 일부만 `--help`나 패키지 정보로 확인했다.
+- 커널 버전은 컨테이너로 알 수 없어 RHEL 9는 Rocky 9.8 값, RHEL 10은 릴리스 노트를 따랐다.
+- `docs.redhat.com`이 503을 반환해 Red Hat 문서를 직접 읽지 못하고 검색으로 확인했다. RHEL 10의 패키지 교체, ifcfg 제거, x86-64-v3 등은 원문과 직접 대조하지 못했다.
+- `docs.redhat.com`, GNU 링크는 스크립트 요청에 403·503이라 브라우저에서 열리는지 확인하지 못했다.
+- 앱을 실제 soyo에 접속해 매뉴얼 탭을 열어 보지는 않았다. e2e는 RHEL 응답을 흉내 낸 서버로 확인했다.
+- `THIRD_PARTY_NOTICES.txt`의 로컬 변경은 이번에도 커밋하지 않았다.
+
 ## 2026-11-05 — 서버별 재접속·유휴 방지, 스니펫 동기화, 접속 로그, 매뉴얼 탭, Windows 설치
 
 ### 요청 및 변경

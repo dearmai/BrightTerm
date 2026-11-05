@@ -12,10 +12,11 @@ import { _electron as electron } from 'playwright-core'
 const PASSWORD = 'manual-test-secret'
 const ENVS = {
   aix: 'BT_OS AIX\nBT_REL 3\nBT_VER 7\nBT_SHELL /usr/bin/ksh\n',
-  linux: 'BT_OS Linux\nBT_REL 6.8.0\nBT_VER #1 SMP\nBT_SHELL /bin/bash\n',
+  linux: 'BT_OS Linux\nBT_REL 6.8.0\nBT_VER #1 SMP\nBT_SHELL /usr/bin/fish\n',
+  rhel: 'BT_OS Linux\nBT_REL 6.12.0\nBT_VER #1 SMP\nBT_SHELL /usr/bin/zsh\nBT_DIST_NAME "Red Hat Enterprise Linux 10.2 (Coughlan)"\nBT_DIST_ID "rhel"\nBT_DIST_LIKE "centos fedora"\nBT_DIST_VER "10.2"\n',
   mute: ''
 }
-const typed = { aix: '', linux: '', mute: '' }
+const typed = { aix: '', linux: '', rhel: '', mute: '' }
 const hostKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs1', format: 'pem' })
 const server = new ssh2.Server({ hostKeys: [hostKey] }, (client) => {
   let user = ''
@@ -66,7 +67,8 @@ try {
     const hosts = [
       { ...base, id: 'aix', alias: 'AIX box', username: 'aix', sort: 0 },
       { ...base, id: 'linux', alias: 'Linux box', username: 'linux', sort: 1 },
-      { ...base, id: 'mute', alias: 'Mute box', username: 'mute', sort: 2 }
+      { ...base, id: 'mute', alias: 'Mute box', username: 'mute', sort: 2 },
+      { ...base, id: 'rhel', alias: 'RHEL box', username: 'rhel', sort: 3 }
     ]
     await window.bt.call('store:patch', { hosts, settings: { ...store.settings, checkUpdates: false } })
   }, { port })
@@ -96,12 +98,12 @@ try {
   await page.evaluate(() => { document.querySelector('.titlebar button[title^="SFTP 패널"]').click() })
   await page.click('.rp-tab:has-text("매뉴얼")')
   await status.getByText('세션을 선택하면').waitFor()
-  assert.deepEqual(await select.locator('option').allTextContents(), ['AIX 7.2 – 7.3', 'ksh (Korn shell)'])
+  assert.deepEqual(await select.locator('option').allTextContents(), ['AIX 7.2 – 7.3', 'RHEL 9', 'RHEL 10', 'ksh (Korn shell)', 'bash', 'zsh'])
 
   // AIX + ksh: 감지 결과와 맞는 문서
   await connect('aix')
   await status.getByText('이 서버: AIX 7.3 · /usr/bin/ksh').waitFor()
-  assert.deepEqual(await select.locator('option').allTextContents(), ['AIX 7.2 – 7.3 (이 서버)', 'ksh (Korn shell) (이 서버)'])
+  assert.deepEqual(await select.locator('option').allTextContents(), ['AIX 7.2 – 7.3 (이 서버)', 'ksh (Korn shell) (이 서버)', 'RHEL 9', 'RHEL 10', 'bash', 'zsh'])
   assert.equal(await select.inputValue(), 'aix')
   assert.equal(await page.locator('.mn-body details').first().getAttribute('open'), '')
 
@@ -127,8 +129,26 @@ try {
 
   // 매뉴얼이 없는 서버: 안내하고 다른 문서는 그대로 볼 수 있다
   await connect('linux')
-  await status.getByText('이 서버: Linux 6.8.0 · /bin/bash — 이 서버용 매뉴얼은 아직 없습니다').waitFor()
+  await status.getByText('이 서버: Linux 6.8.0 · /usr/bin/fish — 이 서버용 매뉴얼은 아직 없습니다').waitFor()
   assert.equal(await select.inputValue(), 'aix')
+
+  // RHEL 10 + zsh: 배포판 이름을 보여 주고, 버전별 차이 뒤에 공통 절이 이어진다
+  await connect('rhel')
+  await status.getByText('이 서버: Red Hat Enterprise Linux 10.2 (Coughlan) · /usr/bin/zsh').waitFor()
+  assert.deepEqual((await select.locator('option').allTextContents()).slice(0, 2), ['RHEL 10 (이 서버)', 'zsh (이 서버)'])
+  assert.equal(await select.inputValue(), 'rhel10')
+  const titles = await page.locator('.mn-body summary').allTextContents()
+  assert.equal(titles[0], '먼저 알아둘 것')
+  assert.ok(titles.includes('RHEL 10에서 달라진 점') && titles.includes('SELinux'), titles.join())
+  assert.equal(titles.at(-1), '공식 문서')
+  await select.selectOption('zsh')
+  await page.getByText('bash와 다른 점').waitFor()
+  await page.locator('.tab').nth(1).click()
+  await select.selectOption('rhel9')
+  await page.getByText('RHEL 9에서 달라진 점').waitFor()
+  await select.selectOption('bash')
+  await page.getByText('시작 파일·프롬프트').waitFor()
+  await page.locator('.tab').last().click()
 
   // 감지 실패: 직접 고르도록 안내
   await connect('mute')
@@ -140,7 +160,7 @@ try {
   assert.equal(await select.inputValue(), 'ksh')
 
   // 터미널에는 아무것도 입력하지 않았다
-  assert.deepEqual(typed, { aix: '', linux: '', mute: '' })
+  assert.deepEqual(typed, { aix: '', linux: '', rhel: '', mute: '' })
   assert.deepEqual(errors, [])
   console.log('PASS: manual tab, OS/shell detection, doc selection, search, copy, no terminal input')
 } finally {
