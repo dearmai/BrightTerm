@@ -43,6 +43,8 @@ public class TerminalService extends Service {
         // 서버별 키 코드·인코딩 (서버 편집 → 터미널)
         volatile JSONObject keys;
         volatile java.nio.charset.Charset charset = StandardCharsets.UTF_8;
+        /** 탭 메뉴의 접속 상세 로그 — 다시 접속해도 이어서 쌓는다 */
+        final ConnectLog log = new ConnectLog();
         TermCompat.Decoder decoder;
         final ByteArrayOutputStream history = new ByteArrayOutputStream();
         synchronized void remember(byte[] bytes) {
@@ -105,6 +107,10 @@ public class TerminalService extends Service {
         c.writes = Executors.newSingleThreadExecutor();
         start(c);
     }
+    String connectLog(String id) {
+        Connection c = connections.get(id);
+        return c == null ? "" : c.log.text();
+    }
     /** 같은 서버를 새 탭으로 */
     void duplicate(String id, int cols, int rows) {
         Connection c = connections.get(id);
@@ -133,7 +139,13 @@ public class TerminalService extends Service {
         emit("state", c.id, c.state);
         workers.execute(() -> {
             try {
+                c.log.add("접속 시작: " + profile.optString("username") + "@" + profile.optString("host") + ":" + profile.optInt("port", 22));
                 JSch jsch = new JSch();
+                // ssh -v 에 해당 — 알고리즘 협상·인증 방식·끊김. 비밀번호와 터미널 입출력은 찍지 않는다
+                jsch.setInstanceLogger(new com.jcraft.jsch.Logger() {
+                    @Override public boolean isEnabled(int level) { return true; }
+                    @Override public void log(int level, String message) { c.log.add(message); }
+                });
                 File known = new File(getFilesDir(), "known_hosts");
                 synchronized (trustLock) { if (!known.exists() && !known.createNewFile()) throw new IOException("호스트 키 파일 생성 실패"); jsch.setKnownHosts(known.getAbsolutePath()); }
                 String privateKey = profile.optString("privateKey");
@@ -190,6 +202,7 @@ public class TerminalService extends Service {
                 c.shell.setPtyType(termType.isEmpty() ? "xterm-256color" : termType, c.cols, c.rows, 0, 0);
                 c.shell.setTerminalMode(TermCompat.terminalModes(c.keys));
                 InputStream output = c.shell.getInputStream(); c.input = c.shell.getOutputStream(); c.shell.connect(15000);
+                c.log.add("상태: connected");
                 c.state = "connected"; emit("state", c.id, c.state);
                 if (!command.isEmpty()) { final List<String> lines = command; workers.execute(() -> typeStartup(c, lines)); }
                 workers.execute(() -> checkSftp(c));
@@ -207,8 +220,9 @@ public class TerminalService extends Service {
                     }
                 }
             } catch (Exception error) {
+                c.log.add("오류: " + error);
                 if (!c.closed) emit("error", c.id, error.getMessage() == null ? "SSH 연결 실패" : error.getMessage());
-            } finally { c.close(); c.state = "disconnected"; emit("state", c.id, c.state); }
+            } finally { c.log.add("상태: disconnected"); c.close(); c.state = "disconnected"; emit("state", c.id, c.state); }
         });
     }
     /** 다음 줄이 비밀번호로 들어가지 않게 멈출 프롬프트 (sessions.ts SECRET_PROMPT) */

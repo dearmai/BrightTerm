@@ -3,6 +3,7 @@ import type { CredentialMeta, Group, Host, SessionInfo, Settings, Snippet, Store
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { api } from './api'
 import { LayoutNode, PaneNode, uid, panes, splitPane, removePane, grid, Dir, findPane, setPaneColor, setPaneTheme, insertNode, type Side } from './layout'
+import { TERMINAL_THEMES, resolveTerminalTheme } from './themes'
 
 export interface Tab {
   id: string
@@ -17,6 +18,25 @@ export interface Tab {
 
 /** 패널·탭을 다른 탭으로 옮기는 자리 — paneId 가 없으면 그 탭 전체의 side 끝에 */
 export interface DockTarget { tabId: string; paneId?: string; side?: Side }
+
+/** 터미널 테마 고르기 메뉴 — 고르면 targets 패널 모두에 적용되고, 패널들의 값이 다르면 체크 표시가 없다 */
+export function themeMenu(tabId: string, targets: PaneNode[]): MenuItem[] {
+  const s = useApp.getState()
+  const defaults = new Set(targets.map((p) => resolveTerminalTheme(undefined, s.hosts.find((h) => h.id === s.sessions[p.sessionId]?.hostId)?.terminalTheme, s.settings.terminalTheme)))
+  const chosen = new Set(targets.map((p) => p.terminalTheme ?? ''))
+  const item = (label: string, value: string): MenuItem => ({
+    label,
+    shortcut: chosen.size === 1 && chosen.has(value) ? '✓' : undefined,
+    onClick: () => { for (const p of targets) s.setPaneTheme(tabId, p.id, value || undefined) }
+  })
+  return [{
+    label: targets.length > 1 ? '터미널 테마 (모든 패널)' : '터미널 테마',
+    submenu: [
+      item(defaults.size === 1 ? `기본값 · ${[...defaults][0]}` : '기본값', ''),
+      ...Object.keys(TERMINAL_THEMES).map((name) => item(name, name))
+    ]
+  }]
+}
 
 /** 탭 이름 — 직접 지은 이름이 없으면 포커스된 패널의 서버 이름 */
 export function tabTitle(t: Tab): string {
@@ -44,6 +64,8 @@ export interface MenuItem {
   separator?: boolean
   /** 색 고르기 줄 — value 가 지금 색, undefined 는 자동 */
   colors?: { value?: string; onPick: (c?: string) => void }
+  /** 2차 메뉴 — 마우스를 올리거나 누르면 옆에 열린다 (한 단계만) */
+  submenu?: MenuItem[]
   onClick?: () => void
 }
 
@@ -71,6 +93,7 @@ type Dialog =
   | { kind: 'sshKey'; hostId: string }
   | { kind: 'quick' }
   | { kind: 'preview'; sessionId: string; path: string }
+  | { kind: 'connectLog'; sessionId: string }
   | null
 
 interface State {
@@ -95,7 +118,7 @@ interface State {
   toasts: Toast[]
   dialog: Dialog
   sidebar: boolean
-  rightPanel: 'sftp' | 'snippets' | null
+  rightPanel: 'sftp' | 'snippets' | 'manual' | null
   filter: string
 
   init(): Promise<void>

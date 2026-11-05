@@ -1,5 +1,49 @@
 # 작업내역서
 
+## 2026-11-05 — 서버별 재접속·유휴 방지, 스니펫 동기화, 접속 로그, 매뉴얼 탭, Windows 설치
+
+### 요청 및 변경
+
+- **Windows `make build`·`make install`**: `Makefile`에 Windows 분기와 `SILENT` 옵션 추가, `scripts/install-windows.ps1` 추가. 서명 설정을 인증서 지문으로 지정(`electron-builder.win-signed.yml`, `docs/codesign.md`). 원격의 ARM64 변경과 `Makefile`이 충돌해 양쪽을 합쳤다.
+- **서버별 자동 재접속**: `Host.autoReconnect`(없으면 앱 설정). 서버 편집 → 고급에서 앱 설정 따르기·켜기·끄기. 접속 중 변경은 다음 끊김부터 적용.
+- **유휴 방지 명령**: `Host.idleCommandSec`, `Host.idleCommand`, `src/main/idleGuard.ts`. AIX ksh 의 `TMOUT` 끊김 대응. 대체 화면, 입력 중인 줄, 셸이 아닌 프롬프트에서는 보내지 않고, `shell will time out` 경고가 보이면 간격과 상관없이 보낸다. `viewer@eaiap01t [/eai/viewer] ` 형태의 프롬프트를 인식한다.
+- **스니펫**: Git 동기화에 포함(`gitSync.ts`, `gitSyncFormat.ts`, `store.ts`). 형식 버전 1을 유지하고 `snippets`는 선택 필드로 두었다. JSON 내보내기·가져오기 추가(`src/main/snippetsFile.ts`, 스니펫 패널).
+- **접속 상세 로그**: 탭 메뉴(Android는 길게 터치)에서 연다. 데스크톱은 `ssh2`의 `debug`, Android는 JSch 인스턴스 로거를 메모리에 모은다(`src/main/connectLog.ts`, `ConnectLogDialog.tsx`, `ConnectLog.java`). 탭마다 처음 1000줄과 최근 1000줄을 보관하고 `CHANNEL_DATA` 등 패킷 줄은 남기지 않는다.
+- **메뉴**: 색상과 터미널 테마를 2차 메뉴로 옮겼다(`ui.tsx`의 `MenuItem.submenu`).
+- 다른 세션에서 진행해 인계받은 작업: 빌드 번호(`버전_YYYYMMDD_SEQ`), 터미널 테마를 패널 머리말에서 탭 메뉴로 이동, 우측 패널 매뉴얼 탭(AIX 7.2–7.3, ksh), 이 PC에 Go 1.27.3 설치(저장소 변경 아님).
+
+### 직접 검증한 결과
+
+커밋 직전 Windows 11 x64 에서 실행했다.
+
+- `npm run typecheck`, `npm run build` 통과.
+- 단위 테스트 32개 통과: `connect-log`, `snippets-file`, `idle-guard`, `startup`, `terminal`, `manual`.
+- e2e 통과: `e2e-auto-reconnect`, `e2e-idle-guard`, `e2e-snippets-file`, `e2e-connect-log`, `e2e-themes`, `e2e-manual`, `e2e-git-sync`.
+  - 재접속·유휴 방지는 로컬 TCP 서버에 텔넷으로, 접속 로그·매뉴얼은 로컬 `ssh2` 서버로 확인했다. 접속 로그 e2e는 비밀번호와 입력한 명령이 로그에 없는 것을 확인한다.
+- 스니펫 업데이트 경로: 커밋 `819c1e1`을 임시 worktree에 빌드해 이전 버전으로 두 기기를 동기화한 뒤 새 버전으로 올렸다. 거짓 충돌 없음, 두 기기의 스니펫 병합, 삭제 전달, 이전 버전이 끼어들어도 스니펫 유지를 확인했다. 일회성 시험으로 저장소에 넣지 않았다.
+- Android 로거: 실제 JSch 2.28.0에 같은 로거를 달아 로컬 `ssh2` 서버에 비밀번호로 접속했다. 협상·인증 줄이 기록되고 비밀번호와 입력이 없음을 확인했다. JSch 소스의 로그 호출 350개에서 비밀번호·키 값을 찍는 곳을 찾지 못했다. `ConnectLog.java`는 단독 컴파일해 임시 코드로 실행했다.
+- 2차 메뉴: 탭 메뉴의 테마 2차 메뉴를 스크린샷으로 확인했다.
+
+### 인계받은 내용 (다른 세션의 보고, 이번에 다시 확인하지 않음)
+
+- 빌드 번호: 빌드할 때 증가, dev에서 순번 유지, Windows 앱 정보 화면 표시. 데스크톱만 적용했고 Android 적용 여부는 미결정이다.
+- Go: SHA256 확인 후 `D:\apps\go`에 설치, 사용자 PATH 추가, `npm run bridge` 성공.
+- 매뉴얼: IBM 문서로 확인한 것은 기본 쉘, ksh93 위치, root 쉘 변경 주의사항뿐이고 나머지는 작성자 지식이다. IBM `docs` 링크 4개는 스크립트 요청에서 403이라 열리는지 확인하지 못했다.
+
+### 사용자 확인
+
+- AIX 7.2 서버에서 `unset TMOUT`이 성공(반환값 0)하고 `env`에 `TMOUT`이 없는데도 `shell will time out in 60 seconds` 뒤 끊겼다. 원인은 밝히지 못했고, 유휴 방지 명령은 증상을 우회하는 기능이다.
+- 메뉴가 길다는 화면을 사용자가 공유해 2차 메뉴로 바꿨다. 바꾼 뒤의 사용감은 아직 듣지 못했다.
+
+### 검증 범위와 산출물
+
+- **Android 앱은 빌드하지 못했다.** SDK 라이선스 미동의, `build-tools 35`·`platform 36` 미설치이고 에뮬레이터·기기도 없다. `TerminalService.java`, `MainActivity.java` 변경은 컴파일되지 않았고, 길게 터치 → 로그 창은 실행하지 않았다. `ConnectLogTest`와 `e2e-android`도 실행하지 않았다.
+- 실제 AIX 에서 유휴 방지 명령(특히 대체 화면을 쓰지 않는 vi), 매뉴얼 감지와 문서 명령을 확인하지 못했다.
+- 재접속·유휴 방지의 끊김 시험은 텔넷으로만 했고 실제 SSH 서버로는 하지 않았다.
+- 전체 `make install`, 코드 서명, `dist:*` 패키지 결과물, 빌드 번호의 macOS 창은 확인하지 못했다. macOS·Linux 에서는 이번 변경을 실행하지 않았다.
+- 2차 메뉴가 화면 끝에서 왼쪽·위로 옮겨 열리는 동작, 스니펫 파일의 실제 선택 창(테스트에서 가짜로 대체)은 확인하지 못했다.
+- `THIRD_PARTY_NOTICES.txt`의 로컬 변경은 커밋하지 않았다. Windows 에 optional 패키지 `buildcheck`, `cpu-features`가 설치되지 않아 생긴 차이로, 커밋하면 고지에서 두 패키지가 빠진다. 작업 트리에는 수정 상태로 남아 있다.
+
 ## 2026-11-03 — ARM64 deb 빌드 및 PRoot 실행 안내
 
 ### 요청 및 변경

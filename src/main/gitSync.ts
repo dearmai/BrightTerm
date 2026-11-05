@@ -2,7 +2,7 @@ import { execFile } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { isAbsolute, join } from 'path'
 import { randomUUID } from 'crypto'
-import type { GitSyncConfig, GitSyncStatus, StoreData } from '@shared/types'
+import type { GitSyncConfig, GitSyncStatus, Snippet, StoreData } from '@shared/types'
 import { dataDir, readJson, store, writeJsonAtomicSync } from './store'
 import { vault, type VaultFile, type VaultSyncEnvelope } from './vault'
 import { canonical, digest, parseSnapshot, type SyncSnapshot } from './gitSyncFormat'
@@ -11,7 +11,8 @@ import { send } from './ui'
 const FILE = 'brightterm.vault.json'
 const MAX_BYTES = 16 * 1024 * 1024
 const DEFAULT_CONFIG: GitSyncConfig = { enabled: false, remote: '', branch: 'main' }
-interface Tracking { config: GitSyncConfig; localDigest?: string; remoteDigest?: string; lastSync?: number }
+/** snippetsSynced: 이 저장소와 스니펫까지 맞춘 적이 있다 — 그 전에는 원격을 받아도 로컬 스니펫을 지우지 않고 합친다 */
+interface Tracking { config: GitSyncConfig; localDigest?: string; remoteDigest?: string; lastSync?: number; snippetsSynced?: boolean }
 interface Remote { head?: string; envelope?: VaultSyncEnvelope; hash?: string }
 interface Rollback { store: StoreData; vault: VaultFile | null; tracking: Tracking }
 
@@ -125,14 +126,15 @@ export class GitSyncManager {
     if (!portable) return null
     return { version: 1, vault: portable,
       groups: store.get().groups.map(({ collapsed: _local, ...g }) => structuredClone(g)),
-      hosts: store.get().hosts.map(({ lastUsedAt: _local, ...h }) => structuredClone(h)) }
+      hosts: store.get().hosts.map(({ lastUsedAt: _local, ...h }) => structuredClone(h)),
+      snippets: structuredClone(store.get().snippets) }
   }
   private block(state: 'conflict' | 'password-required', message: string, local: string, remote?: string): void {
     this.conflict = { local, remote }
     this.update(state, message)
   }
   private accepted(localDigest: string, remoteDigest: string): void {
-    this.tracking = { ...this.tracking, localDigest, remoteDigest, lastSync: Date.now() }
+    this.tracking = { ...this.tracking, localDigest, remoteDigest, lastSync: Date.now(), snippetsSynced: true }
     this.persist()
     this.conflict = null
     this.update('synced', '동기화 완료')
@@ -153,7 +155,9 @@ export class GitSyncManager {
       this.accepted(localHash, remote.hash)
       return
     }
-    const localChanged = localHash !== this.tracking.localDigest
+    // 이전 버전이 저장한 지문에는 스니펫이 없다. 나머지가 같으면 바뀐 게 아니므로 업데이트만으로 충돌을 내지 않는다
+    const { snippets: _snippets, ...withoutSnippets } = local
+    const localChanged = localHash !== this.tracking.localDigest && digest(withoutSnippets) !== this.tracking.localDigest
     const remoteChanged = remote.hash !== this.tracking.remoteDigest
     if (!choice && remote.envelope && (localChanged || !this.tracking.localDigest)) {
       // Equivalent edits (or an interrupted successful push) should converge without conflict.
@@ -214,6 +218,14 @@ export class GitSyncManager {
     this.persist()
     send('store:changed')
   }
+  /** 원격에 스니펫이 없으면(이전 버전) 로컬 유지, 이 저장소와 처음 맞추면 합치고(같은 id 는 원격), 그 뒤로는 원격대로 */
+  private syncedSnippets(snapshot: SyncSnapshot): Snippet[] {
+    const local = store.get().snippets
+    if (!snapshot.snippets) return local
+    if (this.tracking.snippetsSynced) return snapshot.snippets
+    const remoteIds = new Set(snapshot.snippets.map((s) => s.id))
+    return [...snapshot.snippets, ...local.filter((s) => !remoteIds.has(s.id))]
+  }
   private apply(snapshot: SyncSnapshot, key: Buffer, remoteHash: string): void {
     const before: Rollback = { store: structuredClone(store.get()), vault: structuredClone(vault.exportRaw()), tracking: structuredClone(this.tracking) }
     privateJson(join(this.root, 'rollback.json'), before)
@@ -221,13 +233,16 @@ export class GitSyncManager {
     try {
       const collapsed = new Map(store.get().groups.map((g) => [g.id, g.collapsed]))
       const lastUsed = new Map(store.get().hosts.map((h) => [h.id, h.lastUsedAt]))
+      const snippets = this.syncedSnippets(snapshot)
       vault.applySync(snapshot.vault, key)
       store.patch({ groups: snapshot.groups.map((g) => ({ ...g, collapsed: collapsed.get(g.id) })),
-        hosts: snapshot.hosts.map((h) => ({ ...h, lastUsedAt: lastUsed.get(h.id) })) })
+        hosts: snapshot.hosts.map((h) => ({ ...h, lastUsedAt: lastUsed.get(h.id) })), snippets })
       store.flush()
       this.accepted(digest(snapshot), remoteHash)
       this.archiveJournal()
       send('store:changed')
+      // 원격에 없는 스니펫이 남았으면 이번 동기화가 끝난 뒤 올린다
+      if (!snapshot.snippets || digest(snippets) !== digest(snapshot.snippets)) this.rerun = true
     } catch (e) {
       this.restore(before)
       throw e

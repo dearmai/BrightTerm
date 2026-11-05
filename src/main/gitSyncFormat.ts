@@ -1,11 +1,13 @@
 import { createHash } from 'crypto'
-import type { Group, Host } from '@shared/types'
+import type { Group, Host, Snippet } from '@shared/types'
 import { validateVaultFile, type VaultFile, type VaultSyncEnvelope } from './vault'
 
 export interface SyncSnapshot {
   version: 1
   groups: Group[]
   hosts: Host[]
+  /** 스니펫을 동기화하기 전 버전·Android 가 새로 만든 파일에는 없다 — 없으면 로컬 스니펫을 그대로 둔다 */
+  snippets?: Snippet[]
   vault: VaultFile
 }
 
@@ -29,6 +31,7 @@ export function parseSnapshot(plain: string, envelope: VaultSyncEnvelope): SyncS
       !(h.groupId === null || typeof h.groupId === 'string') || !['ssh', 'telnet', 'serial', 'local'].includes(h.protocol) ||
       !['password', 'key', 'agent', 'ask'].includes(h.authType) || !Number.isInteger(h.port) || h.port < 0 || h.port > 65535 ||
       !Array.isArray(h.tags) || !h.tags.every((t) => typeof t === 'string') || !Array.isArray(h.forwards)) ||
+    (s.snippets !== undefined && (!list(s.snippets) || s.snippets.some((x) => typeof x.name !== 'string' || typeof x.body !== 'string' || typeof x.sendEnter !== 'boolean'))) ||
     digest(s.vault.kdf) !== digest(envelope.kdf) || digest(s.vault.wrapped) !== digest(envelope.wrapped)) {
     throw new Error('동기화 파일의 연결 정보 또는 볼트 형식이 올바르지 않습니다')
   }

@@ -20,6 +20,8 @@ export interface SshContext {
   onSavePassword?: (username: string, password: string) => void
   /** Called with informative text to show in the terminal */
   onInfo?: (msg: string) => void
+  /** ssh2 디버그 줄 (ssh -v 에 해당) — 접속 상세 로그 */
+  onDebug?: (msg: string) => void
   /** 세션 유지 서버에서 붙을 tmux 세션 — 없으면 이전 세션이 있을 때 물어본다 */
   tmux?: TmuxPick
   /** 볼트 대신 쓸 비밀번호·키 — 실행 인자(-pw, /PASSWORD 등)로 받은 것. 점프 호스트에는 넘기지 않는다 */
@@ -104,7 +106,8 @@ export async function openClient(host: Host, ctx: SshContext, depth = 0): Promis
   if (jh) {
     ctx.onInfo?.(`점프 호스트 ${jh.alias} 경유 중...`)
     // 베스천에서 입력한 비밀번호를 이 서버 계정에 저장하면 안 된다 — 저장 콜백은 넘기지 않는다
-    const j = await openClient(jh, { ...ctx, title: jh.alias, onSavePassword: undefined, secret: undefined }, depth + 1)
+    const onDebug = ctx.onDebug && ((m: string): void => ctx.onDebug!(`[${jh.alias}] ${m}`))
+    const j = await openClient(jh, { ...ctx, title: jh.alias, onSavePassword: undefined, secret: undefined, onDebug }, depth + 1)
     chain.push(...j.chain, j.client)
     sock = await new Promise<ClientChannel>((res, rej) =>
       j.client.forwardOut('127.0.0.1', 0, host.host, host.port, (err, ch) => (err ? rej(err) : res(ch)))
@@ -154,6 +157,7 @@ export async function openClient(host: Host, ctx: SshContext, depth = 0): Promis
     keepaliveInterval: Math.max(0, host.keepaliveSec) * 1000,
     keepaliveCountMax: 4,
     tryKeyboard: true,
+    debug: ctx.onDebug,
     hostVerifier: ((key: Buffer, verify: (ok: boolean) => void) => {
       const fp = fingerprint(key)
       const kt = keyTypeOf(key)

@@ -113,6 +113,17 @@ try {
   assert.equal((await b.call('store:get')).hosts[0].alias, 'Changed while B was closed')
   console.log('PASS: startup fetch and automatic apply after unlocking')
 
+  const snippet = { id: 'snippet-1', name: 'private-snippet-name', body: 'private-snippet-body', sendEnter: true }
+  await autoSynced(a, () => a.call('store:patch', { snippets: [snippet] }))
+  for (const secret of [snippet.name, snippet.body]) assert(!rawRemote().includes(secret), secret)
+  assert.equal((await b.call('git-sync:now')).state, 'synced')
+  assert.deepEqual((await b.call('store:get')).snippets, [snippet])
+  // Deleting the last snippet must propagate, not read as "no snippets in the file".
+  await autoSynced(b, () => b.call('store:patch', { snippets: [] }))
+  assert.equal((await a.call('git-sync:now')).state, 'synced')
+  assert.deepEqual((await a.call('store:get')).snippets, [])
+  console.log('PASS: snippets sync encrypted, including deleting the last one')
+
   await a.call('git-sync:configure', { ...config, enabled: false })
   await patchAlias(a, 'A concurrent change')
   await autoSynced(b, () => patchAlias(b, 'B concurrent change'))

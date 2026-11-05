@@ -47,7 +47,7 @@ export function parseMetrics(output: string): Pick<SessionMetrics, 'cpu' | 'memo
   return result
 }
 
-function remoteExec(client: Client, script: string): Promise<string> {
+export function remoteExec(client: Client, script: string): Promise<string> {
   return new Promise((resolve, reject) => {
     let channel: ClientChannel | undefined
     let done = false

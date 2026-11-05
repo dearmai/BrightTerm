@@ -14,7 +14,7 @@ type Sec = 'look' | 'input' | 'image' | 'conn' | 'security' | 'backup' | 'git-sy
 export function SettingsDialog({ section }: { section?: string }): JSX.Element {
   const { settings, vault, creds, hosts } = useApp()
   const [sec, setSec] = useState<Sec>((section as Sec) ?? 'look')
-  const [info, setInfo] = useState<{ version: string; dataDir: string } | null>(null)
+  const [info, setInfo] = useState<{ version: string; buildId: string; dataDir: string } | null>(null)
   const [checking, setChecking] = useState(false)
   const [pw, setPw] = useState({ old: '', a: '', b: '', msg: '' })
   const st = useApp.getState
@@ -198,6 +198,7 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 16 }}>BrightTerm {info?.version}</div>
                   <div className="muted">SSH · Telnet · Serial · 로컬 터미널 — 밝은터</div>
+                  <div className="muted" style={{ userSelect: 'text' }}>빌드 {info?.buildId}</div>
                 </div>
               </div>
               <div className="card">

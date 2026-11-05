@@ -105,6 +105,12 @@ export interface Host {
   terminalTheme?: string
   startupCommand?: string
   keepaliveSec: number
+  /** 끊기면 자동 재접속 — 지정하지 않으면 앱 설정을 따른다. SSH·텔넷만 */
+  autoReconnect?: boolean
+  /** 유휴 방지 — 셸 프롬프트에서 이 시간(초) 동안 입출력이 없으면 명령을 보낸다(TMOUT 대응). 없으면 끔. SSH·텔넷만 */
+  idleCommandSec?: number
+  /** 유휴 방지 명령 — 없으면 date, 빈 문자열이면 Enter 만 */
+  idleCommand?: string
   forwards: PortForward[]
   serial?: SerialOptions
   local?: LocalOptions
@@ -261,6 +267,9 @@ export interface SessionInfo {
   /** tmux 에 붙어 있을 때 지금 마우스 모드 — 붙지 않았으면 없다 */
   tmuxMouse?: boolean
 }
+
+/** 접속한 서버의 OS·로그인 쉘 — os 는 uname -s, osVersion 은 AIX 면 7.3, 그 밖에는 uname -r */
+export interface ServerEnv { os: string; osVersion: string; shell: string }
 
 /** 세션 유지 창을 열 때 tmux 세션 고르기 — name: 그 세션에, 'auto': 묻지 않고 쉬는 세션에(없으면 새로), 'none': tmux 없이 일반 접속, 없으면 물어본다 */
 export type TmuxPick = { name: string } | 'auto' | 'none'

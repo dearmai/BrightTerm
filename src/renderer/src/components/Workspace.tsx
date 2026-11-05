@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Columns2, Rows2, X, Maximize2, Minimize2, FolderTree, RotateCw, Search, ChevronUp, ChevronDown, ImageUp, Radio } from 'lucide-react'
-import { useApp, Tab, dockMenu } from '../state'
+import { useApp, Tab, dockMenu, themeMenu } from '../state'
 import { LayoutNode, PaneNode, panes, setSizes, type Side } from '../layout'
 import { attach, detach, fitEntry, getEntry, smartPaste, uploadAndInsert, disposeEntry } from '../terms'
 import { api } from '../api'
@@ -192,7 +192,9 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
         }
       }] : []),
       { separator: true },
-      { label: '터미널 색상', colors: { value: pane.color, onPick: (c) => st().setPaneColor(tab.id, pane.id, c) } },
+      { label: '터미널 색상', submenu: [{ colors: { value: pane.color, onPick: (c) => st().setPaneColor(tab.id, pane.id, c) } }] },
+      // 패널이 하나면 탭 메뉴와 같으므로, 분할했을 때만 패널별로 고르게 한다
+      ...(multi ? themeMenu(tab.id, [pane]) : []),
       { separator: true },
       { label: '새 탭으로 분리', disabled: !multi, onClick: () => st().movePane(pane.id, 'newTab') },
       ...dockMenu('다른 탭으로 옮기기', tab.id, (to) => st().movePane(pane.id, { tabId: to })),
@@ -264,12 +266,6 @@ function Pane({ tab, pane }: { tab: Tab; pane: PaneNode }): JSX.Element {
           {info?.persist && <span className="ph-persist" title={`세션 유지(tmux${info.tmuxSession ? ` · ${info.tmuxSession}` : ''}) — 창을 닫아도 안의 프로그램은 계속 돕니다. 끝내려면 exit`}>유지{info.tmuxSession && /-\d+$/.test(info.tmuxSession) ? ` ${info.tmuxSession.match(/-(\d+)$/)![1]}` : ''}</span>}
           <span className="ph-target">{info?.target}</span>
           {tab.broadcast && <Radio size={12} color="var(--warn)" />}
-          <select className="select pane-theme" aria-label="패널 터미널 테마" title="이 패널의 테마 · 로컬에 저장됩니다"
-            value={pane.terminalTheme ?? ''} onChange={(e) => st().setPaneTheme(tab.id, pane.id, e.target.value || undefined)}
-            onMouseDown={(e) => e.stopPropagation()}>
-            <option value="">기본값 · {resolveTerminalTheme(undefined, hostTheme, settings.terminalTheme)}</option>
-            {Object.keys(TERMINAL_THEMES).map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
           <span className="ph-actions">
             {info && info.state !== 'connected' && <button className="ibtn sm" title="다시 접속" onClick={() => api.session.reconnect(pane.sessionId)}><RotateCw size={13} /></button>}
             {(info?.canSftp || info?.protocol === 'local') && <button className="ibtn sm" title={info?.protocol === 'local' ? `클립보드 이미지를 저장하고 경로 입력 (${SC.pasteImage})` : `클립보드 이미지 → 서버 업로드 후 경로 입력 (${SC.pasteImage})`} onClick={() => smartPaste(pane.sessionId, true)}><ImageUp size={13} /></button>}

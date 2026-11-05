@@ -2,6 +2,7 @@ node_modules/
 out/
 dist/
 build/bridge/
+.last-build-id
 test/.imp.mjs
 test/.*.mjs
 test/.*.cjs

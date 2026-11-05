@@ -621,3 +621,15 @@ textarea {
 #sftp.unavailable {
   opacity: 0.4;
 }
+#connect-log-text {
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+  height: 60vh;
+  overflow: auto;
+  margin: 0 0 12px;
+}

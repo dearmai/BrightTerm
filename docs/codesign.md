@@ -14,7 +14,7 @@
 | 개인 키 백업(.pfx) | `-BackupPfx`로 만든 파일. 저장소 밖의 안전한 곳 | **비공개** |
 | 공개 인증서(.cer) | `build/codesign/BrightTerm-codesign.cer` (저장소에 커밋됨), 반입 폴더 | 공개해도 됨 |
 | 대상 PC 등록 스크립트 | `build/codesign/install-cert.cmd` | 공개해도 됨 |
-| 서명 설정 | `electron-builder.win-signed.yml` — 주체 이름 `Dany Kim`으로 저장소에서 찾음 | 비밀 없음 |
+| 서명 설정 | `electron-builder.win-signed.yml` — `certificateSha1` 지문으로 저장소에서 지정 | 비밀 없음 |
 
 - 개인 키는 설정 파일이나 저장소, 환경변수 어디에도 두지 않습니다. electron-builder 는 signtool 로 인증서 저장소에서 키를 꺼내 서명합니다.
 - `.gitignore`에 `*.pfx`가 있어 백업 파일이 실수로 커밋되지 않습니다.
@@ -71,6 +71,7 @@ npm run dist:win:signed
   2. 곧바로 `-BackupPfx`로 백업합니다.
   3. 새 `.cer`를 대상 PC 에 등록합니다(`install-cert.cmd` 또는 GPO). 예전 인증서는 그대로 두어도 됩니다.
   4. 이 문서의 "현재 인증서" 표를 고칩니다.
+  5. `electron-builder.win-signed.yml`의 `certificateSha1`도 새 인증서 지문으로 바꿉니다.
 
 ## 유출됐을 때
 
@@ -83,7 +84,7 @@ npm run dist:win:signed
    ```
 2. 원하면 예전 인증서를 "신뢰할 수 없는 인증서"(Disallowed) 저장소에 넣어 확실히 막습니다: `certutil -addstore Disallowed BrightTerm-codesign-old.cer`
 3. 빌드 PC 저장소와 모든 백업에서 예전 키를 지웁니다.
-4. "잃어버렸을 때"의 1~4 단계로 새 인증서를 만들어 배포합니다.
+4. "잃어버렸을 때"의 1~5 단계로 새 인증서를 만들어 배포합니다.
 5. 배포한 BrightTerm 을 새 인증서로 다시 서명해 빌드하고, 다시 배포합니다. 예전 서명본은 1번 이후 '신뢰되지 않음'으로 보입니다.
 
 ## 만료와 갱신

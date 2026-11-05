@@ -75,7 +75,7 @@ class Store {
   patch(p: Partial<StoreData>): void {
     this.data = { ...this.data, ...p }
     this.scheduleSave()
-    if (p.hosts !== undefined || p.groups !== undefined) this.onSyncChange()
+    if (p.hosts !== undefined || p.groups !== undefined || p.snippets !== undefined) this.onSyncChange()
   }
 
   replaceAll(d: StoreData): void {

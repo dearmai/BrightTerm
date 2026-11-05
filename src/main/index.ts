@@ -6,7 +6,8 @@ import { randomUUID } from 'crypto'
 import { store, dataDir } from './store'
 import { vault, VaultFile } from './vault'
 import { sessions } from './sessions'
-import { sessionMetrics } from './metrics'
+import { remoteExec, sessionMetrics } from './metrics'
+import { parseServerEnv, SERVER_ENV_SCRIPT } from './serverEnv'
 import * as sftp from './sftp'
 import { setWindow, respond, send } from './ui'
 import { scanPutty, scanSshConfig, scanPuttyHostKeys } from './importers'
@@ -18,7 +19,11 @@ import { checkUpdate, startUpdateCheck, updateInfo } from './update'
 import { gitSync } from './gitSync'
 import { listPublicKeys, installPublicKey, checkTmux } from './sshKeys'
 import { handleLaunch, takeLaunches } from './launch'
+import { MAX_SNIPPET_FILE_BYTES, mergeSnippets, parseSnippets, serializeSnippets } from './snippetsFile'
 import type { AdhocTarget, CredentialInput, GitSyncConfig, Group, Host, ImportCandidate, StoreData } from '@shared/types'
+
+/** electron.vite.config.ts 가 빌드할 때 넣는다 */
+declare const __BUILD_ID__: string
 
 let win: BrowserWindow | null = null
 
@@ -156,11 +161,19 @@ function registerIpc(): void {
     await sessions.close(id, !!killTmux)
   })
   handle('session:reconnect', (id: string) => sessions.get(id)?.reconnectNow())
+  handle('session:connectLog', (id: string) => sessions.get(id)?.connectLog.text() ?? '')
   handle('session:metrics', (id: string) => {
     const session = sessions.get(id)
     return session ? sessionMetrics(session) : null
   })
-  handle('session:tmuxMouse', (id: string, on: boolean) => sessions.get(id)?.setTmuxMouse(on))
+  // SSH 세션만 알아낼 수 있다 — 텔넷·시리얼은 명령 채널이 없고 터미널에 입력을 넣지 않는다
+  handle('session:env', async (id: string) => {
+    const session = sessions.get(id)
+    const client = session?.sshTransport()?.client
+    if (!client || session?.info.state !== 'connected') return null
+    return parseServerEnv(await remoteExec(client, SERVER_ENV_SCRIPT))
+  })
+  handle('session:tmuxMouse',(id: string, on: boolean) => sessions.get(id)?.setTmuxMouse(on))
   ipcMain.on('session:write', (_e, id: string, data: string) => sessions.get(id)?.write(data))
   ipcMain.on('session:resize', (_e, id: string, cols: number, rows: number) => sessions.get(id)?.setSize(cols, rows))
   ipcMain.on('ui:respond', (_e, reqId: string, value: unknown) => respond(reqId, value))
@@ -261,8 +274,28 @@ function registerIpc(): void {
     return true
   })
 
+  // snippets file
+  handle('snippets:export', async () => {
+    const r = await dialog.showSaveDialog(win!, {
+      title: '스니펫 내보내기',
+      defaultPath: join(app.getPath('documents'), `brightterm-snippets-${new Date().toISOString().slice(0, 10)}.json`),
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (r.canceled || !r.filePath) return false
+    await fs.writeFile(r.filePath, serializeSnippets(store.get().snippets))
+    return r.filePath
+  })
+  handle('snippets:import', async () => {
+    const r = await dialog.showOpenDialog(win!, { title: '스니펫 가져오기', filters: [{ name: 'JSON', extensions: ['json'] }], properties: ['openFile'] })
+    if (r.canceled || !r.filePaths[0]) return false
+    if ((await fs.stat(r.filePaths[0])).size > MAX_SNIPPET_FILE_BYTES) throw new Error('파일이 16MB를 넘습니다')
+    const { snippets, added, skipped } = mergeSnippets(store.get().snippets, parseSnippets(await fs.readFile(r.filePaths[0], 'utf8')))
+    if (added) store.patch({ snippets })
+    return { added, skipped }
+  })
+
   // app
-  handle('app:info', () => ({ version: app.getVersion(), platform: process.platform, dataDir: dataDir() }))
+  handle('app:info', () => ({ version: app.getVersion(), buildId: __BUILD_ID__, platform: process.platform, dataDir: dataDir() }))
   handle('app:titlebar', (bg: string, fg: string) => {
     try { win?.setTitleBarOverlay?.({ color: bg, symbolColor: fg, height: 38 }) } catch { /* */ }
     nativeTheme.themeSource = store.get().settings.theme === 'light' ? 'light' : 'dark'
@@ -456,7 +489,7 @@ app.whenReady().then(() => {
   // macOS "BrightTerm 정보" 창
   app.setAboutPanelOptions({
     applicationName: 'BrightTerm',
-    applicationVersion: app.getVersion(),
+    applicationVersion: __BUILD_ID__,
     version: '',
     copyright: 'Copyright © 2026 Dany Kim',
     credits: '개발·저작권자: Dany Kim\n개인·회사 업무 사용 무료 · 유료 재배포·유료 번들은 별도 허락 필요\nBrightTerm Source-Available License 1.0'

@@ -13,6 +13,8 @@ import { LocalTransport, execLocalSh } from './transports/local'
 import { execSh } from './transports/ssh'
 import { proxyLabel } from './proxy'
 import { typeStartup } from './startup'
+import { isTerminalReport, nextAltScreen, shouldSendIdleCommand } from './idleGuard'
+import { ConnectLog } from './connectLog'
 import { persistSupported, startupPlan, tmuxMouse, tmuxMouseScript, tmuxName } from './persist'
 import { send } from './ui'
 import { store, dataDir } from './store'
@@ -100,6 +102,8 @@ function adhocHost(t: AdhocTarget): Host {
 export class Session {
   info: SessionInfo
   transport: Transport | null = null
+  /** 탭 메뉴의 접속 상세 로그 — 재접속해도 이어서 쌓는다 */
+  readonly connectLog = new ConnectLog()
   private decoder: iconv.DecoderStream | null = null
   private cols = 120
   private rows = 32
@@ -109,6 +113,11 @@ export class Session {
   private log: WriteStream | null = null
   private lastOutputAt = 0
   private outputTail = ''
+  // 유휴 방지 명령 판단용 (idleGuard.ts)
+  private lastInputAt = 0
+  private lineOpen = false
+  private altScreen = false
+  private idleTimer: NodeJS.Timeout | null = null
 
   /** 세션 유지 서버에서 붙을 tmux 세션 — 한 번 붙으면 그 이름으로 고정해 재접속 때 묻지 않는다 */
   private tmux?: TmuxPick
@@ -143,6 +152,7 @@ export class Session {
   }
 
   private setState(state: SessionState, message?: string): void {
+    this.connectLog.add(`상태: ${state}${message ? ` (${message})` : ''}`)
     this.info = { ...this.info, state, message, connectedAt: state === 'connected' ? Date.now() : this.info.connectedAt }
     send('session:state', this.info)
   }
@@ -152,6 +162,7 @@ export class Session {
   }
 
   info_(msg: string, color = '36'): void {
+    this.connectLog.add(msg)
     this.emitText(`\r\n\x1b[${color}m● ${msg}\x1b[0m\r\n`)
   }
 
@@ -176,6 +187,7 @@ export class Session {
           cols: this.cols,
           rows: this.rows,
           onInfo: (m) => this.info_(m, '90'),
+          onDebug: (m) => this.connectLog.add(m),
           onSavePassword: (username, password) => this.savePassword(username, password),
           tmux: this.tmux,
           secret: this.secret
@@ -223,8 +235,10 @@ export class Session {
       if (store.get().settings.sessionLog) this.openLog()
       if (t instanceof SshTransport) void this.checkSftp(t)
       if (startup.length) void this.typeStartup(startup)
+      if (h.protocol === 'ssh' || h.protocol === 'telnet') this.startIdleGuard()
     } catch (e) {
       const msg = (e as Error).message || String(e)
+      this.connectLog.add(`오류 원문: ${msg}`)
       this.info_(`${h.protocol === 'local' ? '셸 실행 실패' : '접속 실패'}: ${translateError(msg)}`, '31')
       const help = localNetworkHelp(e, h.protocol)
       if (help) this.info_(help, '33')
@@ -260,6 +274,8 @@ export class Session {
     const s = this.decoder ? this.decoder.write(d) : d.toString('utf8')
     this.lastOutputAt = Date.now()
     if (s) {
+      // 큰 출력에서 켜는 코드가 tail 밖으로 밀려나지 않게 받은 조각에서 본다 (앞 조각과 나뉜 경우까지)
+      this.altScreen = nextAltScreen(this.altScreen, this.outputTail.slice(-12) + s)
       this.outputTail = (this.outputTail + s).slice(-300)
       this.emitText(s)
       this.log?.write(s.replace(ANSI, '').replace(/\r/g, ''))
@@ -290,8 +306,36 @@ export class Session {
     })
   }
 
+  /** 접속 중에 서버 설정을 바꿔도 바로 적용되도록 저장된 값을 본다 (저장 안 한 서버는 this.host) */
+  private savedHost(): Host {
+    return store.get().hosts.find((h) => h.id === this.host.id) ?? this.host
+  }
+
+  private startIdleGuard(): void {
+    this.stopIdleGuard()
+    this.outputTail = ''
+    this.altScreen = false
+    this.lineOpen = false
+    this.lastInputAt = Date.now()
+    this.idleTimer = setInterval(() => {
+      const { idleCommandSec, idleCommand } = this.savedHost()
+      if (!idleCommandSec) return
+      const idleMs = Date.now() - Math.max(this.lastInputAt, this.lastOutputAt)
+      if (shouldSendIdleCommand({ tail: this.outputTail, altScreen: this.altScreen, lineOpen: this.lineOpen, idleMs, intervalMs: idleCommandSec * 1000 })) {
+        this.write((idleCommand ?? 'date') + '\r')
+      }
+    }, 1000)
+    this.idleTimer.unref()
+  }
+
+  private stopIdleGuard(): void {
+    if (this.idleTimer) clearInterval(this.idleTimer)
+    this.idleTimer = null
+  }
+
   private onClose(reason?: string): void {
     this.transport = null
+    this.stopIdleGuard()
     this.log?.end()
     this.log = null
     if (this.userClosed) return
@@ -305,7 +349,7 @@ export class Session {
   }
 
   private scheduleReconnect(failed: boolean): void {
-    const auto = store.get().settings.autoReconnect && this.host.protocol !== 'serial' && !this.launched
+    const auto = (this.savedHost().autoReconnect ?? store.get().settings.autoReconnect) && this.host.protocol !== 'serial' && !this.launched
     // only auto-retry when a previously working session drops (or retries in progress)
     if (auto && (!failed || this.retry > 0) && this.retry < 8) {
       const delay = Math.min(30, 2 ** this.retry * 2)
@@ -339,6 +383,10 @@ export class Session {
       if (data === '\r' && this.info.state !== 'connecting') this.reconnectNow()
       return
     }
+    if (!isTerminalReport(data)) {
+      this.lastInputAt = Date.now()
+      this.lineOpen = !/[\r\n]$/.test(data)
+    }
     // 로컬 셸은 pty 가 알아서 하고, 시리얼 Enter 는 시리얼 설정을 따른다
     if (this.host.protocol !== 'local') data = mapKeys(data, hostKeys(this.host), this.host.protocol !== 'serial')
     const enc = this.encoding()
@@ -364,6 +412,7 @@ export class Session {
   /** killTmux: 세션 유지 창이면 붙어 있던 tmux 세션도 서버에서 끝낸 뒤 끊는다 */
   async close(killTmux = false): Promise<void> {
     this.userClosed = true
+    this.stopIdleGuard()
     if (this.retryTimer) clearTimeout(this.retryTimer)
     const t = this.transport
     this.transport = null

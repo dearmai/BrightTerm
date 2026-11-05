@@ -1,5 +1,5 @@
 import type {
-  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, Host, ImportCandidate, LaunchItem, LocalPublicKey, SessionInfo, SessionMetrics, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
+  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, Host, ImportCandidate, LaunchItem, LocalPublicKey, ServerEnv, SessionInfo, SessionMetrics, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
 } from '@shared/types'
 
 interface Bt {
@@ -66,9 +66,11 @@ export const api = {
   },
   session: {
     metrics: (id: string) => bt.call<SessionMetrics | null>('session:metrics', id),
+    env: (id: string) => bt.call<ServerEnv | null>('session:env', id),
     open: (o: { hostId?: string; adhoc?: AdhocTarget; cols?: number; rows?: number; tmux?: TmuxPick; run?: string; launch?: string }) => bt.call<SessionInfo>('session:open', o),
     close: (id: string, killTmux?: boolean) => bt.call<void>('session:close', id, killTmux),
     reconnect: (id: string) => bt.call<void>('session:reconnect', id),
+    connectLog: (id: string) => bt.call<string>('session:connectLog', id),
     tmuxMouse: (id: string, on: boolean) => bt.call<void>('session:tmuxMouse', id, on)
   },
   launch: {
@@ -122,8 +124,12 @@ export const api = {
     export: () => bt.call<string | false>('backup:export'),
     import: () => bt.call<boolean>('backup:import')
   },
+  snippets: {
+    export: () => bt.call<string | false>('snippets:export'),
+    import: () => bt.call<{ added: number; skipped: number } | false>('snippets:import')
+  },
   app: {
-    info: () => bt.call<{ version: string; platform: string; dataDir: string }>('app:info'),
+    info: () => bt.call<{ version: string; buildId: string; platform: string; dataDir: string }>('app:info'),
     titlebar: (bg: string, fg: string) => bt.call<void>('app:titlebar', bg, fg),
     openLogs: () => bt.call<void>('app:openLogs'),
     resetWindow: () => bt.call<void>('app:resetWindow'),

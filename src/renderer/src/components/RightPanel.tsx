@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, Home, RefreshCw, FolderPlus, Upload, Folder, File, FileImage, X, Code2, Plus, Trash2, Pencil, TerminalSquare, FolderTree, Link2, CheckCircle2, AlertCircle, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
+import { BookOpen, ArrowUp, Home, RefreshCw, FolderPlus, Upload, Folder, File, FileImage, X, Code2, Plus, Trash2, Pencil, TerminalSquare, FolderTree, Link2, CheckCircle2, AlertCircle, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
 import { useApp } from '../state'
 import { api } from '../api'
 import { fmtBytes, fmtDate, Modal, Field, Switch } from './ui'
 import type { SftpEntry, Snippet } from '@shared/types'
 import { sendSnippet, focusSession } from '../terms'
 import { modKey } from '../platform'
+import { ManualPanel } from './ManualPanel'
 
 export function RightPanel(): JSX.Element | null {
   const panel = useApp((s) => s.rightPanel)
@@ -30,10 +31,11 @@ export function RightPanel(): JSX.Element | null {
       <div className="rp-tabs">
         <button className={`rp-tab ${panel === 'sftp' ? 'on' : ''}`} onClick={() => useApp.setState({ rightPanel: 'sftp' })}><FolderTree size={14} />SFTP</button>
         <button className={`rp-tab ${panel === 'snippets' ? 'on' : ''}`} onClick={() => useApp.setState({ rightPanel: 'snippets' })}><Code2 size={14} />스니펫</button>
+        <button className={`rp-tab ${panel === 'manual' ? 'on' : ''}`} onClick={() => useApp.setState({ rightPanel: 'manual' })}><BookOpen size={14} />매뉴얼</button>
         <span style={{ flex: 1 }} />
         <button className="ibtn sm" onClick={() => useApp.setState({ rightPanel: null })}><X size={14} /></button>
       </div>
-      <div className="rp-body">{panel === 'sftp' ? <SftpPanel /> : <SnippetsPanel />}</div>
+      <div className="rp-body">{panel === 'sftp' ? <SftpPanel /> : panel === 'snippets' ? <SnippetsPanel /> : <ManualPanel />}</div>
     </aside>
   )
 }
@@ -258,10 +260,26 @@ function SnippetsPanel(): JSX.Element {
     st().save({ snippets: next })
     setEditing(null)
   }
+  const exportFile = async (): Promise<void> => {
+    try {
+      const path = await api.snippets.export()
+      if (path) st().toast('ok', `${path} 에 저장했습니다. 암호화되지 않은 파일이니 비밀번호가 든 스니펫은 주의하세요`)
+    } catch (e) { st().toast('error', `내보내기 실패: ${(e as Error).message}`) }
+  }
+  const importFile = async (): Promise<void> => {
+    try {
+      const r = await api.snippets.import()
+      if (!r) return
+      await st().reloadStore()
+      st().toast('ok', `스니펫 ${r.added}개를 가져왔습니다${r.skipped ? ` (같은 내용 ${r.skipped}개 건너뜀)` : ''}`)
+    } catch (e) { st().toast('error', `가져오기 실패: ${(e as Error).message}`) }
+  }
   return (
     <>
       <div className="sftp-bar">
         <div className="sftp-path"><input className="input" placeholder="스니펫 검색" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <button className="ibtn sm" title="스니펫 가져오기 (JSON)" onClick={importFile}><ArrowDownToLine size={15} /></button>
+        <button className="ibtn sm" title="스니펫 내보내기 (JSON)" disabled={!snippets.length} onClick={exportFile}><ArrowUpFromLine size={15} /></button>
         <button className="ibtn sm" title="새 스니펫" onClick={() => setEditing({ id: crypto.randomUUID(), name: '', body: '', sendEnter: true })}><Plus size={15} /></button>
       </div>
       <div className="sftp-list">

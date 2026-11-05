@@ -25,6 +25,7 @@ function groupPath(groups: Group[], id: string | null): string {
 
 export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: string | null }): JSX.Element {
   const { groups, hosts, creds, vault } = useApp()
+  const appAutoReconnect = useApp((s) => s.settings.autoReconnect)
   const isNew = !initial
   const [h, setH] = useState<Host>(() => initial ? structuredClone(initial) : newHost(groupId ?? null))
   const [tab, setTab] = useState<'basic' | 'auth' | 'term' | 'adv' | 'fw'>('basic')
@@ -336,7 +337,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
               <Seg value={h.env ?? 'none'} onChange={(v) => set('env', v)} options={ENVS.map((e) => ({ value: e, label: <><span className="dot" style={{ background: ENV_COLORS[e] }} />{ENV_LABELS[e]}</> }))} />
             </Field>
             <Field label="색상 (지정하지 않으면 환경/폴더 색을 따름)"><ColorPick value={h.color} onChange={(v) => set('color', v)} /></Field>
-            <Field label="기본 터미널 테마" hint="서버 설정과 함께 동기화됩니다. 패널에서 개별 변경할 수 있습니다.">
+            <Field label="기본 터미널 테마" hint="서버 설정과 함께 동기화됩니다. 접속한 뒤에는 탭 우클릭 메뉴에서 바꿀 수 있습니다.">
               <select className="select" value={h.terminalTheme ?? ''} onChange={(e) => set('terminalTheme', e.target.value || undefined)}>
                 <option value="">앱 기본값 따르기</option>
                 {Object.keys(TERMINAL_THEMES).map((name) => <option key={name} value={name}>{name}</option>)}
@@ -502,6 +503,34 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
               <Field label="터미널 종류"><input className="input mono" value={h.termType} onChange={(e) => set('termType', e.target.value)} /></Field>
             ) : (
               h.protocol !== 'serial' && <Field label="Keepalive (초)"><input className="input mono" type="number" value={h.keepaliveSec} onChange={(e) => set('keepaliveSec', +e.target.value || 0)} /></Field>
+            )}
+            {(h.protocol === 'ssh' || h.protocol === 'telnet') && (
+              <div className="persist-box">
+                <div className="toggle">
+                  <div className="t-label">
+                    <span>유휴 방지 명령 (TMOUT 대응)</span>
+                    <small>Keepalive 는 연결만 유지해 셸의 TMOUT 을 막지 못합니다. 켜면 셸 프롬프트에서 입력이 없을 때 명령을 대신 보냅니다. vi·less 같은 프로그램 실행 중이거나 입력하던 줄이 있으면 보내지 않습니다. ksh 의 "shell will time out" 경고가 보이면 간격과 상관없이 바로 보냅니다. tmux 세션 유지 창에서는 동작하지 않습니다.</small>
+                  </div>
+                  <Switch value={!!h.idleCommandSec} onChange={(v) => set('idleCommandSec', v ? 240 : undefined)} />
+                </div>
+                {!!h.idleCommandSec && (
+                  <div className="grid2">
+                    <Field label="간격 (초)" hint="서버의 TMOUT 보다 짧게">
+                      <input className="input mono" type="number" min={10} value={h.idleCommandSec} onChange={(e) => set('idleCommandSec', +e.target.value || 10)} onBlur={() => set('idleCommandSec', Math.max(10, h.idleCommandSec ?? 10))} />
+                    </Field>
+                    <Field label="보낼 명령" hint="비우면 Enter 만 보냅니다. 기록에 남기 싫으면 비우세요">
+                      <input className="input mono" value={h.idleCommand ?? 'date'} onChange={(e) => set('idleCommand', e.target.value)} />
+                    </Field>
+                  </div>
+                )}
+              </div>
+            )}
+            {(h.protocol === 'ssh' || h.protocol === 'telnet') && (
+              <Field label="끊기면 자동 재접속" hint="앱 설정 따르기를 고르면 설정 → 연결의 값을 씁니다. 꺼져 있어도 끊긴 창에서 Enter 를 누르면 다시 접속합니다.">
+                <Seg<'app' | 'on' | 'off'> value={h.autoReconnect === undefined ? 'app' : h.autoReconnect ? 'on' : 'off'}
+                  onChange={(v) => set('autoReconnect', v === 'app' ? undefined : v === 'on')}
+                  options={[{ value: 'app', label: `앱 설정 따르기 (${appAutoReconnect ? '켜짐' : '꺼짐'})` }, { value: 'on', label: '켜기' }, { value: 'off', label: '끄기' }]} />
+              </Field>
             )}
           </>
         )}

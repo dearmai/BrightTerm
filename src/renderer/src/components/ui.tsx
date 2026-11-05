@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
-import { useApp } from '../state'
+import { useApp, type MenuItem } from '../state'
 import { PALETTE } from '@shared/types'
 import { refocusTerminal } from '../terms'
 
@@ -76,11 +76,62 @@ export function ColorPick(props: { value?: string; onChange: (v?: string) => voi
   )
 }
 
+/** 메뉴 한 줄. 2차 메뉴를 여는 줄이면 onSub 로 알린다 */
+function MenuRow({ it, open, onHover, onSub }: { it: MenuItem; open?: boolean; onHover?: (el: HTMLElement) => void; onSub?: (el: HTMLElement) => void }): JSX.Element {
+  const done = (): void => useApp.setState({ menu: null })
+  if (it.separator) return <hr />
+  if (it.heading) return <div className="ctx-label ctx-heading">{it.heading}</div>
+  if (it.colors) {
+    return (
+      <div className="ctx-colors">
+        {it.label && <div className="ctx-label">{it.label}</div>}
+        <div className="swatches">
+          <div className={`swatch none ${!it.colors.value ? 'on' : ''}`} title="자동(서버/폴더 색)" onClick={() => { done(); it.colors!.onPick(undefined) }} />
+          {PALETTE.map((c) => (
+            <div key={c} className={`swatch ${it.colors!.value === c ? 'on' : ''}`} style={{ background: c }} onClick={() => { done(); it.colors!.onPick(c) }} />
+          ))}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <button className={`${it.danger ? 'danger' : ''} ${open ? 'sub-open' : ''}`} disabled={it.disabled}
+      onMouseEnter={(e) => onHover?.(e.currentTarget)}
+      onClick={(e) => { if (it.submenu) onSub?.(e.currentTarget); else { done(); it.onClick?.() } }}>
+      <span>{it.label}</span>
+      {it.submenu ? <span className="sc">›</span> : it.shortcut && <span className="sc">{it.shortcut}</span>}
+    </button>
+  )
+}
+
+/** 2차 메뉴 — 1차 메뉴는 스크롤 때문에 자식을 잘라 내므로 밖에 띄운다. 오른쪽에 자리가 없으면 왼쪽으로 */
+function SubMenu({ items, anchor, onEnter }: { items: MenuItem[]; anchor: DOMRect; onEnter: () => void }): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  useLayoutEffect(() => {
+    const r = ref.current!.getBoundingClientRect()
+    const right = anchor.right + 2
+    setPos({
+      x: Math.max(8, right + r.width > window.innerWidth - 8 ? anchor.left - r.width - 2 : right),
+      y: Math.max(8, Math.min(anchor.top - 6, window.innerHeight - r.height - 8))
+    })
+  }, [anchor])
+  return (
+    <div className="ctx ctx-sub" ref={ref} style={pos ? { left: pos.x, top: pos.y } : { visibility: 'hidden' }} onMouseEnter={onEnter} onMouseDown={(e) => e.stopPropagation()}>
+      {items.map((it, i) => <MenuRow key={i} it={it} />)}
+    </div>
+  )
+}
+
 export function ContextMenu(): JSX.Element | null {
   const menu = useApp((s) => s.menu)
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x: 0, y: 0 })
+  const [sub, setSub] = useState<{ index: number; anchor: DOMRect } | null>(null)
+  const subTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useLayoutEffect(() => {
+    clearTimeout(subTimer.current)
+    setSub(null)
     if (!menu || !ref.current) return
     const r = ref.current.getBoundingClientRect()
     setPos({ x: Math.min(menu.x, window.innerWidth - r.width - 8), y: Math.min(menu.y, window.innerHeight - r.height - 8) })
@@ -99,27 +150,24 @@ export function ContextMenu(): JSX.Element | null {
     }
   }, [menu])
   if (!menu) return null
+  const openSub = (index: number, el: HTMLElement): void => {
+    clearTimeout(subTimer.current)
+    setSub({ index, anchor: el.getBoundingClientRect() })
+  }
+  // 다른 줄로 옮겨도 바로 닫지 않는다 — 2차 메뉴로 대각선으로 가는 중일 수 있다
+  const hover = (it: MenuItem, index: number, el: HTMLElement): void => {
+    clearTimeout(subTimer.current)
+    if (it.submenu) openSub(index, el)
+    else if (sub) subTimer.current = setTimeout(() => setSub(null), 200)
+  }
+  const subItems = sub ? menu.items[sub.index]?.submenu : undefined
   return (
-    <div className="ctx" ref={ref} style={{ left: pos.x || menu.x, top: pos.y || menu.y }} onMouseDown={(e) => e.stopPropagation()}>
-      {menu.items.map((it, i) =>
-        it.separator ? <hr key={i} /> : it.heading ? <div key={i} className="ctx-label ctx-heading">{it.heading}</div> : it.colors ? (
-          <div key={i} className="ctx-colors">
-            {it.label && <div className="ctx-label">{it.label}</div>}
-            <div className="swatches">
-              <div className={`swatch none ${!it.colors.value ? 'on' : ''}`} title="자동(서버/폴더 색)" onClick={() => { useApp.setState({ menu: null }); it.colors!.onPick(undefined) }} />
-              {PALETTE.map((c) => (
-                <div key={c} className={`swatch ${it.colors!.value === c ? 'on' : ''}`} style={{ background: c }} onClick={() => { useApp.setState({ menu: null }); it.colors!.onPick(c) }} />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <button key={i} className={it.danger ? 'danger' : ''} disabled={it.disabled} onClick={() => { useApp.setState({ menu: null }); it.onClick?.() }}>
-            <span>{it.label}</span>
-            {it.shortcut && <span className="sc">{it.shortcut}</span>}
-          </button>
-        )
-      )}
-    </div>
+    <>
+      <div className="ctx" ref={ref} style={{ left: pos.x || menu.x, top: pos.y || menu.y }} onMouseDown={(e) => e.stopPropagation()}>
+        {menu.items.map((it, i) => <MenuRow key={i} it={it} open={sub?.index === i} onHover={(el) => hover(it, i, el)} onSub={(el) => openSub(i, el)} />)}
+      </div>
+      {sub && subItems && <SubMenu key={sub.index} items={subItems} anchor={sub.anchor} onEnter={() => clearTimeout(subTimer.current)} />}
+    </>
   )
 }
 

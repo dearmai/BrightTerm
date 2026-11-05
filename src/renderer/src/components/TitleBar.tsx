@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { X, Plus, PanelLeft, Settings, Lock, Radio, FolderTree, LayoutGrid } from 'lucide-react'
-import { useApp, Tab, tabTitle, dockMenu } from '../state'
+import { useApp, Tab, tabTitle, dockMenu, themeMenu } from '../state'
 import { panes, findPane } from '../layout'
 import { api } from '../api'
 import { SC, isMac } from '../platform'
@@ -49,9 +49,14 @@ export function TitleBar(): JSX.Element {
   const menu = (e: React.MouseEvent, t: Tab): void => {
     e.preventDefault()
     const n = panes(t.root).length
+    // 패널이 여럿이면 포커스된 패널의 서버
+    const logSession = (findPane(t.root, t.focused) ?? panes(t.root)[0])?.sessionId
+    const logInfo = logSession ? st().sessions[logSession] : undefined
     st().showMenu(e, [
+      ...(logInfo && logInfo.protocol !== 'local' ? [{ label: n > 1 ? `접속 상세 로그 (${logInfo.title})` : '접속 상세 로그', onClick: () => useApp.setState({ dialog: { kind: 'connectLog', sessionId: logInfo.id } }) }, { separator: true }] : []),
       { label: '탭 이름 바꾸기', onClick: async () => { const name = await st().prompt('탭 이름 바꾸기', tabInfo(t).title); if (name !== null) st().updateTab(t.id, { title: name || undefined }) } },
-      { label: '탭 색상', colors: { value: t.color, onPick: (c) => st().updateTab(t.id, { color: c }) } },
+      { label: '탭 색상', submenu: [{ colors: { value: t.color, onPick: (c) => st().updateTab(t.id, { color: c }) } }] },
+      ...themeMenu(t.id, panes(t.root)),
       { separator: true },
       { label: t.broadcast ? '동시 입력 끄기' : '이 탭의 모든 패널에 동시 입력', shortcut: SC.broadcast, disabled: n < 2, onClick: () => st().updateTab(t.id, { broadcast: !t.broadcast }) },
       { label: '패널을 각각 탭으로 분리', disabled: n < 2, onClick: () => st().splitToTabs(t.id) },

@@ -520,7 +520,8 @@ function pasteText(session, text) {
   session.term.focus();
 }
 window.androidBack = () => {
-  if ($("settings-dialog").open) $("settings-dialog").close();
+  if ($("connect-log").open) $("connect-log").close();
+  else if ($("settings-dialog").open) $("settings-dialog").close();
   else if ($("git-dialog").open) $("git-dialog").close();
   else if ($("files").open) $("files").close();
   else if ($("editor").open) {
@@ -982,6 +983,32 @@ function reconnect(id) {
   s.term.write("\r\n\x1b[90m● 다시 접속 중...\x1b[0m\r\n");
   invoke("reconnect", id, s.term.cols || 80, s.term.rows || 24);
 }
+// 접속 상세 로그 — 열어 둔 동안 다시 접속·끊김도 이어서 보이도록 1초마다 다시 읽는다
+let connectLogTimer = 0;
+function openConnectLog(id) {
+  const s = sessions.get(id);
+  if (!s) return;
+  const box = $("connect-log-text");
+  const read = () => {
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+    const text = (native ? native.connectLog(id) : "") || "기록이 없습니다";
+    if (box.textContent !== text) box.textContent = text;
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  };
+  $("connect-log-title").textContent = `접속 상세 로그 · ${s.name}`;
+  box.textContent = "";
+  $("connect-log").showModal();
+  read();
+  box.scrollTop = box.scrollHeight;
+  clearInterval(connectLogTimer);
+  connectLogTimer = setInterval(read, 1000);
+}
+$("connect-log").addEventListener("close", () => clearInterval(connectLogTimer));
+$("close-connect-log").onclick = () => $("connect-log").close();
+$("copy-connect-log").onclick = () => {
+  invoke("copy", $("connect-log-text").textContent);
+  toast("접속 로그를 복사했습니다. 주소·계정 이름이 들어 있으니 공유할 때 확인하세요.");
+};
 function enableTabMenu(tab, id) {
   let timer = 0, start = null;
   const cancel = () => { clearTimeout(timer); timer = 0; };
@@ -1019,6 +1046,7 @@ function openTabMenu(id, x, y) {
     { label: "다시 접속", disabled: s.state !== "disconnected", run: () => reconnect(id) },
     { label: "같은 서버 새 탭", run: () => invoke("duplicate", id, cols(), rows()) },
     { label: "SFTP 파일", disabled: s.state !== "connected" || s.sftp === "unavailable", run: () => $("sftp").click() },
+    { label: "접속 상세 로그", run: () => openConnectLog(id) },
     null,
     { label: "붙여넣기", disabled: s.state !== "connected", run: () => invoke("paste") },
     { label: "화면 지우기", run: () => s.term.clear() },

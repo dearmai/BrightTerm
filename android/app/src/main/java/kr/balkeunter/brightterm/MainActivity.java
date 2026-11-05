@@ -198,6 +198,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         @JavascriptInterface public void input(String id, String data) { if (service != null) service.input(id, data); }
         @JavascriptInterface public void resize(String id, int cols, int rows) { if (service != null) service.resize(id, cols, rows); }
         @JavascriptInterface public void reconnect(String id, int cols, int rows) { runOnUiThread(() -> { if (service != null) service.reconnect(id, cols, rows); }); }
+        @JavascriptInterface public String connectLog(String id) { TerminalService s = service; return s == null ? "" : s.connectLog(id); }
         @JavascriptInterface public void duplicate(String id, int cols, int rows) { runOnUiThread(() -> { if (service != null) service.duplicate(id, cols, rows); }); }
         @JavascriptInterface public void disconnect(String id) { runOnUiThread(() -> { if (service != null) service.disconnect(id); }); }
         @JavascriptInterface public void importKey() { runOnUiThread(() -> {
