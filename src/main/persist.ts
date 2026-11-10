@@ -31,8 +31,11 @@ export function persistSupported(h: Host): boolean {
 /** tmux 마우스 모드 — 켜면 휠로 tmux 스크롤, 끄면 드래그 선택을 터미널이 직접 한다. 지정하지 않으면 켠다 */
 export const tmuxMouse = (h: Host): boolean => h.persistMouse ?? true
 
+// set-option·send-keys 는 pane 대상이다. ':' 없이 '=이름'만 쓰면 세션이 아닌 패널로 해석된다.
+const paneTarget = (name: string): string => q(`=${name}:`)
+
 /** 이미 있는 tmux 세션의 마우스 모드를 바꾸는 sh 스크립트 */
-export const tmuxMouseScript = (name: string, on: boolean): string => `tmux set-option -t ${q(`=${name}`)} mouse ${on ? 'on' : 'off'} >/dev/null\n`
+export const tmuxMouseScript = (name: string, on: boolean): string => `tmux set-option -t ${paneTarget(name)} mouse ${on ? 'on' : 'off'} >/dev/null\n`
 
 /** 자동 실행 명령을 줄 단위로 — 빈 줄과 # 주석 줄은 뺀다 */
 export function startupLines(h: Pick<Host, 'startupCommand'>): string[] {
@@ -49,12 +52,13 @@ export function startupPlan(h: Host, session?: string): string[] {
   if (!persistSupported(h)) return lines
   const n = session || tmuxName(h)
   const t = q(`=${n}`)
-  const typing = lines.map((l) => `sleep 1; tmux send-keys -t ${t} -l ${q(l)}; tmux send-keys -t ${t} Enter`).join('; ')
+  const p = paneTarget(n)
+  const typing = lines.map((l) => `sleep 1; tmux send-keys -t ${p} -l ${q(l)}; tmux send-keys -t ${p} Enter`).join('; ')
   // 입력은 백그라운드로 — 세션을 만든 뒤 바로 붙고, 줄은 붙은 화면에 차례로 들어온다
-  const create = `tmux new-session -d -s ${q(n)} -c "$PWD" && tmux set-option -t ${q(n)} status off >/dev/null; ` +
+  const create = `tmux new-session -d -s ${q(n)} -c "$PWD" && tmux set-option -t ${p} status off >/dev/null; ` +
     (typing ? `{ ${typing}; } >/dev/null 2>&1 & ` : '')
   // 마우스 모드는 붙을 때마다 서버 설정대로 — 이미 있던 세션도 맞춘다
-  const mouse = `tmux set-option -t ${t} mouse ${tmuxMouse(h) ? 'on' : 'off'} >/dev/null 2>&1`
+  const mouse = `tmux set-option -t ${p} mouse ${tmuxMouse(h) ? 'on' : 'off'} >/dev/null`
   const inner = `tmux has-session -t ${t} 2>/dev/null || { ${create}}; ${mouse}; TMUX= exec tmux attach-session -t ${t}`
   const missing = h.protocol === 'ssh'
     ? `echo 'BrightTerm: 서버에 tmux 가 없어 세션 유지를 쓰지 않습니다 (서버 편집 → 세션 유지 → 서버 확인에서 설치할 수 있습니다)'`

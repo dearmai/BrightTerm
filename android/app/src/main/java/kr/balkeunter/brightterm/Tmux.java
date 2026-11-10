@@ -36,15 +36,17 @@ final class Tmux {
         List<String> lines = lines(profile);
         if (!profile.optBoolean("persist", false)) return lines;
         String target = quote("=" + name);
+        // set-option/send-keys resolve pane targets; ':' makes the exact session explicit.
+        String pane = quote("=" + name + ":");
         StringBuilder typing = new StringBuilder();
         for (String line : lines) {
             if (typing.length() > 0) typing.append("; ");
-            typing.append("sleep 1; tmux send-keys -t ").append(target).append(" -l ").append(quote(line)).append("; tmux send-keys -t ").append(target).append(" Enter");
+            typing.append("sleep 1; tmux send-keys -t ").append(pane).append(" -l ").append(quote(line)).append("; tmux send-keys -t ").append(pane).append(" Enter");
         }
-        String create = "tmux new-session -d -s " + quote(name) + " -c \"$PWD\" && tmux set-option -t " + quote(name) + " status off >/dev/null; " +
+        String create = "tmux new-session -d -s " + quote(name) + " -c \"$PWD\" && tmux set-option -t " + pane + " status off >/dev/null; " +
             (typing.length() == 0 ? "" : "{ " + typing + "; } >/dev/null 2>&1 & ");
-        String inner = "tmux has-session -t " + target + " 2>/dev/null || { " + create + "}; tmux set-option -t " + target + " mouse " +
-            (profile.optBoolean("persistMouse", true) ? "on" : "off") + " >/dev/null 2>&1; TMUX= exec tmux attach-session -t " + target;
+        String inner = "tmux has-session -t " + target + " 2>/dev/null || { " + create + "}; tmux set-option -t " + pane + " mouse " +
+            (profile.optBoolean("persistMouse", true) ? "on" : "off") + " >/dev/null; TMUX= exec tmux attach-session -t " + target;
         return Collections.singletonList(" if command -v tmux >/dev/null 2>&1; then sh -c " + quote(inner) + "; else printf '%s\\n' " +
             quote("BrightTerm: 서버에 tmux가 없어 일반 셸로 연결합니다. Ubuntu/Debian: sudo apt install tmux / macOS: brew install tmux") +
             (lines.isEmpty() ? "" : "; " + String.join("; ", lines)) + "; fi");

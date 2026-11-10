@@ -17,12 +17,17 @@ public class TmuxTest {
             JSONObject profile = new JSONObject().put("id", "host-1").put("name", "Desktop Work").put("persist", true)
                 .put("persistName", "shared").put("command", "printf 'hello'; echo $(id)");
             run(Tmux.startup(profile), root, log, started);
+            // 자동 입력은 백그라운드에서 1초 뒤 실행된다. 끝나기 전에 로그를 읽거나 파일을 지우지 않는다.
+            long deadline = System.nanoTime() + 5_000_000_000L;
+            while (!new String(Files.readAllBytes(log), StandardCharsets.UTF_8).contains("send-keys -t =shared: Enter") && System.nanoTime() < deadline) Thread.sleep(25);
             profile.put("persistMouse", false); run(Tmux.startup(profile), root, log, started);
             String text = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
             assertEquals(1, text.lines().filter(line -> line.startsWith("new-session ")).count());
             assertEquals(1, text.lines().filter(line -> line.startsWith("send-keys ") && line.contains(" -l ")).count());
             assertEquals(2, text.lines().filter(line -> line.startsWith("attach-session -t =shared")).count());
-            assertTrue(text.contains("mouse on")); assertTrue(text.contains("mouse off"));
+            assertTrue(text.contains("set-option -t =shared: mouse on"));
+            assertTrue(text.contains("set-option -t =shared: mouse off"));
+            assertTrue(text.contains("send-keys -t =shared: -l "));
             assertTrue(text.contains("-l printf 'hello'; echo $(id)"));
         } finally { remove(root); }
     }
@@ -32,10 +37,10 @@ public class TmuxTest {
             Path marker = root.resolve("marker");
             JSONObject profile = new JSONObject().put("persist", true).put("name", "한국 서버").put("command", "printf once > " + Tmux.quote(marker.toString()));
             // Run with an empty PATH so a developer's installed tmux is not used.
-            ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", Tmux.startup(profile)); builder.environment().put("PATH", root.toString()); builder.redirectErrorStream(true);
+            ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", Tmux.startup(profile).get(0)); builder.environment().put("PATH", root.toString()); builder.redirectErrorStream(true);
             Process process = builder.start(); String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             assertEquals(0, process.waitFor()); assertTrue(output.contains("tmux")); assertEquals("once", new String(Files.readAllBytes(marker), StandardCharsets.UTF_8));
-            profile.put("persist", false); assertEquals(profile.getString("command"), Tmux.startup(profile));
+            profile.put("persist", false); assertEquals(Collections.singletonList(profile.getString("command")), Tmux.startup(profile));
         } finally { remove(root); }
     }
     @Test public void selectedExistingNameIsPreservedAndShellQuoted() throws Exception {
@@ -60,8 +65,8 @@ public class TmuxTest {
         assertEquals("a-touch-bad", Tmux.name(p));
         assertEquals("'a'\\''b'", Tmux.quote("a'b"));
     }
-    private static void run(String script, Path root, Path log, Path session) throws Exception {
-        ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", script).directory(root.toFile()).redirectErrorStream(true);
+    private static void run(List<String> script, Path root, Path log, Path session) throws Exception {
+        ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", String.join("\n", script)).directory(root.toFile()).redirectErrorStream(true);
         builder.environment().put("PATH", root.toString() + ":/bin"); builder.environment().put("BT_LOG", log.toString()); builder.environment().put("BT_SESSION", session.toString());
         Process process = builder.start(); String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals(output, 0, process.waitFor());

@@ -1,5 +1,27 @@
 # 작업내역서
 
+## 2026-11-11 — tmux 마우스 설정 및 자동 명령 전송 수정
+
+### 요청 및 변경
+
+- 현재 작업 트리의 tmux 수정 사항을 확인하고 작업내역서를 작성해 커밋·푸시한다.
+- 데스크톱 `persist.ts`와 Android `Tmux.java`에서 `set-option`·`send-keys`의 대상을 `=세션명:`으로 지정했다. 세션 존재 확인과 연결에는 기존 `=세션명`을 사용한다.
+- 접속할 때 적용하는 마우스 설정의 표준 오류를 숨기지 않도록 변경했다.
+- Android 테스트를 시작 명령의 목록 반환 형식에 맞추고, 백그라운드 자동 입력 완료를 기다리도록 수정했다.
+- 실제 tmux로 최초 접속·재접속·마우스 전환·자동 명령의 1회 실행 및 다른 세션에 영향을 주지 않는지 확인하는 테스트를 추가했다. 변경 이력도 갱신했다.
+
+### 직접 검증한 결과
+
+- macOS / Node.js 24.15.0에서 `npm run typecheck`, `npm run build` 통과.
+- `node --experimental-strip-types --test test/startup.test.mjs test/tmux-mouse.test.mjs`: 5개 통과, 실제 tmux 테스트 1개 건너뜀(실행 파일 없음).
+- Android `:app:testDebugUnitTest --tests kr.balkeunter.brightterm.TmuxTest` 통과. 기본 GraalVM 21에서는 Android JDK 이미지 변환이 실패했고, 설치된 JBR 17.0.14를 해당 명령의 `JAVA_HOME`으로 지정해 다시 실행해 통과했다.
+
+### 검증 범위와 산출물
+
+- 실제 tmux 서버와 앱 화면에서 마우스 휠·선택·SSH 재접속 동작은 이번에 검증하지 않았다. Android는 Java 컴파일과 해당 단위 테스트까지 확인했으며 APK 패키징·기기 실행은 하지 않았다.
+- 이번 대화에서 사용자 실행 확인 결과는 받지 않았다.
+- `THIRD_PARTY_NOTICES.txt`의 변경은 `cpu-features` 고지 부분의 줄바꿈 차이뿐이므로 커밋에서 제외하고 로컬에 보존한다. 생성된 `out/`, `dist/`, `node_modules/`도 커밋하지 않는다.
+
 ## 2026-11-05 — 매뉴얼 탭에 RHEL 9·10, bash, zsh 추가
 
 ### 요청 및 변경
