@@ -196,9 +196,11 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
               <div className="row" style={{ gap: 14 }}>
                 <div className="logo-mark" style={{ width: 44, height: 44, fontSize: 22, borderRadius: 12 }}>B</div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 16 }}>BrightTerm {info?.version}</div>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>BrightTerm Extended {info?.version}</div>
                   <div className="muted">SSH · Telnet · Serial · 로컬 터미널 — 밝은터</div>
                   <div className="muted" style={{ userSelect: 'text' }}>빌드 {info?.buildId}</div>
+                  <div className="muted">BrightTerm에서 파생된 비공식 포크 · dearmai</div>
+                  <button className="btn sm" onClick={() => api.app.openExternal('https://github.com/Yeosup/BrightTerm')}>원본 BrightTerm 프로젝트</button>
                 </div>
               </div>
               <div className="card">

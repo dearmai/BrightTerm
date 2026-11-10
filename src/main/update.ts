@@ -8,8 +8,8 @@ import type { UpdateInfo } from '@shared/types'
  * 보안 원칙은 배너와 같다 — 요청에 아무 정보도 붙이지 않고, https 만, 크기 상한.
  * 내려받기·설치는 하지 않는다. 릴리스 페이지를 브라우저로 열어 줄 뿐이다.
  */
-const LATEST_URL = 'https://api.github.com/repos/Yeosup/BrightTerm/releases/latest'
-const RELEASE_PREFIX = 'https://github.com/Yeosup/BrightTerm/releases/'
+const LATEST_URL = 'https://api.github.com/repos/dearmai/BrightTerm/releases/latest'
+const RELEASE_PREFIX = 'https://github.com/dearmai/BrightTerm/releases/'
 const MAX_BODY = 256 * 1024
 const EVERY_MS = 12 * 60 * 60 * 1000
 

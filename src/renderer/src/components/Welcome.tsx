@@ -34,7 +34,7 @@ export function Welcome(): JSX.Element {
     <div className="welcome">
       <div className="welcome-card">
         <img className="logo-mark" src={logo} alt="" style={{ width: 48, height: 48, margin: '0 auto' }} />
-        <h1>BrightTerm</h1>
+        <h1>BrightTerm Extended</h1>
         <p>서버를 더블클릭하거나 <span className="kbd">{SC.quick}</span> 로 바로 접속하세요.</p>
         <div className="actions">
           <button className="btn primary" onClick={() => useApp.setState({ dialog: { kind: 'quick' } })}><Zap size={15} />빠른 접속</button>

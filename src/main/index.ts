@@ -57,7 +57,7 @@ function createWindow(): void {
     minHeight: 560,
     show: false,
     backgroundColor: dark ? '#0f1115' : '#f5f6f8',
-    title: 'BrightTerm',
+    title: 'BrightTerm Extended',
     // Keep the X11 window icon small enough for the window manager's icon property.
     icon: process.platform === 'linux' ? nativeImage.createFromPath(iconPath).resize({ width: 256, height: 256 }) : iconPath,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
@@ -92,7 +92,7 @@ function createWindow(): void {
         buttons: ['tmux 세션 유지하고 종료', 'tmux 세션도 끝내고 종료', '취소'],
         defaultId: 2,
         cancelId: 2,
-        title: 'BrightTerm',
+        title: 'BrightTerm Extended',
         message: `연결된 세션 ${open}개가 있습니다. 모두 닫고 종료할까요?`,
         detail: `세션 유지(tmux)로 연 창 ${tmux.length}개 — 유지하면 안의 프로그램이 계속 돌고 다시 열면 그대로 붙습니다. 끝내면 서버의 tmux 세션과 안의 프로그램까지 모두 끝납니다.`
       } : {
@@ -100,7 +100,7 @@ function createWindow(): void {
         buttons: ['종료', '취소'],
         defaultId: 1,
         cancelId: 1,
-        title: 'BrightTerm',
+        title: 'BrightTerm Extended',
         message: `연결된 세션 ${open}개가 있습니다. 모두 닫고 종료할까요?`,
         detail: kept ? `세션 유지(tmux)로 연 창 ${kept}개는 종료해도 안의 프로그램이 계속 돌고, 다시 열면 그대로 붙습니다.` : undefined
       })
@@ -330,17 +330,17 @@ function buildMacMenu(): Menu {
     {
       label: app.name,
       submenu: [
-        { role: 'about', label: 'BrightTerm 정보' },
+        { role: 'about', label: 'BrightTerm Extended 정보' },
         { type: 'separator' },
         act('설정…', 'settings', 'Cmd+,'),
         { type: 'separator' },
         { role: 'services', label: '서비스' },
         { type: 'separator' },
-        { role: 'hide', label: 'BrightTerm 가리기' },
+        { role: 'hide', label: 'BrightTerm Extended 가리기' },
         { role: 'hideOthers', label: '기타 가리기' },
         { role: 'unhide', label: '모두 보기' },
         { type: 'separator' },
-        { role: 'quit', label: 'BrightTerm 종료' }
+        { role: 'quit', label: 'BrightTerm Extended 종료' }
       ]
     },
     {
@@ -488,11 +488,11 @@ app.whenReady().then(() => {
   app.setAppUserModelId('kr.balkeunter.brightterm')
   // macOS "BrightTerm 정보" 창
   app.setAboutPanelOptions({
-    applicationName: 'BrightTerm',
+    applicationName: 'BrightTerm Extended',
     applicationVersion: __BUILD_ID__,
     version: '',
     copyright: 'Copyright © 2026 Dany Kim',
-    credits: '개발·저작권자: Dany Kim\n개인·회사 업무 사용 무료 · 유료 재배포·유료 번들은 별도 허락 필요\nBrightTerm Source-Available License 1.0'
+    credits: 'BrightTerm에서 파생된 비공식 포크 · dearmai\n원본: https://github.com/Yeosup/BrightTerm\n개발·저작권자: Dany Kim\n개인·회사 업무 사용 무료 · 유료 재배포·유료 번들은 별도 허락 필요\nBrightTerm Source-Available License 1.0'
   })
   Menu.setApplicationMenu(process.platform === 'darwin' ? buildMacMenu() : null)
   store.load()

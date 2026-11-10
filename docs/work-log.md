@@ -1,5 +1,30 @@
 # 작업내역서
 
+## 2026-11-11 — BrightTerm Extended 1.3.0으로 제품명·버전 변경
+
+### 요청 및 변경
+
+- 원본 최신 v1.3.0과 포크를 비교한 뒤, 원본 기능을 병합하지 않고 독립 포크의 제품명을 BrightTerm Extended로 정했다.
+- 데스크톱 package.json·lockfile과 Android versionName을 1.3.0으로 변경했다. Android versionCode는 2에서 3으로 올렸다.
+- 타이틀바·시작/잠금 화면·정보 화면·Android 앱 이름·설치 파일 및 바로가기 이름을 변경했다. 정보 화면과 README에 비공식 포크임을 표시하고 원본 프로젝트 링크를 남겼다.
+- 업데이트 알림 및 README의 다운로드 링크를 dearmai/BrightTerm 릴리스로 변경했다. 릴리스 발행이나 태그 생성은 이번 작업에 포함하지 않았다.
+- 설치 스크립트가 package.json의 productName을 사용하도록 변경했다. Windows 브릿지가 찾는 BrightTerm.exe와 Linux brightterm 실행 명령은 유지했다.
+- 앱 ID·Android 패키지 ID·기존 BrightTerm 프로필 경로·BrightTerm-data 포터블 경로·Git 동기화 형식을 유지했다. BRIGHTTERM_DATA로 지정한 경로가 우선한다.
+- README와 CHANGELOG에 독립 버전 관리 및 데이터 경로 유지 내용을 기록했다.
+
+### 직접 검증한 결과
+
+- macOS / Node.js 24.15.0에서 npm run typecheck 및 npm run build 통과.
+- Playwright로 Electron 앱을 임시 BRIGHTTERM_DATA 프로필에서 실행해 앱 이름 BrightTerm Extended, 버전 1.3.0, 문서 제목·시작 화면 표시 및 임시 프로필 경로를 확인했다. 종료 후 임시 데이터를 삭제했다.
+- 설치된 electron-builder JSON 스키마를 Ajv로 검증해 설정 유효성을 확인했다. Linux·macOS 설치 스크립트의 bash -n 구문 검사 통과.
+- 이번 변경 파일의 git diff --check 통과. 기존 THIRD_PARTY_NOTICES.txt의 줄바꿈 변경은 검사·커밋 대상에서 제외했다.
+
+### 사용자 확인 및 미검증 범위
+
+- 사용자는 BrightTerm Extended / 1.3.0 추천안을 승인했다. 변경 후 실제 사용자 환경의 실행 결과는 아직 받지 않았다.
+- 설치 패키지 생성·업그레이드 설치·기존 실제 볼트 열기·Windows 외부 브릿지·Linux 실행·Android 빌드 및 기기 실행은 이번에 검증하지 않았다. deb Architecture와 네이티브 ELF 검증도 수행하지 않았다.
+- 생성된 out/·dist/·node_modules/는 커밋하지 않으며 기존 THIRD_PARTY_NOTICES.txt 수정은 보존한다.
+
 ## 2026-11-11 — tmux 마우스 설정 및 자동 명령 전송 수정
 
 ### 요청 및 변경

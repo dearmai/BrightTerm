@@ -7,6 +7,13 @@ import { join } from 'path'
  * electron-builder 포터블 런처가 PORTABLE_EXECUTABLE_DIR 을 넘겨 준다. BRIGHTTERM_DATA 를 직접 주면(테스트) 그쪽이 우선.
  * 다른 모듈보다 먼저 불려야 한다 — index.ts 맨 첫 import.
  */
+// Product branding must not move existing Chromium profiles, settings or vaults.
+if (!process.env.BRIGHTTERM_DATA) {
+  const legacyProfile = join(app.getPath('appData'), 'BrightTerm')
+  mkdirSync(legacyProfile, { recursive: true })
+  app.setPath('userData', legacyProfile)
+}
+
 const exeDir = process.env.PORTABLE_EXECUTABLE_DIR
 if (exeDir && !process.env.BRIGHTTERM_DATA) {
   const dir = join(exeDir, 'BrightTerm-data')

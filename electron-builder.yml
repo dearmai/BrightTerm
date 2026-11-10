@@ -1,5 +1,5 @@
 appId: kr.balkeunter.brightterm
-productName: BrightTerm
+productName: BrightTerm Extended
 copyright: Copyright (c) 2026 Dany Kim
 directories:
   buildResources: build
@@ -37,6 +37,8 @@ extraResources:
   - from: node_modules/electron/dist/LICENSES.chromium.html
     to: legal/LICENSES.chromium.html
 win:
+  # Existing external launch bridges locate BrightTerm.exe.
+  executableName: BrightTerm
   target:
     - target: nsis
       arch: [x64]
@@ -54,7 +56,7 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
-  shortcutName: BrightTerm
+  shortcutName: BrightTerm Extended
   artifactName: ${productName}-Setup-${version}.${ext}
 portable:
   artifactName: ${productName}-Portable-${version}.${ext}
@@ -76,6 +78,7 @@ mac:
 dmg:
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
 linux:
+  executableName: brightterm
   syncDesktopName: true
   target: [AppImage, deb]
   icon: build/icons

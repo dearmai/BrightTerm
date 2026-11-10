@@ -77,7 +77,7 @@ export function TitleBar(): JSX.Element {
   return (
     <div className={`titlebar ${api.platform === 'darwin' ? 'mac' : ''}`}>
       <div className="tb-left">
-        <div className="logo"><img className="logo-mark" src={logo} alt="" />BrightTerm</div>
+        <div className="logo"><img className="logo-mark" src={logo} alt="" />BrightTerm Extended</div>
         <button className={`ibtn ${sidebar ? 'on' : ''}`} title={`서버 목록 (${SC.sidebar})`} onClick={() => useApp.setState({ sidebar: !sidebar })}><PanelLeft size={16} /></button>
       </div>
       <div className="tabs">

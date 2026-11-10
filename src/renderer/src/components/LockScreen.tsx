@@ -87,7 +87,7 @@ export function LockScreen(props: { overlay: boolean }): JSX.Element {
         <img className="logo-mark" src={logo} alt="" />
         {mode === 'unlock' && (
           <form onSubmit={(e) => { e.preventDefault(); unlock() }} style={{ display: 'contents' }}>
-            <h1><Lock size={18} style={{ verticalAlign: -2 }} /> BrightTerm 잠금</h1>
+            <h1><Lock size={18} style={{ verticalAlign: -2 }} /> BrightTerm Extended 잠금</h1>
             <p>{props.overlay ? '세션은 계속 연결되어 있습니다. 마스터 비밀번호를 입력하면 다시 사용할 수 있습니다.' : '저장된 서버 계정을 열려면 마스터 비밀번호를 입력하세요.'}</p>
             <input ref={inputRef} className="input" type="password" placeholder="마스터 비밀번호" value={pw} onChange={(e) => setPw(e.target.value)} />
             {vault.osUnlockAvailable && !vault.osUnlockEnabled && (
@@ -108,7 +108,7 @@ export function LockScreen(props: { overlay: boolean }): JSX.Element {
         )}
         {mode === 'setup' && (
           <form onSubmit={(e) => { e.preventDefault(); setup() }} style={{ display: 'contents' }}>
-            <h1>BrightTerm 시작하기</h1>
+            <h1>BrightTerm Extended 시작하기</h1>
             <p>서버 ID·비밀번호·키는 이 마스터 비밀번호로 AES-256 암호화되어 이 PC에만 저장됩니다. 마스터 비밀번호는 어디에도 전송되지 않습니다.</p>
             <input ref={inputRef} className="input" type="password" placeholder="마스터 비밀번호 (8자 이상)" value={pw} onChange={(e) => setPw(e.target.value)} />
             {pw && (

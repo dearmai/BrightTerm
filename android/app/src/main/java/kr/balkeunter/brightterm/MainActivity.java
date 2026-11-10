@@ -265,7 +265,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     }
     private boolean jsDialog(String message, JsResult result, boolean cancelable) {
         if (isFinishing() || isDestroyed()) { result.cancel(); return true; }
-        AlertDialog.Builder dialog = dialogBuilder().setTitle("BrightTerm").setMessage(message)
+        AlertDialog.Builder dialog = dialogBuilder().setTitle("BrightTerm Extended").setMessage(message)
             .setPositiveButton("확인", (d, w) -> result.confirm())
             .setOnCancelListener(d -> result.cancel());
         if (cancelable) dialog.setNegativeButton("취소", (d, w) -> result.cancel());

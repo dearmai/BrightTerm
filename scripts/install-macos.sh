@@ -8,10 +8,11 @@ if [[ $(uname -s) != Darwin ]]; then
   exit 1
 fi
 
+product_name=$(node -p 'require("./package.json").productName')
 arch=$(node -p 'process.arch')
 case "$arch" in
-  arm64) app="$PWD/dist/mac-arm64/BrightTerm.app" ;;
-  x64) app="$PWD/dist/mac/BrightTerm.app" ;;
+  arm64) app="$PWD/dist/mac-arm64/${product_name}.app" ;;
+  x64) app="$PWD/dist/mac/${product_name}.app" ;;
   *) echo "Unsupported macOS architecture: $arch" >&2; exit 1 ;;
 esac
 
@@ -23,7 +24,7 @@ fi
 install_dir=${1:-/Applications}
 mkdir -p -- "$install_dir" 2>/dev/null || sudo mkdir -p -- "$install_dir"
 install_dir=$(cd -- "$install_dir" && pwd -P)
-destination="$install_dir/BrightTerm.app"
+destination="$install_dir/${product_name}.app"
 if [[ "$destination" == "$app" ]]; then
   echo 'The installation directory must differ from the build directory.' >&2
   exit 1

@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 
 $projectDir = Split-Path -Parent $PSScriptRoot
 $package = Get-Content -LiteralPath (Join-Path $projectDir 'package.json') -Raw | ConvertFrom-Json
-$installer = Join-Path $projectDir "dist/BrightTerm-Setup-$($package.version).exe"
+$installer = Join-Path $projectDir "dist/$($package.productName)-Setup-$($package.version).exe"
 if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
     throw "Installer not found: $installer. Run make build first."
 }

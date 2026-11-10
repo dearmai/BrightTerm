@@ -9,8 +9,9 @@ if [[ $(uname -s) != Linux ]] || ! command -v apt-get >/dev/null || ! command -v
 fi
 
 version=$(node -p 'require("./package.json").version')
+product_name=$(node -p 'require("./package.json").productName')
 arch=$(dpkg --print-architecture)
-package="$PWD/dist/BrightTerm-${version}-linux-${arch}.deb"
+package="$PWD/dist/${product_name}-${version}-linux-${arch}.deb"
 if [[ ! -f "$package" ]]; then
   echo "Package not found: $package. Run make deb with Node.js matching the system architecture." >&2
   exit 1

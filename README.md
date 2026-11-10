@@ -1,4 +1,8 @@
-# BrightTerm
+# BrightTerm Extended
+
+**1.3.0 · BrightTerm에서 파생된 비공식 포크**입니다. [원본 BrightTerm](https://github.com/Yeosup/BrightTerm)의 저작권·라이선스 고지를 유지하며, 이 포크는 독립적으로 버전을 관리합니다.
+
+기존 BrightTerm의 설정·볼트·Git 동기화 형식과 앱 식별자를 유지합니다. 데스크톱 데이터는 기존 `BrightTerm` 폴더, Windows 포터블 데이터는 `BrightTerm-data`에 계속 저장합니다. 원본과 별도 데이터로 동시에 사용하는 구성은 아닙니다. 새 버전 알림은 [이 포크의 릴리스](https://github.com/dearmai/BrightTerm/releases)를 확인합니다.
 
 PuTTY를 대신할 **Windows·macOS·Linux용 SSH / Telnet / 시리얼 / 로컬 터미널**입니다. 서버를 10대 넘게 동시에 띄워도 어느 창이 어느 서버인지 바로 알아볼 수 있게 만드는 것이 목표입니다.
 
@@ -21,14 +25,14 @@ make android-run
 
 ## 설치
 
-**[최신 버전 내려받기 → Releases](https://github.com/Yeosup/BrightTerm/releases/latest)**
+**[최신 버전 내려받기 → Releases](https://github.com/dearmai/BrightTerm/releases/latest)**
 
 | 운영체제 | 파일 | 비고 |
 | --- | --- | --- |
-| Windows | `BrightTerm-Setup-1.2.3.exe` | 설치형. 설치 경로 선택, 바탕화면 바로가기 |
-| Windows | `BrightTerm-Portable-1.2.3.exe` | 설치 없이 실행. 설정·볼트는 실행 파일 옆 `BrightTerm-data` 폴더에 저장 |
-| macOS (Apple Silicon) | `BrightTerm-1.2.3-mac-arm64.dmg` | M1 이후 맥 |
-| macOS (Intel) | `BrightTerm-1.2.3-mac-x64.dmg` | Intel 맥 |
+| Windows | `BrightTerm Extended-Setup-1.3.0.exe` | 설치형. 설치 경로 선택, 바탕화면 바로가기 |
+| Windows | `BrightTerm Extended-Portable-1.3.0.exe` | 설치 없이 실행. 설정·볼트는 실행 파일 옆 `BrightTerm-data` 폴더에 저장 |
+| macOS (Apple Silicon) | `BrightTerm Extended-1.3.0-mac-arm64.dmg` | M1 이후 맥 |
+| macOS (Intel) | `BrightTerm Extended-1.3.0-mac-x64.dmg` | Intel 맥 |
 
 - **Windows**: "Windows의 PC 보호" 창이 뜨면 `추가 정보 → 실행`을 누르세요(코드 서명 전 빌드).
 - **macOS**: Apple 공증을 받은 빌드입니다. dmg에서 앱을 응용 프로그램 폴더로 끌어 넣고 바로 여세요. 처음 사내망(192.168.x.x 등) 서버에 접속할 때 **로컬 네트워크 접근**을 물으면 `허용`을 누르세요. 거부했다면 `시스템 설정 → 개인정보 보호 및 보안 → 로컬 네트워크`에서 켤 수 있습니다.
@@ -56,9 +60,9 @@ Node.js 22.12 이상(권장 24 LTS)과 Xcode Command Line Tools(`xcode-select --
 make install
 ```
 
-현재 Node.js의 아키텍처(Apple Silicon 또는 Intel)로 앱을 빌드하고 `/Applications/BrightTerm.app`에 설치합니다. 일반 사용자로 실행하세요. 설치 폴더에 쓰기 권한이 없을 때만 sudo를 요청합니다. 실행 중인 BrightTerm은 먼저 종료하세요.
+현재 Node.js의 아키텍처(Apple Silicon 또는 Intel)로 앱을 빌드하고 `/Applications/BrightTerm Extended.app`에 설치합니다. 일반 사용자로 실행하세요. 설치 폴더에 쓰기 권한이 없을 때만 sudo를 요청합니다. 실행 중인 BrightTerm은 먼저 종료하세요.
 
-`make build`는 앱 번들만 생성합니다. 관리자 권한 없이 사용자 응용 프로그램 폴더에 설치하려면 `make install MACOS_INSTALL_DIR="$HOME/Applications"`를 사용하세요. 설치 후 `open /Applications/BrightTerm.app`으로 실행할 수 있습니다.
+`make build`는 앱 번들만 생성합니다. 관리자 권한 없이 사용자 응용 프로그램 폴더에 설치하려면 `make install MACOS_INSTALL_DIR="$HOME/Applications"`를 사용하세요. 설치 후 `open "/Applications/BrightTerm Extended.app"`으로 실행할 수 있습니다.
 
 로컬 macOS 빌드는 `make install` / `make build` 실행 시 `BrightTerm Local Development` 자체 서명 인증서를 확인하고, 없으면 한 번 생성합니다. 이후에는 같은 인증서로 서명하며 타임스탬프·공증 서버에 요청하지 않습니다. 최초 인증서 신뢰 등록 때 macOS 승인이 필요할 수 있습니다. 인증서는 코드 서명 용도로만 신뢰합니다.
 
@@ -86,7 +90,7 @@ make deb ARCH=arm64
 npm run dist:linux:deb:arm64
 ```
 
-결과는 `dist/BrightTerm-1.2.3-linux-arm64.deb`입니다. 패키징 과정에서 로컬 터미널용 `node-pty`도 대상 아키텍처로 컴파일합니다. 교차 빌드한 패키지는 ARM64 장치에서 설치·실행하세요.
+결과는 `dist/BrightTerm Extended-1.3.0-linux-arm64.deb`입니다. 패키징 과정에서 로컬 터미널용 `node-pty`도 대상 아키텍처로 컴파일합니다. 교차 빌드한 패키지는 ARM64 장치에서 설치·실행하세요.
 
 #### PRoot-Distro에서 실행
 
@@ -95,7 +99,7 @@ Ubuntu 24.04.5 / aarch64 / `6.17.0-PRoot-Distro` 환경에서 기본 실행 시 
 ```bash
 brightterm --no-sandbox
 # 설치 폴더에서 직접 실행할 때:
-/opt/BrightTerm/brightterm --no-sandbox
+"/opt/BrightTerm Extended/brightterm" --no-sandbox
 ```
 
 PRoot 환경의 Chromium 샌드박스 호환 문제로 보입니다. 이 옵션은 Chromium 프로세스의 샌드박스 보호를 해제하므로 필요한 PRoot 환경에서만 사용하세요. 앱 메뉴에서도 필요하면 사용자 바로가기의 실행 명령에 `--no-sandbox`를 추가합니다. 일반 Linux 패키지에는 기본 적용하지 않습니다. 옵션의 동작은 [Electron 공식 문서](https://www.electronjs.org/docs/latest/tutorial/sandbox/)를 참고하세요.
@@ -103,8 +107,8 @@ PRoot 환경의 Chromium 샌드박스 호환 문제로 보입니다. 이 옵션�
 설치 없이 실행하려면 `npm run dist:linux`로 AppImage를 생성하고 실행 권한을 부여하세요:
 
 ```bash
-chmod +x dist/BrightTerm-1.2.3-linux-*.AppImage
-./dist/BrightTerm-1.2.3-linux-*.AppImage
+chmod +x dist/"BrightTerm Extended-1.3.0-linux-"*.AppImage
+./dist/"BrightTerm Extended-1.3.0-linux-"*.AppImage
 ```
 
 FUSE가 없는 환경에서는 AppImage의 `--appimage-extract-and-run` 옵션을 사용할 수 있습니다. 개발 실행은 `npm run dev`, 폴더 빌드는 `npm run dist:linux:dir`입니다.
@@ -254,7 +258,7 @@ Windows/Linux에서 `vim` 등에 Ctrl+V를 보내야 한다면 설정 → 입력
 
 PuTTY·Xshell·SecureCRT 를 실행해 서버에 접속시키는 보안 프로그램에서 BrightTerm 을 대신 쓸 수 있습니다. 같은 실행 인자를 받아 새 탭으로 접속합니다.
 
-**브릿지 실행 파일 (Windows)** — 설치 폴더의 `bridge\` 에 `putty.exe`, `Xshell.exe`, `SecureCRT.exe` 가 들어 있습니다. 보안 프로그램의 클라이언트 경로를 이 파일로 바꾸면 됩니다 (설치형 기본: `%LOCALAPPDATA%\Programs\BrightTerm\bridge\putty.exe`).
+**브릿지 실행 파일 (Windows)** — 설치 폴더의 `bridge\` 에 `putty.exe`, `Xshell.exe`, `SecureCRT.exe` 가 들어 있습니다. 보안 프로그램의 클라이언트 경로를 이 파일로 바꾸면 됩니다 (설치형 기본: `%LOCALAPPDATA%\Programs\BrightTerm Extended\bridge\putty.exe`).
 
 - 받은 명령줄을 그대로 BrightTerm 에 넘기고, **그 탭을 닫을 때까지 끝나지 않습니다**. 클라이언트 프로세스 종료로 접속 종료를 기록하는 보안 프로그램과 맞추기 위해서입니다.
 - 반대로 보안 프로그램이 브릿지 프로세스를 끝내면(접속 시간 만료 등) BrightTerm 도 그 탭을 닫습니다.
