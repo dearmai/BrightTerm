@@ -7,6 +7,7 @@ import { ENV_COLORS } from '@shared/types'
 import { DEFAULT_SHELL_PROMPT_EXAMPLE } from '@shared/shellPrompt'
 import { resolveReconnectPolicy, reconnectDelay, canReconnect } from '@shared/reconnect'
 import { hostKeys, mapKeys } from '@shared/terminal'
+import { isMouseReport } from '@shared/mouse'
 import type { Transport } from './transports/types'
 import { SshTransport } from './transports/ssh'
 import { TelnetTransport } from './transports/telnet'
@@ -444,11 +445,13 @@ export class Session {
   }
 
   write(data: string): void {
+    const mouse = isMouseReport(data)
+    if (mouse && (this.info.state !== 'connected' || this.savedHost().mouseReporting === false)) return
     if (!this.transport) {
       if (data === '\r' && this.info.state !== 'connecting') this.reconnectNow()
       return
     }
-    if (!isTerminalReport(data)) {
+    if (!mouse && !isTerminalReport(data)) {
       this.lastInputAt = Date.now()
       this.lineOpen = !/[\r\n]$/.test(data)
     }

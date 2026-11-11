@@ -24,7 +24,17 @@ export function Modal(props: { title: ReactNode; onClose: () => void; children: 
           <button className="ibtn" onClick={props.onClose}><X size={16} /></button>
         </div>
         {props.children}
-        {props.foot && <div className="modal-foot">{props.foot}</div>}
+        {props.foot && <div className="modal-foot" onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+          if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+          const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
+          const index = buttons.findIndex((button) => button === e.target)
+          if (index < 0) return
+          e.preventDefault()
+          e.stopPropagation()
+          const step = e.key === 'ArrowRight' ? 1 : -1
+          buttons[(index + step + buttons.length) % buttons.length].focus()
+        }}>{props.foot}</div>}
       </div>
     </div>
   )

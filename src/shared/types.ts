@@ -127,6 +127,8 @@ export interface Host {
   terminalPreset?: string
   /** 서버 기본 터미널 테마 — 비우면 앱 설정을 따른다. 서버와 함께 동기화 */
   terminalTheme?: string
+  /** 데스크톱: 서버 프로그램의 마우스 보고 허용. false이면 요청·전송을 차단한다. 기본 허용. */
+  mouseReporting?: boolean
   startupCommand?: string
   keepaliveSec: number
   /** 끊기면 자동 재접속 — 지정하지 않으면 앱 설정을 따른다. SSH·텔넷만 */

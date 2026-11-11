@@ -580,6 +580,9 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
 
         {tab === 'term' && (
           <>
+            <Field label="서버 프로그램에 마우스 입력 전달" hint="끄면 tmux·vim 등이 요청해도 클릭·이동·휠을 서버에 보내지 않습니다. 일반 텍스트 선택과 스크롤을 사용합니다. 저장하면 열린 연결에도 적용됩니다 (데스크톱).">
+              <Switch value={h.mouseReporting !== false} onChange={(v) => set('mouseReporting', v)} />
+            </Field>
             <Field label="서버 종류 템플릿" hint={preset ? preset.hint : '사용자 지정 — 아래 값을 직접 바꿨습니다. 템플릿을 누르면 그 값으로 돌아갑니다.'}>
               <div className="seg">
                 {TERMINAL_PRESETS.map((p) => (

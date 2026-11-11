@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { restoreWorkspace, startWorkspaceSaving } from './workspace'
 import { useApp } from './state'
 import { api } from './api'
-import { wireData, applySettingsToAll, getEntry, refocusTerminal } from './terms'
+import { wireData, applySettingsToAll, getEntry, refocusTerminal, resetSessionMouse } from './terms'
 import { panes, findPane, neighbour } from './layout'
 import { actionOf, modKey, type Action } from './platform'
 import { TitleBar } from './components/TitleBar'
@@ -25,6 +25,8 @@ function useGlobalWiring(): void {
     wireData()
     const offs = [
       api.on.state((info) => {
+        const previous = useApp.getState().sessions[info.id]
+        if (previous?.state !== info.state && info.state !== 'connected') resetSessionMouse(info.id)
         useApp.setState((s) => (s.sessions[info.id] ? { sessions: { ...s.sessions, [info.id]: info } } : {}))
         if (info.state === 'connected' && useApp.getState().focusedSession()?.id === info.id) refocusTerminal()
       }),

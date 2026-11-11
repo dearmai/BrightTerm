@@ -9,6 +9,7 @@ import { useApp } from './state'
 import { TERMINAL_THEMES, resolveTerminalTheme } from './themes'
 import { panes, findPane } from './layout'
 import type { Settings } from '@shared/types'
+import { isMouseReport, MouseModeFilter, RESET_MOUSE } from '@shared/mouse'
 import { actionOf, combo, isMac } from './platform'
 
 export interface TermEntry {
@@ -19,6 +20,7 @@ export interface TermEntry {
   el: HTMLDivElement
   line: string
   lineUnknown: boolean
+  mouseFilter: MouseModeFilter
   webgl?: WebglAddon
 }
 
@@ -92,7 +94,7 @@ export function ensureEntry(sessionId: string): TermEntry {
   el.className = 'term-host'
   parkingLot().appendChild(el)
   term.open(el)
-  e = { sessionId, term, fit, search, el, line: '', lineUnknown: false }
+  e = { sessionId, term, fit, search, el, line: '', lineUnknown: false, mouseFilter: new MouseModeFilter() }
   try {
     const gl = new WebglAddon()
     gl.onContextLoss(() => gl.dispose())
@@ -100,8 +102,23 @@ export function ensureEntry(sessionId: string): TermEntry {
     e.webgl = gl
   } catch { /* DOM renderer fallback */ }
   const entry = e
-  term.onData((d) => handleInput(entry, d))
-  term.onBinary((d) => api.write(sessionId, d))
+  // xterm can turn wheel events into arrow keys in the alternate screen even
+  // without mouse tracking. With reporting blocked, those must stay local too.
+  el.addEventListener('wheel', (event) => {
+    if (mouseBlocked(sessionId) && term.buffer.active.type === 'alternate') {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  }, { capture: true, passive: false })
+  term.onData((d) => {
+    if (isMouseReport(d)) {
+      // Protocol replies belong only to this session, never broadcast to another shell.
+      if (canReportMouse(sessionId)) api.write(sessionId, d)
+      return
+    }
+    handleInput(entry, d)
+  })
+  term.onBinary((d) => { if (canReportMouse(sessionId)) api.write(sessionId, d) })
   term.onResize(({ cols, rows }) => api.resize(sessionId, cols, rows))
   term.onSelectionChange(() => {
     if (useApp.getState().settings.copyOnSelect && term.hasSelection()) {
@@ -187,12 +204,40 @@ export function applySettingsToAll(s: Settings): void {
 // ---------------- data from main ----------------
 
 let wired = false
+function mouseBlocked(sessionId: string): boolean {
+  const s = useApp.getState()
+  const hostId = s.sessions[sessionId]?.hostId
+  return s.hosts.find((h) => h.id === hostId)?.mouseReporting === false
+}
+
+function canReportMouse(sessionId: string): boolean {
+  return useApp.getState().sessions[sessionId]?.state === 'connected' && !mouseBlocked(sessionId)
+}
+
+/** A new transport must not inherit mouse tracking from the previous remote program. */
+export function resetSessionMouse(sessionId: string): void {
+  const e = entries.get(sessionId)
+  if (!e) return
+  e.mouseFilter.reset()
+  e.term.write(RESET_MOUSE)
+}
+
 export function wireData(): void {
   if (wired) return
   wired = true
+  useApp.subscribe((state, previous) => {
+    if (state.hosts === previous.hosts && state.sessions === previous.sessions) return
+    for (const e of entries.values()) {
+      const hostId = state.sessions[e.sessionId]?.hostId
+      const blocked = state.hosts.find((h) => h.id === hostId)?.mouseReporting === false
+      const previousHostId = previous.sessions[e.sessionId]?.hostId
+      const wasBlocked = previous.hosts.find((h) => h.id === previousHostId)?.mouseReporting === false
+      if (blocked && !wasBlocked) resetSessionMouse(e.sessionId)
+    }
+  })
   api.on.data((id, data) => {
     const e = ensureEntry(id)
-    e.term.write(data)
+    e.term.write(e.mouseFilter.push(data, mouseBlocked(id)))
     const st = useApp.getState()
     const tab = st.tabs.find((t) => t.id === st.activeTab)
     const visible = tab && panes(tab.root).some((p) => p.sessionId === id)
