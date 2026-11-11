@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Palette, Keyboard, ImageUp, Plug, Shield, Archive, Info, Trash2, FolderOpen, GitBranch } from 'lucide-react'
 import { GitSyncSettings } from './GitSyncSettings'
+import { ReconnectPolicyEditor } from './ReconnectPolicyEditor'
 import { useApp } from '../state'
 import { api } from '../api'
 import { Modal, Field, Toggle, Seg } from './ui'
@@ -120,10 +121,11 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
           {sec === 'conn' && (
             <>
               <div className="card">
-                <Toggle label="끊기면 자동 재접속" desc="네트워크가 끊기면 2·4·8…초 간격으로 최대 8번 다시 연결합니다" value={settings.autoReconnect} onChange={(v) => set({ autoReconnect: v })} />
+                <Toggle label="끊기면 자동 재접속" desc="연결이 끊어지면 아래 재시도 규칙으로 다시 연결합니다. 서버별 설정으로 덮어쓸 수 있습니다" value={settings.autoReconnect} onChange={(v) => set({ autoReconnect: v })} />
                 <Toggle label="시작할 때 지난 탭·분할 다시 열기" desc="앱을 다시 켜면 닫을 때 열려 있던 탭과 분할 배치로 다시 접속합니다. 세션 유지(tmux)를 켠 창은 하던 화면 그대로 돌아옵니다" value={settings.restoreTabs} onChange={(v) => set({ restoreTabs: v })} />
                 <Toggle label="세션 로그 저장" desc="터미널 출력을 텍스트 파일로 저장합니다 (새 연결부터 적용)" value={settings.sessionLog} onChange={(v) => set({ sessionLog: v })} />
               </div>
+              <ReconnectPolicyEditor value={settings.reconnectPolicy} onChange={(reconnectPolicy) => set({ reconnectPolicy })} />
               <button className="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => api.app.openLogs()}><FolderOpen size={13} />로그 폴더 열기</button>
             </>
           )}

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOpen, Search, Check, Copy, SquareTerminal } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOpen, Search, Check, Copy, SquareTerminal, CircleHelp, X } from 'lucide-react'
 import { useApp, newHost } from '../state'
 import { api } from '../api'
 import { Modal, Field, Seg, ColorPick, Switch } from './ui'
@@ -7,6 +7,9 @@ import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJum
 import { isMac, isWindows } from '../platform'
 
 import { TERMINAL_THEMES } from '../themes'
+import { DEFAULT_SHELL_PROMPT_EXAMPLE } from '@shared/shellPrompt'
+import { ReconnectPolicyEditor } from './ReconnectPolicyEditor'
+import { normalizeReconnectPolicy } from '@shared/reconnect'
 import { ENCODINGS, TERMINAL_PRESETS, applyPreset, hostKeys, matchPreset } from '@shared/terminal'
 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
@@ -26,9 +29,26 @@ function groupPath(groups: Group[], id: string | null): string {
 export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: string | null }): JSX.Element {
   const { groups, hosts, creds, vault } = useApp()
   const appAutoReconnect = useApp((s) => s.settings.autoReconnect)
+  const appReconnectPolicy = useApp((s) => s.settings.reconnectPolicy)
   const isNew = !initial
   const [h, setH] = useState<Host>(() => initial ? structuredClone(initial) : newHost(groupId ?? null))
   const [tab, setTab] = useState<'basic' | 'auth' | 'term' | 'adv' | 'fw'>('basic')
+  const [idleHelpOpen, setIdleHelpOpen] = useState(false)
+  const idleHelpRef = useRef<HTMLSpanElement>(null)
+  const idleHelpButtonRef = useRef<HTMLButtonElement>(null)
+  const dismissIdleHelp = (): void => {
+    setIdleHelpOpen(false)
+    idleHelpButtonRef.current?.focus()
+  }
+  useEffect(() => {
+    if (!idleHelpOpen) return
+    const outside = (event: PointerEvent): void => {
+      if (!idleHelpRef.current?.contains(event.target as Node)) setIdleHelpOpen(false)
+    }
+    document.addEventListener('pointerdown', outside, true)
+    return () => document.removeEventListener('pointerdown', outside, true)
+  }, [idleHelpOpen])
+  useEffect(() => setIdleHelpOpen(false), [tab, h.protocol])
   const [password, setPassword] = useState('')
   const [keyText, setKeyText] = useState('')
   const [keyPath, setKeyPath] = useState('')
@@ -197,7 +217,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   const flatGroups = groups.map((g) => ({ id: g.id, label: groupPath(groups, g.id) })).sort((a, b) => a.label.localeCompare(b.label))
 
   return (
-    <Modal title={isNew ? '새 서버' : `서버 편집 · ${initial?.alias}`} onClose={close}
+    <Modal title={isNew ? '새 서버' : `서버 편집 · ${initial?.alias}`} onClose={idleHelpOpen ? dismissIdleHelp : close}
       foot={<>
         {err && <span className="left err">{err}</span>}
         <button className="btn" onClick={close}>취소</button>
@@ -508,20 +528,35 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
               <div className="persist-box">
                 <div className="toggle">
                   <div className="t-label">
-                    <span>유휴 방지 명령 (TMOUT 대응)</span>
-                    <small>Keepalive 는 연결만 유지해 셸의 TMOUT 을 막지 못합니다. 켜면 셸 프롬프트에서 입력이 없을 때 명령을 대신 보냅니다. vi·less 같은 프로그램 실행 중이거나 입력하던 줄이 있으면 보내지 않습니다. ksh 의 "shell will time out" 경고가 보이면 간격과 상관없이 바로 보냅니다. tmux 세션 유지 창에서는 동작하지 않습니다.</small>
+                    <span className="idle-help-label">유휴 방지 명령 (TMOUT 대응)
+                      <span className="idle-help-anchor" ref={idleHelpRef}>
+                        <button type="button" className="ibtn sm" ref={idleHelpButtonRef} title="유휴 방지 도움말" aria-label="유휴 방지 도움말" aria-haspopup="dialog" aria-expanded={idleHelpOpen} aria-controls={idleHelpOpen ? 'idle-help-popup' : undefined} onClick={() => setIdleHelpOpen((open) => !open)}><CircleHelp size={14} /></button>
+                        {idleHelpOpen && <span id="idle-help-popup" className="idle-help-popup" role="dialog" aria-labelledby="idle-help-title">
+                          <span className="idle-help-head"><strong id="idle-help-title">유휴 방지 명령 안내</strong><button type="button" className="ibtn sm" autoFocus aria-label="도움말 닫기" onClick={dismissIdleHelp}><X size={14} /></button></span>
+                          <span>Keepalive는 연결만 유지하므로 셸의 TMOUT을 막지 못합니다. 유휴 방지를 켜면 셸 프롬프트에서 입력이 없을 때 명령을 대신 보냅니다.</span>
+                          <span>vi·less 같은 프로그램 실행 중이거나 입력하던 줄이 있으면 보내지 않습니다. ksh의 “shell will time out” 경고가 보이면 간격과 상관없이 바로 보냅니다. tmux 세션 유지 창에서는 동작하지 않습니다.</span>
+                          <span>간격은 서버의 TMOUT보다 짧게 설정하세요. 보낼 명령을 비우면 Enter만 보냅니다.</span>
+                        </span>}
+                      </span>
+                    </span>
                   </div>
                   <Switch value={!!h.idleCommandSec} onChange={(v) => set('idleCommandSec', v ? 240 : undefined)} />
                 </div>
                 {!!h.idleCommandSec && (
-                  <div className="grid2">
-                    <Field label="간격 (초)" hint="서버의 TMOUT 보다 짧게">
-                      <input className="input mono" type="number" min={10} value={h.idleCommandSec} onChange={(e) => set('idleCommandSec', +e.target.value || 10)} onBlur={() => set('idleCommandSec', Math.max(10, h.idleCommandSec ?? 10))} />
+                  <>
+                    <div className="grid2">
+                      <Field label="간격 (초)" hint="서버의 TMOUT 보다 짧게">
+                        <input className="input mono" type="number" min={10} value={h.idleCommandSec} onChange={(e) => set('idleCommandSec', +e.target.value || 10)} onBlur={() => set('idleCommandSec', Math.max(10, h.idleCommandSec ?? 10))} />
+                      </Field>
+                      <Field label="보낼 명령" hint="비우면 Enter 만 보냅니다. 기록에 남기 싫으면 비우세요">
+                        <input className="input mono" value={h.idleCommand ?? 'date'} onChange={(e) => set('idleCommand', e.target.value)} />
+                      </Field>
+                    </div>
+                    <Field label="셸 프롬프트 예시" hint={<>기본 자동 인식에 추가로 사용합니다. *는 같은 줄에서 바뀌는 사용자명·서버명·경로 등을 뜻하며, 줄바꿈은 실제 프롬프트와 맞춰 주세요. 비우면 기본 자동 인식만 사용합니다.<br />예: username@hostname [/dir/dir2] 뒤에 커서가 오는 형태입니다. 커서를 뜻하는 _는 입력하지 마세요.</>}>
+                      <textarea className="textarea mono" aria-label="셸 프롬프트 예시" rows={3} maxLength={1000} spellCheck={false} value={h.shellPromptExample ?? DEFAULT_SHELL_PROMPT_EXAMPLE} onChange={(e) => set('shellPromptExample', e.target.value)} />
+                      <div><button type="button" className="btn sm" onClick={() => set('shellPromptExample', undefined)}>기본 예시로 복원</button></div>
                     </Field>
-                    <Field label="보낼 명령" hint="비우면 Enter 만 보냅니다. 기록에 남기 싫으면 비우세요">
-                      <input className="input mono" value={h.idleCommand ?? 'date'} onChange={(e) => set('idleCommand', e.target.value)} />
-                    </Field>
-                  </div>
+                  </>
                 )}
               </div>
             )}
@@ -532,6 +567,14 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                   options={[{ value: 'app', label: `앱 설정 따르기 (${appAutoReconnect ? '켜짐' : '꺼짐'})` }, { value: 'on', label: '켜기' }, { value: 'off', label: '끄기' }]} />
               </Field>
             )}
+            {(h.protocol === 'ssh' || h.protocol === 'telnet') && <div className="persist-box">
+              <Field label="자동 재접속 재시도 규칙" hint="자동 재접속 켜기/끄기와 별도로, 시간·증가 방식·횟수를 서버별로 지정합니다.">
+                <Seg<'app' | 'custom'> value={h.reconnectPolicy ? 'custom' : 'app'}
+                  onChange={(mode) => set('reconnectPolicy', mode === 'app' ? undefined : normalizeReconnectPolicy(appReconnectPolicy))}
+                  options={[{ value: 'app', label: '앱 기본 규칙' }, { value: 'custom', label: '서버별 규칙' }]} />
+              </Field>
+              <ReconnectPolicyEditor value={h.reconnectPolicy ?? appReconnectPolicy} disabled={!h.reconnectPolicy} onChange={(policy) => set('reconnectPolicy', policy)} />
+            </div>}
           </>
         )}
 

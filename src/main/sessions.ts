@@ -4,6 +4,8 @@ import { join } from 'path'
 import * as iconv from 'iconv-lite'
 import type { AdhocTarget, Host, SessionInfo, SessionState, TmuxPick } from '@shared/types'
 import { ENV_COLORS } from '@shared/types'
+import { DEFAULT_SHELL_PROMPT_EXAMPLE } from '@shared/shellPrompt'
+import { resolveReconnectPolicy, reconnectDelay, canReconnect } from '@shared/reconnect'
 import { hostKeys, mapKeys } from '@shared/terminal'
 import type { Transport } from './transports/types'
 import { SshTransport } from './transports/ssh'
@@ -13,7 +15,8 @@ import { LocalTransport, execLocalSh } from './transports/local'
 import { execSh } from './transports/ssh'
 import { proxyLabel } from './proxy'
 import { typeStartup } from './startup'
-import { isTerminalReport, nextAltScreen, shouldSendIdleCommand } from './idleGuard'
+import { isShellPrompt, isTerminalReport, nextAltScreen, shouldSendIdleCommand } from './idleGuard'
+import { TMOUT_READ_COMMAND, readTmoutResult, describeTmout } from './idleTmout'
 import { ConnectLog } from './connectLog'
 import { persistSupported, startupPlan, tmuxMouse, tmuxMouseScript, tmuxName } from './persist'
 import { send } from './ui'
@@ -118,6 +121,10 @@ export class Session {
   private lineOpen = false
   private altScreen = false
   private idleTimer: NodeJS.Timeout | null = null
+  private startupRunning = false
+  private tmoutCheck: 'off' | 'waiting' | 'reading' | 'done' = 'off'
+  private tmoutDeadline = 0
+  private tmoutOutput = ''
 
   /** 세션 유지 서버에서 붙을 tmux 세션 — 한 번 붙으면 그 이름으로 고정해 재접속 때 묻지 않는다 */
   private tmux?: TmuxPick
@@ -153,6 +160,7 @@ export class Session {
 
   private setState(state: SessionState, message?: string): void {
     this.connectLog.add(`상태: ${state}${message ? ` (${message})` : ''}`)
+    if (state !== 'connected') this.info = { ...this.info, forwards: [] }
     this.info = { ...this.info, state, message, connectedAt: state === 'connected' ? Date.now() : this.info.connectedAt }
     send('session:state', this.info)
   }
@@ -187,6 +195,10 @@ export class Session {
           cols: this.cols,
           rows: this.rows,
           onInfo: (m) => this.info_(m, '90'),
+          onForwards: (forwards) => {
+            this.info = { ...this.info, forwards }
+            send('session:state', this.info)
+          },
           onDebug: (m) => this.connectLog.add(m),
           onSavePassword: (username, password) => this.savePassword(username, password),
           tmux: this.tmux,
@@ -234,8 +246,11 @@ export class Session {
       if (this.persistent) store.touchHost(h.id)
       if (store.get().settings.sessionLog) this.openLog()
       if (t instanceof SshTransport) void this.checkSftp(t)
-      if (startup.length) void this.typeStartup(startup)
+      this.startupRunning = startup.length > 0
       if (h.protocol === 'ssh' || h.protocol === 'telnet') this.startIdleGuard()
+      if (startup.length) void this.typeStartup(startup).finally(() => {
+        if (this.transport === t) this.startupRunning = false
+      })
     } catch (e) {
       const msg = (e as Error).message || String(e)
       this.connectLog.add(`오류 원문: ${msg}`)
@@ -279,6 +294,18 @@ export class Session {
       this.outputTail = (this.outputTail + s).slice(-300)
       this.emitText(s)
       this.log?.write(s.replace(ANSI, '').replace(/\r/g, ''))
+      if (this.tmoutCheck === 'reading') {
+        this.tmoutOutput = (this.tmoutOutput + s).slice(-2048)
+        const value = readTmoutResult(this.tmoutOutput.replace(ANSI, ''))
+        if (value !== undefined) {
+          this.tmoutCheck = 'done'
+          const interval = this.savedHost().idleCommandSec
+          if (interval) {
+            const result = describeTmout(value, interval)
+            this.info_(result.message, result.warning ? '33' : '90')
+          }
+        }
+      }
     }
   }
 
@@ -311,17 +338,48 @@ export class Session {
     return store.get().hosts.find((h) => h.id === this.host.id) ?? this.host
   }
 
+  private announceIdleGuard(): void {
+    const { idleCommandSec, idleCommand } = this.savedHost()
+    if (!idleCommandSec) return
+    if (this.sshTransport()?.tmuxSession) {
+      this.tmoutCheck = 'done'
+      this.info_('유휴 방지는 설정되어 있지만 tmux 세션 유지 창에서는 동작하지 않습니다. 해당 tmux 셸의 TMOUT 값도 자동 조회하지 않습니다.', '33')
+      return
+    }
+    this.info_(`유휴 방지 켜짐 — ${idleCommandSec}초 간격, ${idleCommand === '' ? 'Enter만 전송' : '명령 ' + JSON.stringify(idleCommand ?? 'date')}. 셸 프롬프트에서 입력 중이 아닐 때만 보냅니다. Keepalive는 셸의 TMOUT을 막지 못합니다.`, '90')
+    this.info_('현재 접속한 셸의 TMOUT 값을 확인합니다. 안전한 셸 프롬프트를 기다린 뒤 조회 명령을 한 번 보냅니다.', '90')
+    this.tmoutCheck = 'waiting'
+    this.tmoutDeadline = Date.now() + 60000
+  }
+
   private startIdleGuard(): void {
     this.stopIdleGuard()
     this.outputTail = ''
     this.altScreen = false
     this.lineOpen = false
     this.lastInputAt = Date.now()
+    this.announceIdleGuard()
     this.idleTimer = setInterval(() => {
-      const { idleCommandSec, idleCommand } = this.savedHost()
-      if (!idleCommandSec) return
+      const { idleCommandSec, idleCommand, shellPromptExample = DEFAULT_SHELL_PROMPT_EXAMPLE } = this.savedHost()
+      if (!idleCommandSec) { this.tmoutCheck = 'off'; return }
+      if (this.tmoutCheck === 'off') this.announceIdleGuard()
+      if (this.sshTransport()?.tmuxSession || this.startupRunning) return
       const idleMs = Date.now() - Math.max(this.lastInputAt, this.lastOutputAt)
-      if (shouldSendIdleCommand({ tail: this.outputTail, altScreen: this.altScreen, lineOpen: this.lineOpen, idleMs, intervalMs: idleCommandSec * 1000 })) {
+      if (this.tmoutCheck === 'waiting' || this.tmoutCheck === 'reading') {
+        if (Date.now() >= this.tmoutDeadline) {
+          this.info_(this.tmoutCheck === 'reading'
+            ? 'TMOUT 값을 확인하지 못했습니다(조회 응답 10초 초과). 값이 없거나 0이라고 판단하지 않으며, 유휴 방지는 설정된 간격으로 계속 동작합니다.'
+            : '안전한 셸 프롬프트를 확인하지 못해 TMOUT 자동 조회를 건너뛰었습니다. 유휴 방지는 설정된 간격으로 계속 동작합니다.', '33')
+          this.tmoutCheck = 'done'
+        } else if (this.tmoutCheck === 'waiting' && !this.altScreen && !this.lineOpen && idleMs >= 500 && isShellPrompt(this.outputTail, shellPromptExample)) {
+          this.tmoutCheck = 'reading'
+          this.tmoutOutput = ''
+          this.tmoutDeadline = Date.now() + 10000
+          this.write(TMOUT_READ_COMMAND + '\r')
+          return
+        } else if (this.tmoutCheck === 'reading') return
+      }
+      if (shouldSendIdleCommand({ shellPromptExample, tail: this.outputTail, altScreen: this.altScreen, lineOpen: this.lineOpen, idleMs, intervalMs: idleCommandSec * 1000 })) {
         this.write((idleCommand ?? 'date') + '\r')
       }
     }, 1000)
@@ -331,6 +389,8 @@ export class Session {
   private stopIdleGuard(): void {
     if (this.idleTimer) clearInterval(this.idleTimer)
     this.idleTimer = null
+    this.tmoutCheck = 'off'
+    this.tmoutOutput = ''
   }
 
   private onClose(reason?: string): void {
@@ -349,15 +409,20 @@ export class Session {
   }
 
   private scheduleReconnect(failed: boolean): void {
-    const auto = (this.savedHost().autoReconnect ?? store.get().settings.autoReconnect) && this.host.protocol !== 'serial' && !this.launched
+    const host = this.savedHost()
+    const settings = store.get().settings
+    const auto = (host.autoReconnect ?? settings.autoReconnect) && this.host.protocol !== 'serial' && !this.launched
+    const policy = resolveReconnectPolicy(settings.reconnectPolicy, host.reconnectPolicy)
     // only auto-retry when a previously working session drops (or retries in progress)
-    if (auto && (!failed || this.retry > 0) && this.retry < 8) {
-      const delay = Math.min(30, 2 ** this.retry * 2)
+    if (auto && (!failed || this.retry > 0) && canReconnect(policy, this.retry)) {
+      const delay = reconnectDelay(policy, this.retry)
       this.retry++
-      this.setState('reconnecting', `${delay}초 후 재접속 (${this.retry}/8)`)
-      this.info_(`${delay}초 후 자동 재접속합니다... (Enter: 즉시 재접속)`, '90')
-      this.retryTimer = setTimeout(() => this.connect(), delay * 1000)
+      const count = policy.maxAttempts ? `${this.retry}/${policy.maxAttempts}` : `${this.retry}회 · 무제한`
+      this.setState('reconnecting', `${delay}초 후 재접속 (${count})`)
+      this.info_(`${delay}초 후 자동 재접속합니다 (${count}). Enter: 즉시 재접속`, '90')
+      this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.connect() }, delay * 1000)
     } else {
+      if (auto && this.retry > 0 && !canReconnect(policy, this.retry)) this.info_(`자동 재접속 최대 ${policy.maxAttempts}회에 도달해 중단합니다.`, '33')
       this.retry = 0
       this.setState(failed ? 'error' : 'closed')
       this.info_('Enter 키를 누르면 다시 접속합니다.', '90')

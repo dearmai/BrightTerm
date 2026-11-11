@@ -19,9 +19,32 @@ function currentLine(tail: string): string {
   return parts[parts.length - 1].replace(ANSI, '').replace(/[\x00-\x1f\x7f]/g, '')
 }
 
-export function isShellPrompt(tail: string): boolean {
+/** 정규식 대신 * 와일드카드를 쓴다. *는 줄바꿈을 넘지 않는다. */
+function matchesPromptLine(line: string, pattern: string): boolean {
+  let i = 0, j = 0, star = -1, retry = 0
+  while (i < line.length) {
+    if (j < pattern.length && pattern[j] !== '*' && pattern[j] === line[i]) { i++; j++ }
+    else if (pattern[j] === '*') { star = j++; retry = i }
+    else if (star >= 0) { j = star + 1; i = ++retry }
+    else return false
+  }
+  while (pattern[j] === '*') j++
+  return j === pattern.length
+}
+
+export function isShellPrompt(tail: string, example?: string): boolean {
   const line = currentLine(tail)
-  return PROMPT.test(line) && !NOT_SHELL.test(line)
+  if (PROMPT.test(line) && !NOT_SHELL.test(line)) return true
+  if (!example?.trim() || example.length > 1000) return false
+  // SQL·비밀번호 등의 프롬프트는 추가 예시로도 허용하지 않는다. 단독 >는 여러 줄 예시로 확인한다.
+  if (NOT_SHELL.test(line) && !/^\s*>\s*$/.test(line)) return false
+  // 화면 이동·지우기는 프롬프트 문맥을 끊는다. ANSI 색상과 CRLF는 허용한다.
+  const visible = tail.replace(/\x1b\[[0-9;]*[HfABCDGJK]/g, '\x00').replace(ANSI, '')
+  const actual = visible.split(/\r\n|\r|\n/)
+  const expected = example.trimEnd().split(/\r\n|\r|\n/)
+  if (actual.length < expected.length || expected.length > 8) return false
+  const suffix = actual.slice(-expected.length)
+  return expected.every((pattern, index) => !suffix[index].includes('\x00') && matchesPromptLine(suffix[index].trimEnd(), pattern.trimEnd()))
 }
 
 /** 대체 화면(vi·less·top·tmux) 상태 — 마지막으로 켜고 끈 값을 따른다 */
@@ -39,6 +62,7 @@ export function isTerminalReport(data: string): boolean {
 }
 
 export interface IdleView {
+  shellPromptExample?: string
   /** 최근 서버 출력 끝부분 */
   tail: string
   altScreen: boolean
@@ -52,5 +76,5 @@ export interface IdleView {
 export function shouldSendIdleCommand(v: IdleView): boolean {
   if (v.altScreen || v.lineOpen) return false
   if (TIMEOUT_WARNING.test(v.tail.replace(ANSI, '').replace(/\x07/g, ''))) return v.idleMs >= WARNING_QUIET_MS
-  return v.idleMs >= v.intervalMs && isShellPrompt(v.tail)
+  return v.idleMs >= v.intervalMs && isShellPrompt(v.tail, v.shellPromptExample)
 }

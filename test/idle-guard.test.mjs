@@ -54,3 +54,33 @@ test('터미널 자동 응답은 사용자 입력이 아니다', () => {
   for (const d of ['\x1b[?1;2c', '\x1b[>0;276;0c', '\x1b[24;80R', '\x1b[I', '\x1b[O', '\x1b]11;rgb:0000/0000/0000\x07']) assert.equal(isTerminalReport(d), true, JSON.stringify(d))
   for (const d of ['a', '\r', '\x1b[A', '\x7f', 'ls\r', '\x1b[3~']) assert.equal(isTerminalReport(d), false, JSON.stringify(d))
 })
+import { DEFAULT_SHELL_PROMPT_EXAMPLE } from '../src/shared/shellPrompt.ts'
+
+const multilineExample = '*@*:pts/*->* (*)\n> '
+
+test('사용자 예시의 두 줄 프롬프트와 가변 경로를 인식한다', () => {
+  const tail = 'Last login: Wed Nov 11\r\ndearmai@vultr-iw:pts/0->/home/dearmai (0) \r\n> '
+  assert.equal(isShellPrompt(tail, multilineExample), true)
+  assert.equal(isShellPrompt('dearmai@vultr-iw:pts/4->/var/log (127)\n> ', multilineExample), true)
+  assert.equal(isShellPrompt('\x1b[32mdearmai@vultr-iw:pts/0->/home/dearmai (0)\x1b[0m\r\n> ', multilineExample), true)
+  assert.equal(shouldSendIdleCommand({ ...ready, tail, shellPromptExample: multilineExample }), true)
+  assert.equal(shouldSendIdleCommand({ ...ready, tail, shellPromptExample: multilineExample, lineOpen: true }), false)
+  assert.equal(shouldSendIdleCommand({ ...ready, tail, shellPromptExample: multilineExample, altScreen: true }), false)
+})
+test('예시 수정·빈 값·와일드카드의 줄 경계와 이어쓰기 보호', () => {
+  assert.equal(isShellPrompt('READY[web-01]: ', 'READY[*]: '), true)
+  assert.equal(isShellPrompt('READY[web-01]: ', ''), false)
+  assert.equal(isShellPrompt('READY[web-01]: ', 'READY[web-02]: '), false)
+  for (const tail of ['> ', 'dearmai@vultr-iw:pts/0->/home/dearmai (0)\r\necho test\r\n> ', 'dearmai@vultr-iw:pts/0->/home/dearmai (0)\r\nSQL> ', 'dearmai@vultr-iw:pts/0->/home/dearmai (0)\x1b[24;1H\r\n> ']) {
+    assert.equal(isShellPrompt(tail, multilineExample), false, JSON.stringify(tail))
+  }
+  assert.equal(isShellPrompt('SQL> ', 'SQL> '), false)
+})
+
+
+test('기본 예시는 사용자@호스트와 대괄호 경로이며 커서 문자는 포함하지 않는다', () => {
+  assert.equal(DEFAULT_SHELL_PROMPT_EXAMPLE, '*@* [/*] ')
+  assert.equal(isShellPrompt('username@hostname [/dir/dir2] ', DEFAULT_SHELL_PROMPT_EXAMPLE), true)
+  assert.equal(isShellPrompt('other@server [/var/log] ', DEFAULT_SHELL_PROMPT_EXAMPLE), true)
+  assert.equal(isShellPrompt('username@hostname [/dir/dir2] _', DEFAULT_SHELL_PROMPT_EXAMPLE), false)
+})

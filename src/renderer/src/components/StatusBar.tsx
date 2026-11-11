@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Lock, Unlock, ImageUp, Radio, Download, X, GitBranch } from 'lucide-react'
 import { useApp } from '../state'
+import { ForwardBadge } from './ForwardBadge'
 import { api } from '../api'
 import { focusedEntry } from '../terms'
 import { SC } from '../platform'
@@ -103,6 +104,7 @@ export function StatusBar(): JSX.Element {
           <span className="sb-item sb-session" title={`현재 활성 서버: ${s.title} · ${s.target}`} style={{ color: s.color ?? 'var(--text)' , fontWeight: 600 }}><span className={`dot ${s.state}`} /><span>{s.title}</span></span>
           <span className="sb-item sb-target" title={s.target}>{s.target}</span>
           <span className="sb-item">{STATE_LABEL[s.state]}{s.state === 'connected' && s.connectedAt ? ` · ${dur(Date.now() - s.connectedAt)}` : s.message ? ` · ${s.message}` : ''}</span>
+          <ForwardBadge key={s.id} info={s} />
           <span className="sb-item sb-metric" title="SSH 명령의 왕복 응답 시간입니다. 점프 호스트·프록시 경로와 서버의 명령 처리 시간을 포함하며 ICMP ping과 다릅니다. 로컬·Telnet·시리얼은 지원하지 않습니다.">Ping {metrics?.pingMs == null ? '—' : `${metrics.pingMs} ms`}</span>
           <span className="sb-item sb-metric" title="서버 전체 CPU 사용률 · 약 1초간 측정 · 활성 세션만 주기적으로 갱신 · 조회할 수 없으면 —">CPU {pct(metrics?.cpu)}</span>
           <span className="sb-item sb-metric" title="메모리 사용률 · Linux: MemAvailable 기준, macOS: 여유·비활성·speculative 페이지를 제외한 비율 · 조회할 수 없으면 —">Memory {pct(metrics?.memory)}</span>

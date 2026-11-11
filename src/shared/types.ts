@@ -1,4 +1,5 @@
 // Shared types between main / preload / renderer
+import { DEFAULT_RECONNECT_POLICY } from './reconnect'
 
 export type Env = 'prod' | 'stage' | 'dev' | 'device' | 'none'
 export type Protocol = 'ssh' | 'telnet' | 'serial' | 'local'
@@ -21,6 +22,19 @@ export interface PortForward {
   bindPort: number
   destHost: string
   destPort: number
+}
+
+export interface SessionForward extends PortForward {
+  /** 리스너 할당 + 목적지 TCP 접속 점검. 서비스 로그인 성공을 뜻하지 않는다. */
+  health?: 'checking' | 'healthy' | 'unhealthy'
+  healthError?: string
+  checkedAt?: number
+  connections?: number
+  totalConnections?: number
+  sentBytes?: number
+  receivedBytes?: number
+  state: 'pending' | 'active' | 'error'
+  error?: string
 }
 
 export interface SerialOptions {
@@ -77,6 +91,16 @@ export interface LocalOptions {
   cwd?: string
 }
 
+export interface ReconnectPolicy {
+  initialDelaySec: number
+  mode: 'fixed' | 'linear' | 'exponential'
+  incrementSec: number
+  multiplier: number
+  maxDelaySec: number
+  /** 0 = 무제한. 연결 성공 시 연속 실패 횟수는 초기화한다. */
+  maxAttempts: number
+}
+
 export interface Host {
   id: string
   groupId: string | null
@@ -107,10 +131,14 @@ export interface Host {
   keepaliveSec: number
   /** 끊기면 자동 재접속 — 지정하지 않으면 앱 설정을 따른다. SSH·텔넷만 */
   autoReconnect?: boolean
+  /** 없으면 앱의 재시도 규칙을 따른다 */
+  reconnectPolicy?: ReconnectPolicy
   /** 유휴 방지 — 셸 프롬프트에서 이 시간(초) 동안 입출력이 없으면 명령을 보낸다(TMOUT 대응). 없으면 끔. SSH·텔넷만 */
   idleCommandSec?: number
   /** 유휴 방지 명령 — 없으면 date, 빈 문자열이면 Enter 만 */
   idleCommand?: string
+  /** 셸 자동 인식에 추가하는 프롬프트 예시. *는 같은 줄의 가변 부분. 빈 값은 추가 인식 끔. */
+  shellPromptExample?: string
   forwards: PortForward[]
   serial?: SerialOptions
   local?: LocalOptions
@@ -160,6 +188,7 @@ export interface Settings {
   guardDangerousOnProd: boolean
   dangerousPatterns: string[]
   autoReconnect: boolean
+  reconnectPolicy: ReconnectPolicy
   autoLockMinutes: number
   uploadDir: string
   uploadCleanupDays: number
@@ -256,6 +285,8 @@ export interface SessionInfo {
   state: SessionState
   connectedAt?: number
   message?: string
+  /** 이 연결의 포워딩 리스너 상태 */
+  forwards?: SessionForward[]
   canSftp: boolean
   /** 접속 뒤 백그라운드로 SFTP 채널을 열어 본 결과 — shell: SFTP 는 안 되지만 SSH 명령(cat·ls)으로 파일을 다룬다,
    *  unavailable: 명령 채널도 안 돼 파일 버튼을 흐리게 */
@@ -404,6 +435,7 @@ export const DEFAULT_SETTINGS: Settings = {
   guardDangerousOnProd: true,
   dangerousPatterns: ['rm\\s+-[a-zA-Z]*r[a-zA-Z]*f', 'rm\\s+-[a-zA-Z]*f[a-zA-Z]*r', '\\breboot\\b', '\\bshutdown\\b', '\\bhalt\\b', '\\bpoweroff\\b', 'mkfs', 'dd\\s+if=', '\\bDROP\\s+(TABLE|DATABASE)\\b', '\\bTRUNCATE\\b', 'systemctl\\s+(stop|restart)'],
   autoReconnect: true,
+  reconnectPolicy: { ...DEFAULT_RECONNECT_POLICY },
   autoLockMinutes: 15,
   uploadDir: '~/.brightterm/uploads',
   uploadCleanupDays: 7,

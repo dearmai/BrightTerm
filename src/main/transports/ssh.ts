@@ -1,9 +1,9 @@
 import { EventEmitter } from 'events'
 import { createHash } from 'crypto'
-import { createServer, Server, connect as netConnect } from 'net'
 import { Client, ClientChannel, ConnectConfig, SFTPWrapper, utils, AnyAuthMethod, AuthenticationType } from 'ssh2'
-import type { Host, CredentialSecret, TmuxPick, TmuxSessionInfo } from '@shared/types'
+import type { Host, CredentialSecret, TmuxPick, TmuxSessionInfo, SessionForward } from '@shared/types'
 import type { Transport } from './types'
+import { ForwardPool } from './forwardPool'
 import { eraseChar, hostKeys } from '@shared/terminal'
 import { connectSshClient } from './sshConnection'
 import { ask } from '../ui'
@@ -20,6 +20,7 @@ export interface SshContext {
   onSavePassword?: (username: string, password: string) => void
   /** Called with informative text to show in the terminal */
   onInfo?: (msg: string) => void
+  onForwards?: (forwards: SessionForward[]) => void
   /** ssh2 디버그 줄 (ssh -v 에 해당) — 접속 상세 로그 */
   onDebug?: (msg: string) => void
   /** 세션 유지 서버에서 붙을 tmux 세션 — 없으면 이전 세션이 있을 때 물어본다 */
@@ -252,8 +253,14 @@ export class SshTransport extends EventEmitter implements Transport {
   private chain: Client[] = []
   private stream: ClientChannel | null = null
   private sftpP: Promise<SFTPWrapper> | null = null
-  private servers: Server[] = []
   private closed = false
+  private forwardPool?: ForwardPool
+  private releaseForwards?: () => void
+
+  private endClient(): void {
+    try { this.client?.end() } catch { /* */ }
+    for (const c of this.chain.reverse()) try { c.end() } catch { /* */ }
+  }
   /** 붙은 tmux 세션 이름 (세션 유지 서버) */
   tmuxSession?: string
   /** 세션 유지 서버지만 세션 고르기에서 tmux 없이 일반 접속을 골랐다 */
@@ -311,35 +318,11 @@ export class SshTransport extends EventEmitter implements Transport {
   }
 
   private setupForwards(): void {
-    const c = this.client!
-    for (const f of this.host.forwards ?? []) {
-      if (f.type === 'L') {
-        const srv = createServer((sock) => {
-          c.forwardOut(sock.remoteAddress || '127.0.0.1', sock.remotePort || 0, f.destHost, f.destPort, (err, ch) => {
-            if (err) return sock.destroy()
-            sock.pipe(ch).pipe(sock)
-            sock.on('error', () => ch.close())
-            ch.on('error', () => sock.destroy())
-          })
-        })
-        srv.on('error', (e) => this.ctx.onInfo?.(`포트 포워딩 L${f.bindPort} 실패: ${e.message}`))
-        srv.listen(f.bindPort, f.bindHost || '127.0.0.1', () => this.ctx.onInfo?.(`포워딩 ${f.bindHost || '127.0.0.1'}:${f.bindPort} → ${f.destHost}:${f.destPort}`))
-        this.servers.push(srv)
-      } else {
-        c.forwardIn(f.bindHost || '127.0.0.1', f.bindPort, (err) => {
-          if (err) this.ctx.onInfo?.(`원격 포워딩 R${f.bindPort} 실패: ${err.message}`)
-          else this.ctx.onInfo?.(`원격 포워딩 ${f.bindPort} → ${f.destHost}:${f.destPort}`)
-        })
-      }
-    }
-    c.on('tcp connection', (info, accept, reject) => {
-      const f = this.host.forwards.find((x) => x.type === 'R' && x.bindPort === info.destPort)
-      if (!f) return reject()
-      const ch = accept()
-      const sock = netConnect(f.destPort, f.destHost)
-      sock.pipe(ch).pipe(sock)
-      sock.on('error', () => ch.close())
-    })
+    const lease = ForwardPool.acquire(this.host, this.client!, (items) => {
+      if (!this.closed) this.ctx.onForwards?.(items)
+    }, () => { if (this.closed) this.endClient() })
+    this.forwardPool = lease.pool
+    this.releaseForwards = lease.release
   }
 
   sftp(): Promise<SFTPWrapper> {
@@ -385,9 +368,9 @@ export class SshTransport extends EventEmitter implements Transport {
   private finish(reason?: string): void {
     if (this.closed) return
     this.closed = true
-    for (const s of this.servers) s.close()
-    try { this.client?.end() } catch { /* */ }
-    for (const c of this.chain.reverse()) try { c.end() } catch { /* */ }
+    this.stream?.destroy()
+    this.releaseForwards?.()
+    if (!this.client || !this.forwardPool?.retains(this.client)) this.endClient()
     this.emit('close', reason)
   }
 

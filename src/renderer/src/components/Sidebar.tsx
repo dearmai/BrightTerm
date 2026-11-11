@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, ChevronDown, Folder, FolderOpen, Search, Plus, FolderPlus, Download, Star, Terminal, SquareTerminal, Cpu, Radio, Clock, SplitSquareHorizontal, Play, KeyRound, Layers } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Search, Plus, FolderPlus, Download, Star, Terminal, SquareTerminal, Cpu, Radio, Clock, SplitSquareHorizontal, Play, KeyRound, Layers, ArrowLeftRight } from 'lucide-react'
 import { useApp, newHost } from '../state'
-import { ENV_COLORS, ENV_LABELS, type Group, type Host } from '@shared/types'
+import { ENV_COLORS, ENV_LABELS, type Group, type Host, type SessionForward } from '@shared/types'
 import { panes } from '../layout'
 import { isMac, modKey } from '../platform'
 import { focusSession } from '../terms'
+import { forwardHealthLabel, forwardHealthStatus, overallForwardHealth } from '../forwardStatus'
 
 export function hostColor(h: Host, groups: Group[]): string | undefined {
   if (h.color) return h.color
@@ -59,6 +60,19 @@ export function Sidebar(): JSX.Element {
     }
     return m
   }, [tabs, sessions])
+  const hostForwards = useMemo(() => {
+    const byHost: Record<string, Map<string, SessionForward>> = {}
+    for (const session of Object.values(sessions)) {
+      if (!session.hostId || session.state !== 'connected' || !session.forwards?.length) continue
+      const rules = byHost[session.hostId] ??= new Map()
+      for (const forward of session.forwards) {
+        const key = JSON.stringify([forward.type, forward.bindHost, forward.bindPort, forward.destHost, forward.destPort])
+        const previous = rules.get(key)
+        if (!previous || (forward.checkedAt ?? 0) >= (previous.checkedAt ?? 0)) rules.set(key, forward)
+      }
+    }
+    return Object.fromEntries(Object.entries(byHost).map(([id, rules]) => [id, [...rules.values()]]))
+  }, [sessions])
   // 끊긴 것까지 포함해 패널이 하나라도 있는 서버 — 더블클릭 때 새로 열지 판단
   const openIds = useMemo(() => new Set(tabs.flatMap((t) => panes(t.root).map((p) => sessions[p.sessionId]?.hostId).filter(Boolean))), [tabs, sessions])
 
@@ -142,6 +156,9 @@ export function Sidebar(): JSX.Element {
   const HostNode = ({ h, depth, section }: { h: Host; depth: number; section?: string }): JSX.Element => {
     const color = hostColor(h, groups)
     const live = liveCount[h.id]
+    const forwards = hostForwards[h.id] ?? []
+    const health = overallForwardHealth(forwards)
+    const forwardTitle = `포트 포워딩 ${forwardHealthLabel[health]} ${forwards.length}개\n` + forwards.map((f) => `${f.type} ${f.bindHost || '127.0.0.1'}:${f.bindPort} → ${f.destHost}:${f.destPort} · ${forwardHealthLabel[forwardHealthStatus(f)]}${f.error || f.healthError ? ` (${f.error || f.healthError})` : ''}`).join('\n')
     return (
       <div
         className={`node ${selected === h.id && !section ? 'selected' : ''}`}
@@ -165,6 +182,9 @@ export function Sidebar(): JSX.Element {
         {h.persist && (h.protocol === 'ssh' || h.protocol === 'local') && <span className="n-persist" title="세션 유지(tmux) — 창을 닫아도 안의 프로그램이 계속 돕니다"><Layers size={11} /></span>}
         <span className="n-sub">{h.protocol === 'serial' ? h.serial?.path : h.protocol === 'local' ? h.local?.cwd?.trim() || '~' : h.host}</span>
         {live ? <span className="n-live"><span className="dot connected" style={{ width: 6, height: 6 }} />{live > 1 ? live : ''}</span> : null}
+        {!!forwards.length && <span className={`n-forward forward-health forward-${health}`} role="img" aria-label={`포트 포워딩 ${forwardHealthLabel[health]} ${forwards.length}개`} title={forwardTitle}>
+          <ArrowLeftRight size={13} aria-hidden="true" />
+        </span>}
         <span className="n-hover">
           {loginsWithPassword(h) && <button className="ibtn sm" title="SSH 키 등록" onClick={(e) => { e.stopPropagation(); useApp.setState({ dialog: { kind: 'sshKey', hostId: h.id } }) }}><KeyRound size={13} /></button>}
           <button className="ibtn sm" title="분할로 연결" onClick={(e) => { e.stopPropagation(); st().openHost(h.id, 'row') }}><SplitSquareHorizontal size={13} /></button>

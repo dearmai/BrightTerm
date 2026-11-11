@@ -15,7 +15,15 @@ let received = ''
 const server = createServer((s) => {
   socket = s
   s.on('error', () => {})
-  s.on('data', (d) => { received += d.toString('latin1') })
+  let command = ''
+  s.on('data', (d) => {
+    received += d.toString('latin1')
+    command += d.toString('latin1')
+    if (command.includes('[BrightTerm TMOUT]') && command.includes('\r')) {
+      s.write('\r\n[BrightTerm TMOUT]=600\r\n$ ')
+      command = ''
+    }
+  })
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
 
@@ -50,7 +58,13 @@ try {
   await sleep(300)
 
   // 프롬프트면 보낸다
-  assert.match(await sentAfter('user@aix72:/home/user $ '), /date\r/, 'prompt')
+  assert.match(await sentAfter('username@hostname [/dir/dir2] ', 4000), /date\r/, 'prompt')
+  const idleLog = await call('session:connectLog', info.id)
+  assert.match(idleLog, /유휴 방지 켜짐/)
+  assert.match(idleLog, /TMOUT=600초/)
+  assert.match(idleLog, /설정 간격이 TMOUT보다 짧습니다/)
+  assert.equal((received.match(/printf/g) ?? []).length, 1, 'TMOUT read once per connection')
+  assert.match(await sentAfter('\r\nother@server [/var/log] '), /date\r/, 'configured default prompt')
   assert.match(await sentAfter('\r\nviewer@eaiap01t [/eai/viewer] '), /date\r/, 'AIX PS1')
   // 대체 화면(vi)에서는 안 보낸다 — 화면에 프롬프트처럼 보이는 글자가 있어도
   assert.doesNotMatch(await sentAfter('\r\n\x1b[?1049hprice $ '), /date/, 'alt screen')
@@ -100,13 +114,18 @@ try {
   assert.equal(await box().locator('input').nth(0).inputValue(), '240')
   assert.equal(await box().locator('input').nth(1).inputValue(), 'date')
   if (process.env.BT_SCREENSHOT) await page.screenshot({ path: process.env.BT_SCREENSHOT })
+  assert.match(await page.getByRole('textbox', { name: '셸 프롬프트 예시', exact: true }).inputValue(), /\[\/\*\]/ )
+  await page.getByRole('textbox', { name: '셸 프롬프트 예시', exact: true }).fill('READY[*]: ')
   await box().locator('input').nth(0).fill('5')
   await box().locator('input').nth(1).fill('uptime')
   await box().locator('input').nth(1).focus()
   await save()
   assert.equal((await saved()).idleCommandSec, 10, '10초 미만은 10초로')
   assert.equal((await saved()).idleCommand, 'uptime')
+  assert.equal((await saved()).shellPromptExample, 'READY[*]: ')
   await edit()
+  assert.equal(await page.getByRole('textbox', { name: '셸 프롬프트 예시', exact: true }).inputValue(), 'READY[*]: ')
+  await page.getByRole('button', { name: '기본 예시로 복원', exact: true }).click()
   await box().locator('.switch').click()
   await save()
   assert.equal((await saved()).idleCommandSec, undefined)
