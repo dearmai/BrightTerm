@@ -1,5 +1,5 @@
 import type {
-  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, Host, ImportCandidate, LaunchItem, LocalPublicKey, ServerEnv, SessionInfo, SessionMetrics, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
+  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, GitSyncPreviewResult, Host, ImportCandidate, LaunchItem, LocalPublicKey, ServerEnv, SessionInfo, SessionMetrics, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
 } from '@shared/types'
 
 interface Bt {
@@ -46,7 +46,8 @@ export const api = {
     status: () => bt.call<GitSyncStatus>('git-sync:status'),
     configure: (c: GitSyncConfig) => bt.call<GitSyncStatus>('git-sync:configure', c),
     sync: () => bt.call<GitSyncStatus>('git-sync:now'),
-    resolve: (choice: 'local' | 'remote', password?: string) => bt.call<GitSyncStatus>('git-sync:resolve', choice, password)
+    preview: (password?: string) => bt.call<GitSyncPreviewResult>('git-sync:preview', password),
+    resolve: (choice: 'local' | 'remote', password?: string, previewToken?: string) => bt.call<GitSyncStatus>('git-sync:resolve', choice, password, previewToken)
   },
   vault: {
     status: () => bt.call<VaultStatus>('vault:status'),

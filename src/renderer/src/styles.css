@@ -116,6 +116,32 @@ input, textarea, select, button { font: inherit; color: inherit; }
 .tb-fill { flex: 1; }
 .tb-right { display: flex; align-items: center; gap: 2px; padding: 0 6px; -webkit-app-region: no-drag; }
 .git-sync-indicator[data-state="syncing"] svg { animation: git-sync-spin 1.2s linear infinite; }
+.git-sync-anchor { position: relative; display: flex; align-items: center; -webkit-app-region: no-drag; }
+.git-sync-notice { position: absolute; z-index: 90; top: calc(100% + 10px); right: 0; width: min(340px, calc(100vw - 24px)); padding: 12px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--warn); border-radius: 10px; background: var(--bg-2); color: var(--text); box-shadow: var(--shadow); font-size: 12px; line-height: 1.5; -webkit-app-region: no-drag; }
+.git-sync-notice::before { content: ''; position: absolute; top: -6px; right: 9px; width: 10px; height: 10px; background: var(--bg-2); border-top: 1px solid var(--warn); border-left: 1px solid var(--warn); transform: rotate(45deg); }
+.git-sync-notice[data-state="error"] { border-color: var(--danger); }
+.git-sync-notice[data-state="error"]::before { border-color: var(--danger); }
+.git-sync-notice-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.git-sync-notice-head strong { color: var(--warn); }
+.git-sync-notice[data-state="error"] strong { color: var(--danger); }
+.git-sync-notice-message { overflow-wrap: anywhere; white-space: pre-wrap; user-select: text; }
+.git-sync-notice > .btn { align-self: flex-start; }
+.git-sync-preview { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+.git-sync-preview h4 { margin: 0; }
+.git-diff-notes { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+.git-diff-notes p { margin: 4px 0; }
+.git-diff-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.git-diff-item { border: 1px solid var(--border); border-radius: 7px; min-width: 0; }
+.git-diff-item > summary { padding: 10px; cursor: pointer; overflow-wrap: anywhere; }
+.git-diff-kind { display: inline-block; margin-left: 8px; font-size: 11px; color: var(--warn); }
+.git-diff-kind.local-only { color: var(--accent); }
+.git-diff-kind.remote-only { color: var(--ok); }
+.git-diff-table-wrap { overflow-x: auto; }
+.git-diff-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
+.git-diff-table th, .git-diff-table td { padding: 8px; border-top: 1px solid var(--border); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.git-diff-table th { width: 27%; font-weight: 500; }
+.git-diff-table pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 0; max-height: 220px; overflow-y: auto; user-select: text; }
+.git-diff-table details > summary { color: var(--accent); cursor: pointer; }
 @keyframes git-sync-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .git-sync-indicator[data-state="syncing"] svg { animation: none; }

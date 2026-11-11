@@ -134,9 +134,10 @@ function registerIpc(): void {
   handle('git-sync:status', () => gitSync.status())
   handle('git-sync:configure', (config: GitSyncConfig) => gitSync.configure(config))
   handle('git-sync:now', () => gitSync.sync())
-  handle('git-sync:resolve', (choice: 'local' | 'remote', password?: string) => {
+  handle('git-sync:preview', (password?: string) => gitSync.preview(password))
+  handle('git-sync:resolve', (choice: 'local' | 'remote', password?: string, previewToken?: string) => {
     if (!['local', 'remote'].includes(choice)) throw new Error('올바른 동기화 선택이 아닙니다')
-    return gitSync.sync(choice, password)
+    return gitSync.sync(choice, password, previewToken)
   })
 
   // vault
@@ -499,6 +500,7 @@ app.whenReady().then(() => {
   vault.init()
   gitSync.init()
   vault.onLockChange = (u) => {
+    if (!u) gitSync.invalidatePreview()
     send('vault:changed', u)
     if (u) gitSync.schedule(0)
   }

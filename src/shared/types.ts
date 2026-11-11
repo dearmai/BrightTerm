@@ -217,6 +217,29 @@ export interface GitSyncStatus {
   message: string
   lastSync?: number
 }
+export interface GitSyncDiffField {
+  label: string
+  local: string
+  remote: string
+  /** 메모·명령·스니펫은 사용자가 펼칠 때만 표시한다. 계정 비밀값은 포함하지 않는다. */
+  concealed?: boolean
+}
+export interface GitSyncDifference {
+  category: 'hosts' | 'groups' | 'snippets' | 'credentials' | 'vault'
+  id: string
+  name: string
+  kind: 'local-only' | 'remote-only' | 'changed'
+  fields: GitSyncDiffField[]
+}
+export interface GitSyncPreview {
+  token: string
+  createdAt: number
+  expiresAt: number
+  remoteExists: boolean
+  differences: GitSyncDifference[]
+  notes: string[]
+}
+export type GitSyncPreviewResult = { state: 'ready'; preview: GitSyncPreview } | { state: 'password-required'; message: string }
 
 /** 앱을 다시 켤 때 복원할 탭·분할 — 창마다 서버 id 또는 로컬 시작 폴더만 기억한다 */
 /** plain: 세션 유지 서버를 tmux 없이 일반 접속으로 연 창 */

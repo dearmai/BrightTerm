@@ -299,6 +299,28 @@ class Vault {
     }
   }
 
+  /** Used only inside the main process to compare remote secrets without importing its vault. */
+  readSyncSecrets(v: VaultFile, key: Buffer): Record<string, CredentialSecret> {
+    try {
+      validateVaultFile(v)
+      return Object.fromEntries(v.items.map((item) => {
+        const plain = open(key, item, item.id)
+        try {
+          const secret = JSON.parse(plain.toString('utf8')) as CredentialSecret
+          if (!secret || typeof secret !== 'object' || Array.isArray(secret) ||
+            Object.values(secret).some((value) => value !== undefined && typeof value !== 'string')) throw new Error()
+          return [item.id, secret]
+        } finally { plain.fill(0) }
+      }))
+    } catch { throw new Error('볼트 계정의 복호화 또는 형식 확인에 실패했습니다. 비밀값은 표시하지 않습니다.') }
+  }
+
+  readLocalSyncSecrets(): Record<string, CredentialSecret> {
+    this.requireKey()
+    if (!this.v) throw new Error('로컬 볼트가 없습니다')
+    return this.readSyncSecrets(this.v, this.key!)
+  }
+
   applySync(v: VaultFile, key: Buffer): void {
     validateVaultFile(v)
     // Authenticate every credential before changing either the key or the file.

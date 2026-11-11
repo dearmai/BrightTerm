@@ -2,10 +2,11 @@ import { execFile } from 'child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { isAbsolute, join } from 'path'
 import { randomUUID } from 'crypto'
-import type { GitSyncConfig, GitSyncStatus, Snippet, StoreData } from '@shared/types'
+import type { GitSyncConfig, GitSyncStatus, GitSyncPreviewResult, Snippet, StoreData } from '@shared/types'
 import { dataDir, readJson, store, writeJsonAtomicSync } from './store'
 import { vault, type VaultFile, type VaultSyncEnvelope } from './vault'
 import { canonical, digest, parseSnapshot, type SyncSnapshot } from './gitSyncFormat'
+import { compareSnapshots } from './gitSyncDiff'
 import { send } from './ui'
 
 const FILE = 'brightterm.vault.json'
@@ -49,6 +50,61 @@ export class GitSyncManager {
   private applying = false
   private stopped = false
   private conflict: { local: string; remote?: string } | null = null
+  private previewing: Promise<GitSyncPreviewResult> | null = null
+  private previewToken: { token: string; local: string; remote?: string; config: string; expiresAt: number } | null = null
+
+  invalidatePreview(): void { this.previewToken = null }
+
+  private decryptRemote(envelope: VaultSyncEnvelope, password?: string): { plain: string; key: Buffer } {
+    try { return vault.decryptSync(envelope) }
+    catch (e) { if (!password) throw e }
+    return vault.decryptSync(envelope, password)
+  }
+
+  preview(password?: string): Promise<GitSyncPreviewResult> {
+    if (this.previewing) return this.previewing
+    if (this.running) return Promise.reject(new Error('동기화가 끝난 뒤 미리보기를 다시 실행하세요'))
+    this.invalidatePreview()
+    this.previewing = this.makePreview(password).finally(() => { this.previewing = null })
+    return this.previewing
+  }
+
+  private async makePreview(password?: string): Promise<GitSyncPreviewResult> {
+    if (!this.tracking.config.enabled || this.stopped) throw new Error('Git 동기화를 켠 뒤 미리보기를 실행하세요')
+    if (!vault.isUnlocked()) throw new Error('로컬 볼트를 먼저 잠금 해제하세요')
+    const config = digest(this.tracking.config)
+    const local = this.snapshot()
+    if (!local) throw new Error('로컬 볼트가 없습니다')
+    const localHash = digest(local)
+    const remote = await this.fetch(await this.repository())
+    if (!vault.isUnlocked() || this.stopped || config !== digest(this.tracking.config) || localHash !== digest(this.snapshot())) {
+      throw new Error('조회하는 동안 로컬 데이터나 설정이 바뀌었습니다. 다시 미리보기를 실행하세요')
+    }
+    let decoded: { plain: string; key: Buffer } | undefined
+    try {
+      if (remote.envelope) {
+        try { decoded = this.decryptRemote(remote.envelope, password) }
+        catch (e) { return { state: 'password-required', message: (e as Error).message } }
+      }
+      let snapshot: SyncSnapshot | null = null
+      try { snapshot = decoded && remote.envelope ? parseSnapshot(decoded.plain, remote.envelope) : null }
+      catch { throw new Error('원격 동기화 데이터의 형식이 올바르지 않습니다. 미리보기를 중단했습니다.') }
+      const localSecrets = vault.readLocalSyncSecrets()
+      const remoteSecrets = snapshot && decoded ? vault.readSyncSecrets(snapshot.vault, decoded.key) : {}
+      const differences = compareSnapshots(local, snapshot, localSecrets, remoteSecrets)
+      const createdAt = Date.now(), expiresAt = createdAt + 5 * 60_000
+      const token = randomUUID()
+      this.previewToken = { token, local: localHash, remote: remote.hash, config, expiresAt }
+      // No base snapshot is retained: never label one-sided entries as a deletion or infer which PC is newer.
+      const notes = ['공통 기준 데이터가 없어 추가·삭제 방향이나 어느 기기가 최신인지 판단하지 않습니다.']
+      if (!snapshot) notes.push('원격 파일 또는 브랜치에 동기화 데이터가 없습니다. 원격 가져오기는 사용할 수 없습니다.')
+      if (snapshot && snapshot.snippets === undefined) notes.push('원격은 스니펫이 없는 이전 형식입니다. 가져와도 로컬 스니펫은 유지됩니다.')
+      else if (snapshot && !this.tracking.snippetsSynced) notes.push('이 저장소와 처음 스니펫을 맞추므로 가져올 때 로컬에만 있는 스니펫도 보존합니다.')
+      if (snapshot && !differences.length) notes.push('비교 가능한 항목의 값은 같습니다. 암호문 표현이나 이전 동기화 기록 때문에 충돌했을 수 있습니다.')
+      notes.push('미설정과 명시된 기본값은 저장 형태의 차이로 표시됩니다. 미리보기는 데이터를 바꾸거나 업로드하지 않습니다.')
+      return { state: 'ready', preview: { token, createdAt, expiresAt, remoteExists: !!snapshot, differences, notes } }
+    } finally { decoded?.key.fill(0) }
+  }
 
   init(): void {
     this.root = join(dataDir(), 'git-sync')
@@ -68,17 +124,18 @@ export class GitSyncManager {
   status(): GitSyncStatus { return structuredClone(this.current) }
 
   async configure(config: GitSyncConfig): Promise<GitSyncStatus> {
-    if (this.running) throw new Error('진행 중인 동기화가 끝난 뒤 설정을 변경하세요')
+    if (this.running || this.previewing) throw new Error('진행 중인 동기화·미리보기가 끝난 뒤 설정을 변경하세요')
     const next = { enabled: !!config.enabled, remote: config.remote.trim(), branch: config.branch.trim() || 'main' }
     if (next.enabled || next.remote) {
       validateRemote(next.remote)
       if (next.branch.startsWith('-') || /[\r\n\0]/.test(next.branch)) throw new Error('올바른 브랜치 이름이 아닙니다')
       await this.git('', ['check-ref-format', '--branch', next.branch])
     }
-    if (this.running) throw new Error('진행 중인 동기화가 끝난 뒤 설정을 변경하세요')
+    if (this.running || this.previewing) throw new Error('진행 중인 동기화·미리보기가 끝난 뒤 설정을 변경하세요')
     if (next.remote !== this.tracking.config.remote || next.branch !== this.tracking.config.branch) this.tracking = { config: next }
     else this.tracking.config = next
     this.conflict = null
+    this.invalidatePreview()
     this.persist()
     if (this.timer) clearTimeout(this.timer)
     this.update(next.enabled ? 'idle' : 'disabled', next.enabled ? '동기화 대기' : 'Git 동기화 꺼짐')
@@ -93,14 +150,23 @@ export class GitSyncManager {
     this.timer = setTimeout(() => { this.timer = null; void this.sync() }, delay)
   }
 
-  sync(choice?: 'local' | 'remote', password?: string): Promise<GitSyncStatus> {
-    if (this.running) return this.running
+  sync(choice?: 'local' | 'remote', password?: string, previewToken?: string): Promise<GitSyncStatus> {
+    if (this.previewing) {
+      if (choice) return Promise.reject(new Error('미리보기가 끝난 뒤 선택하세요'))
+      return this.previewing.then(() => this.sync(), () => this.sync())
+    }
+    const preview = this.previewToken
+    if (choice && previewToken && (!preview || preview.token !== previewToken || preview.expiresAt < Date.now() ||
+      preview.config !== digest(this.tracking.config) || !vault.isUnlocked())) {
+      return Promise.reject(new Error('미리보기가 만료되었거나 설정이 바뀌었습니다. 다시 비교하세요'))
+    }
+    if (this.running) return choice ? Promise.reject(new Error('진행 중인 동기화가 끝난 뒤 다시 비교하세요')) : this.running
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
     if (!this.tracking.config.enabled || this.stopped) return Promise.resolve(this.status())
-    const expected = this.conflict
+    const expected = choice && previewToken && preview ? { local: preview.local, remote: preview.remote } : this.conflict
     if (choice && !expected) return Promise.reject(new Error('먼저 지금 동기화를 눌러 원격 상태를 확인하세요'))
-    this.running = this.perform(choice, password, expected).catch((e: Error) => {
+    this.running = this.perform(choice, password, expected, previewToken).catch((e: Error) => {
       this.update('error', e.message)
       // Local edits and the last accepted fingerprints survive network failures and restarts.
       this.timer = setTimeout(() => { this.timer = null; void this.sync() }, 30000)
@@ -113,6 +179,7 @@ export class GitSyncManager {
 
   stop(): void {
     this.stopped = true
+    this.invalidatePreview()
     if (this.timer) clearTimeout(this.timer)
   }
 
@@ -130,23 +197,28 @@ export class GitSyncManager {
       snippets: structuredClone(store.get().snippets) }
   }
   private block(state: 'conflict' | 'password-required', message: string, local: string, remote?: string): void {
+    this.invalidatePreview()
     this.conflict = { local, remote }
     this.update(state, message)
   }
   private accepted(localDigest: string, remoteDigest: string): void {
+    this.invalidatePreview()
     this.tracking = { ...this.tracking, localDigest, remoteDigest, lastSync: Date.now(), snippetsSynced: true }
     this.persist()
     this.conflict = null
     this.update('synced', '동기화 완료')
   }
 
-  private async perform(choice?: 'local' | 'remote', password?: string, expected?: { local: string; remote?: string } | null): Promise<void> {
+  private async perform(choice?: 'local' | 'remote', password?: string, expected?: { local: string; remote?: string } | null, previewToken?: string): Promise<void> {
     this.update('syncing', 'Git 저장소 동기화 중…')
     const repo = await this.repository()
     const remote = await this.fetch(repo)
     const local = this.snapshot()
     if (!local) { this.update('locked', '볼트를 설정한 뒤 동기화할 수 있습니다'); return }
     const localHash = digest(local)
+    if (choice && previewToken && (!vault.isUnlocked() || this.previewToken?.token !== previewToken || this.previewToken.expiresAt < Date.now())) {
+      throw new Error('미리보기가 만료되었거나 볼트가 잠겼습니다. 다시 비교하세요')
+    }
     if (choice && (expected?.local !== localHash || expected?.remote !== remote.hash)) {
       this.block('conflict', '확인하는 동안 데이터가 바뀌었습니다. 사용할 쪽을 다시 선택하세요', localHash, remote.hash)
       return
@@ -186,7 +258,7 @@ export class GitSyncManager {
       if (!remote.envelope) throw new Error('가져올 원격 동기화 파일이 없습니다')
       if (!vault.isUnlocked() && !password) { this.update('locked', '원격 변경을 받았습니다. 볼트 잠금 해제 후 적용합니다'); return }
       let decoded: { plain: string; key: Buffer }
-      try { decoded = vault.decryptSync(remote.envelope, password) }
+      try { decoded = this.decryptRemote(remote.envelope, password) }
       catch (e) { this.block('password-required', (e as Error).message, localHash, remote.hash); return }
       try {
         const snapshot = parseSnapshot(decoded.plain, remote.envelope)
