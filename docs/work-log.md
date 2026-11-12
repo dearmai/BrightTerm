@@ -1,5 +1,27 @@
 # 작업내역서
 
+## 2026-11-12 — 접속 실패 시 터미널 접속 진단(ssh -v 요약)
+
+### 요청 및 변경
+
+- 사용자가 인증 실패 등 접속 실패 때 터미널에 ssh -vv 같은 주요 로그를 보여 원인을 파악할 수 있게 해 달라고 요청했다.
+- src/main/connectLog.ts: 접속 시도마다 ssh2 debug 줄과 오류 원문을 따로 모으고(beginAttempt/debug), summarizeAttempt()가 원인 파악에 필요한 줄만 고른다. 접속 대상(Client: Trying), 소켓 오류, 서버 식별 문자열, 협상된 KEX·호스트 키·암호, 호스트 키 판정, 인증 요청·실패, DISCONNECT, 실패·거부·시간 초과·no matching 등 오류 줄, 오류 원문이다. 협상이 끝나지 않았으면 양쪽 알고리즘 목록을, 서버 식별 전에 끊겼으면 소켓 종료 줄을 넣는다. 인증 실패면 '서버 허용 방식 · 시도한 방식' 요약을 붙인다. 점프 서버 줄은 [별칭]을 유지하고 40줄을 넘으면 가운데를 줄인다.
+- 화면 안내(info_)는 이미 터미널에 나오므로 진단 대상에서 뺐다. 패킷 데이터 줄(CHANNEL_DATA 등)은 기존처럼 기록하지 않는다.
+- src/main/sessions.ts: 접속 실패(catch)에서 '● 접속 진단 (ssh -v 요약 · 전체: 탭 메뉴 → 접속 상세 로그)' 아래 회색 'debug:' 줄로 출력한다. 자동 재접속·Enter 재시도가 같은 원인으로 실패하면 한 줄 생략 안내만 보이고, 정상 접속하면 초기화한다. 제어 문자는 공백으로 바꿔 출력한다. 로컬 셸은 제외하고, 디버그 줄이 없는 텔넷·시리얼은 출력하지 않는다.
+- main에 커밋하고 origin/main으로 푸시한다.
+
+### 직접 검증한 결과
+
+- npm run typecheck 통과, npm run build 성공. 단위 테스트 91개 중 87 통과·0 실패·4 건너뜀. 실제 ssh2 1.17 출력(OpenSSH 9.2, podman)으로 만든 진단 단위 테스트 4개를 추가했다.
+- node test/e2e-connect-diagnosis-podman.mjs 통과: 비밀번호 틀림(인증 과정·허용/시도 방식, 터미널에 비밀번호 문자열 없음), 닫힌 포트(Socket error ECONNREFUSED, Enter 재시도 시 같은 원인 생략), ssh2가 지원하지 않는 KexAlgorithms만 허용한 sshd(양쪽 KEX 목록과 no matching key exchange algorithm), 진단에 화면 안내 줄 중복 없음.
+- 회귀: test/e2e-connect-log.mjs, test/e2e-auth-reconnect-podman.mjs 통과.
+
+### 검증 범위
+
+- 공개키 인증 실패, 점프 서버 경유 실패, 프록시 실패는 E2E로 확인하지 않았다(점프 서버 표시는 단위 테스트만).
+- 접속된 뒤의 끊김에는 진단을 보이지 않는다. 텔넷·시리얼은 ssh2 debug가 없어 기존 오류 문구만 나온다.
+- macOS·Linux 앱 실행은 하지 않았다. 설치 패키지는 생성하지 않았다.
+
 ## 2026-11-12 — ksh 호환성 검증 환경(podman, AIX 7.2 근사)·세션 로그·인증 실패 재접속 정리
 
 ### 요청 및 변경
