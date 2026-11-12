@@ -1,5 +1,32 @@
 # 작업내역서
 
+## 2026-11-12 — 서버 목록 ~/.ssh/config 동기화·저장된 비밀번호 보기
+
+### 요청 및 변경
+
+- 사용자가 서버 목록을 OpenSSH .ssh/config 에 동기화하고 부가 정보는 주석으로 관리하며, 서버별로 대상 여부를 고르게(기본 대상 아님) 요청했다("openssl"은 OpenSSH로 이해). 이어서 다른 PC도 동일하게 하고, 앱 설정에서 기능을 끄면 자동 동기화를 하지 않되 서버별 수동 반영 버튼을 두며, 앱 설정 기본값은 해제로 해 달라고 요청했다. 작업 중 저장된 서버 비밀번호를 UI 폼에서 평문으로 볼 수 있게 해 달라는 요청(볼트 잠금 해제 상태)도 받았다.
+- src/shared/sshConfig.ts: 대상 SSH 서버를 Host 블록으로 만든다. HostName·Port·User·ProxyJump(점프 서버가 대상이면 그 이름, 아니면 user@host:port, 직접 입력한 베스천 포함)·ServerAliveInterval·Local/RemoteForward를 옮기고 별칭·그룹 경로·태그·환경·인증 방식·인코딩·프록시·접속 후 명령 줄 수·메모·BrightTerm id를 주석으로 남긴다. 주석의 줄바꿈·제어 문자는 공백으로 바꿔 옵션 주입을 막는다. Host 이름은 직접 지정(공백·와일드카드 등 불가) 또는 별칭에서 만들고 겹치면 -2를 붙인다. 비밀번호·개인 키는 쓰지 않는다.
+- ~/.ssh/config 에는 표시 주석과 Include brightterm.conf 두 줄만 맨 앞에 넣고 서버는 ~/.ssh/brightterm.conf 에 쓴다. 본문에 직접 넣으면 사용자의 전역 옵션이 Host 블록 소속으로 바뀌거나 앞의 Host * 값에 가려지기 때문이다. 줄바꿈 형식을 유지하고, 심볼릭 링크는 대상 파일을 바꾸며, 임시 파일 후 이름 바꾸기로 쓴다. 반영된 서버가 없으면 앱이 만든 파일과 두 줄만 걷어 낸다.
+- src/main/sshConfigSync.ts: 자동 동기화(설정 → 연결, PC별, 기본 꺼짐)를 켠 PC에서는 서버·그룹 변경(Git 동기화 포함)과 시작 시, 설정을 다시 켤 때 전체를 맞춘다. 끈 PC에서는 아무것도 자동으로 쓰거나 지우지 않는다. 수동 반영은 기존 파일에서 BrightTerm id 주석으로 해당 서버 블록만 추가·갱신·삭제하고 다른 블록(다른 PC가 쓴 것, 손으로 넣은 것)은 유지하며, 같은 Host 이름의 블록은 교체한다.
+- 서버 편집 → 고급: SSH 서버에만 .ssh/config 동기화 스위치(기본 끔)·Host 이름·예상 ssh 이름·키 인증 안내·반영 상태를 보이고, 자동 동기화가 꺼진 PC에서는 config에 반영 / 다시 반영 / config에서 빼기 버튼을 보인다. 서버의 대상 여부는 서버 정보와 함께 Git 동기화된다.
+- 저장된 비밀번호 보기: 서버 편집의 비밀번호·키 암호 입력 5곳(서버, 베스천, 프록시)에 눈 버튼을 두어 볼트에서 읽어 평문으로 보이고 다시 가린다. 공유 계정 선택 모드에서는 읽기 전용으로 보인다. 읽어 온 값을 그대로 저장하면 볼트에 다시 쓰지 않는다(공유 계정을 쓰는 서버에서 새 계정으로 갈라지는 문제 방지).
+- README 기능 표와 테스트 안내를 갱신했다. 커밋은 04c6a96(.ssh/config 동기화), f449da2(비밀번호 보기)로 나눴고 HostEditor.tsx·styles.css는 기능별로 나눠 스테이징했다. main에 커밋하고 origin/main으로 푸시한다.
+
+### 직접 검증한 결과
+
+- npm run typecheck 통과, npm run build 성공. 단위 테스트 98개 중 94 통과·0 실패·4 건너뜀(ssh-config 7개 추가: 대상 선택, Host 이름·중복, 옵션·주석·비밀 비기록, 점프 서버 주소화·IPv6, 주석 주입 방지, Include 추가/제거·CRLF 유지, 수동 병합).
+- node test/e2e-ssh-config-podman.mjs 통과(임시 ~/.ssh, podman OpenSSH, Git for Windows OpenSSH 10.3 클라이언트): 기본값 꺼짐이면 쓰지 않음, 자동 켜기 후 켠 서버만 기록·사용자 config 보존·맨 앞 Include, UI 스위치·Host 이름 저장, ssh -G 해석(서버별 User가 사용자 Host * 보다 우선, 사용자 전역 옵션 유지), ProxyJump 경유 실제 로그인, 끄면 제거·모두 끄면 원래 config 복원, 자동 끔 상태에서 저장해도 쓰지 않음·버튼으로 반영해 실제 로그인·버튼으로 빼서 원래 config 복원.
+- Windows 기본 OpenSSH 9.5에서 생성 파일(한글 주석·ProxyJump·LocalForward)을 절대 경로 Include로 읽어 ssh -G 결과를 확인했다. 이 PC의 실제 ~/.ssh ACL은 본인·SYSTEM·Administrators만이라 새 파일도 권한 검사를 통과할 조건이다.
+- 스테이징한 .ssh/config 커밋 트리만 임시 폴더로 꺼내 tsc와 ssh-config 단위 테스트를 통과시켰다.
+- node test/e2e-secret-reveal.mjs 통과: 보기·가리기, 그대로 저장 시 볼트 항목·updatedAt 변화 없음, 공유 계정 읽기 전용 보기와 계정 유지, 공유 계정을 '이 서버 전용'으로 보고 저장해도 계정을 새로 만들지 않음, 고친 값은 정상 저장.
+- 회귀: e2e-session-log, e2e-connect-log 통과. e2e-ssh-startup은 테스트 내부 가짜 서버의 로컬 sh 파이프 EPIPE로 실패했고, 변경 전 HEAD(2f71dd6) 작업 폴더에서도 같은 오류로 실패해 이 Windows 환경의 기존 문제로 기록한다.
+
+### 검증 범위
+
+- 사용자의 실제 ~/.ssh 에는 쓰지 않았다. Windows 기본 OpenSSH가 상대 경로 Include를 실제 ~/.ssh 기준으로 읽는 동작은 이 환경에서 직접 확인하지 못했다(Git for Windows OpenSSH로는 HOME 기준 해석을 확인). macOS·Linux 실행, 키 인증 서버의 ssh 접속(IdentityFile·agent는 사용자 지정), 실제 다른 PC 간 Git 동기화는 미검증이다.
+- 동기화는 앱 → 파일 단방향이다. brightterm.conf 를 직접 고치면 다음 반영 때 덮어쓴다.
+- 비밀번호 보기는 README에 따로 적지 않았다. 설치 패키지는 생성하지 않았다.
+
 ## 2026-11-12 — 제3자 고지 생성 결과를 OS와 무관하게 고정
 
 ### 요청 및 변경
