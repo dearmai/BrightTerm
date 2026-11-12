@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOpen, Search, Check, Copy, SquareTerminal, CircleHelp, X } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOpen, Search, Check, Copy, SquareTerminal, CircleHelp, X } from 'lucide-react'
 import { useApp, newHost } from '../state'
 import { api } from '../api'
 import { Modal, Field, Seg, ColorPick, Switch } from './ui'
@@ -19,6 +19,44 @@ import { ENCODINGS, TERMINAL_PRESETS, applyPreset, hostKeys, matchPreset } from 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
 const DEFAULT_SERIAL: SerialOptions = { path: isWindows ? 'COM1' : '', baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none', enterSends: 'CR', localEcho: false }
 const BAUDS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
+
+/**
+ * 비밀번호·키 암호 입력 — 눈 버튼으로 보이기/가리기. 비어 있고 저장된 값이 있으면 볼트(잠금 해제 상태)에서 읽어 채운다.
+ * 읽어 온 값은 onLoaded 로 알려 저장 때 '바뀌지 않음'으로 본다 (공유 계정이 따로 갈라지지 않게)
+ */
+function SecretInput(props: { value: string; onChange?: (v: string) => void; onLoaded?: (v: string) => void; credentialId?: string | null; field: 'password' | 'passphrase'; placeholder?: string; label: string }): JSX.Element {
+  const [show, setShow] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const toggle = async (): Promise<void> => {
+    if (show) { setShow(false); return }
+    if (!props.value && props.credentialId) {
+      setBusy(true)
+      try {
+        const secret = await api.cred.get(props.credentialId)
+        const v = secret?.[props.field] ?? ''
+        if (!v) useApp.getState().toast('info', `저장된 ${props.label}가 없습니다`)
+        props.onLoaded?.(v)
+      } catch (e) {
+        useApp.getState().toast('error', `저장된 ${props.label}를 읽지 못했습니다: ${(e as Error).message}`)
+        return
+      } finally {
+        setBusy(false)
+      }
+    }
+    setShow(true)
+  }
+  return (
+    <div className="secret-input">
+      <input className="input" type={show ? 'text' : 'password'} value={props.value} readOnly={!props.onChange} spellCheck={false}
+        onChange={(e) => props.onChange?.(e.target.value)} placeholder={props.placeholder} autoComplete="new-password" aria-label={props.label} />
+      <button type="button" className="ibtn sm" disabled={busy} onClick={() => void toggle()}
+        title={show ? `${props.label} 가리기` : props.credentialId && !props.value ? `저장된 ${props.label} 보기` : `${props.label} 보기`}
+        aria-label={show ? `${props.label} 가리기` : `${props.label} 보기`} aria-pressed={show}>
+        {show ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
+    </div>
+  )
+}
 
 function groupPath(groups: Group[], id: string | null): string {
   const parts: string[] = []
@@ -91,6 +129,10 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   const jumpCred = creds.find((c) => c.id === h.jump?.credentialId)
   // 프록시 — 새 비밀번호는 저장 때 볼트로
   const [pPassword, setPPassword] = useState('')
+  /** 눈 버튼으로 볼트에서 읽어 온 값 — 그대로 저장하면 다시 쓰지 않는다(공유 계정이 갈라지지 않게) */
+  const loaded = useRef<Record<string, string>>({})
+  const changed = (k: string, v: string): boolean => !!v && v !== loaded.current[k]
+  const [sharedSecret, setSharedSecret] = useState('')
   const proxyPort = (t: ProxyType): number => (t === 'http' ? 8080 : t === 'https' ? 443 : 1080)
   const proxy: ProxyConfig = h.proxy ?? { type: 'socks5', host: '', port: 1080 }
   const setProxy = (p: Partial<ProxyConfig>): void => set('proxy', { ...proxy, ...p })
@@ -163,7 +205,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
     }
     if (out.protocol === 'serial' && !out.serial?.path) { setTab('basic'); return setErr('시리얼 포트를 선택하세요') }
     try {
-      const needsSecret = (out.authType === 'password' && password) || (out.authType === 'key' && keyText)
+      const needsSecret = (out.authType === 'password' && changed('password', password)) || (out.authType === 'key' && keyText)
       if (needsSecret && credMode === 'own') {
         if (!vault.unlocked) return setErr('볼트가 잠겨 있어 비밀번호를 저장할 수 없습니다')
         const ownId = cred && hosts.filter((x) => x.credentialId === cred.id && x.id !== out.id).length === 0 ? cred.id : undefined
@@ -180,7 +222,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
         await st().refreshCreds()
       }
       if (out.jump) {
-        const jNeeds = (out.jump.authType === 'key' && jKeyText) || (out.jump.authType === 'password' && jPassword)
+        const jNeeds = (out.jump.authType === 'key' && jKeyText) || (out.jump.authType === 'password' && changed('jPassword', jPassword))
         if (jNeeds) {
           if (!vault.unlocked) return setErr('볼트가 잠겨 있어 베스천 키를 저장할 수 없습니다')
           const meta = await api.cred.save({
@@ -196,7 +238,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
           await st().refreshCreds()
         }
       }
-      if (out.proxy?.username && out.proxy.type !== 'socks4' && pPassword) {
+      if (out.proxy?.username && out.proxy.type !== 'socks4' && changed('pPassword', pPassword)) {
         if (!vault.unlocked) return setErr('볼트가 잠겨 있어 프록시 비밀번호를 저장할 수 없습니다')
         const meta = await api.cred.save({
           id: out.proxy.credentialId && hosts.filter((x) => x.proxy?.credentialId === out.proxy!.credentialId && x.id !== out.id).length === 0 ? out.proxy.credentialId : undefined,
@@ -413,10 +455,11 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                   <option value="">선택하세요</option>
                   {creds.map((c) => <option key={c.id} value={c.id}>{c.name} {c.username ? `(${c.username})` : ''} · {c.kind === 'key' ? '키' : '비밀번호'}</option>)}
                 </select>
+                {cred?.kind === 'password' && <SecretInput key={cred.id} label="계정 비밀번호" field="password" value={sharedSecret} credentialId={cred.id} onLoaded={setSharedSecret} placeholder="••••••••  (눈 버튼으로 보기 — 바꾸려면 설정 → 보안·계정)" />}
               </Field>
             ) : h.authType === 'password' ? (
-              <Field label="비밀번호" hint={cred ? '저장된 비밀번호가 있습니다. 바꾸려면 새로 입력하세요.' : '비워 두면 처음 접속할 때 묻고, 저장 여부를 선택할 수 있습니다.'}>
-                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={cred ? '••••••••  (저장됨)' : '비밀번호'} autoComplete="new-password" />
+              <Field label="비밀번호" hint={cred ? '저장된 비밀번호가 있습니다. 눈 버튼으로 볼 수 있고, 바꾸려면 새로 입력하세요.' : '비워 두면 처음 접속할 때 묻고, 저장 여부를 선택할 수 있습니다.'}>
+                <SecretInput label="비밀번호" field="password" value={password} onChange={setPassword} credentialId={cred?.id} onLoaded={(v) => { loaded.current.password = v; setPassword(v) }} placeholder={cred ? '••••••••  (저장됨 — 눈 버튼으로 보기)' : '비밀번호'} />
               </Field>
             ) : h.authType === 'key' ? (
               <>
@@ -429,7 +472,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                 <Field label="또는 키 내용 붙여넣기">
                   <textarea className="textarea" rows={4} value={keyText} onChange={(e) => setKeyText(e.target.value)} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
                 </Field>
-                <Field label="키 암호 (있는 경우)"><input className="input" type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} autoComplete="new-password" /></Field>
+                <Field label="키 암호 (있는 경우)"><SecretInput label="키 암호" field="passphrase" value={passphrase} onChange={setPassphrase} credentialId={cred?.kind === 'key' ? cred.id : undefined} onLoaded={(v) => { loaded.current.passphrase = v; setPassphrase(v) }} /></Field>
               </>
             ) : h.authType === 'agent' ? (
               <div className="notice">{isMac ? 'macOS의 ssh-agent(SSH_AUTH_SOCK)를 사용합니다. 키체인에 넣은 키는 ssh-add --apple-use-keychain 으로 등록해 두세요.' : 'Windows에서는 Pageant, 그 외에는 SSH_AUTH_SOCK 에이전트를 사용합니다.'} 에이전트 인증이 실패하면 비밀번호를 묻습니다.</div>
@@ -483,12 +526,12 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                         <span className="muted grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{jKeyPath.split(/[\\/]/).pop() || (jumpCred?.kind === 'key' ? '저장된 키 사용 중' : '선택된 키 없음')}</span>
                       </div>
                     </Field>
-                    <Field label="키 암호 (있는 경우)"><input className="input" type="password" value={jPassphrase} onChange={(e) => setJPassphrase(e.target.value)} autoComplete="new-password" /></Field>
+                    <Field label="키 암호 (있는 경우)"><SecretInput label="키 암호" field="passphrase" value={jPassphrase} onChange={setJPassphrase} credentialId={jumpCred?.kind === 'key' ? jumpCred.id : undefined} onLoaded={(v) => { loaded.current.jPassphrase = v; setJPassphrase(v) }} /></Field>
                   </div>
                 )}
                 {jump.authType === 'password' && (
                   <Field label="베스천 비밀번호" hint={jumpCred ? '저장된 비밀번호가 있습니다. 바꾸려면 새로 입력하세요.' : undefined}>
-                    <input className="input" type="password" value={jPassword} onChange={(e) => setJPassword(e.target.value)} placeholder={jumpCred ? '••••••••  (저장됨)' : '비밀번호'} autoComplete="new-password" />
+                    <SecretInput label="비밀번호" field="password" value={jPassword} onChange={setJPassword} credentialId={jumpCred?.id} onLoaded={(v) => { loaded.current.jPassword = v; setJPassword(v) }} placeholder={jumpCred ? '••••••••  (저장됨 — 눈 버튼으로 보기)' : '비밀번호'} />
                   </Field>
                 )}
                 {!vault.unlocked && (jump.authType === 'key' || jump.authType === 'password') && <div className="notice warn"><Lock size={15} />볼트가 잠겨 있어 베스천 키·비밀번호를 저장할 수 없습니다.</div>}
@@ -522,7 +565,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                 </div>
                 {proxy.type !== 'socks4' && !!proxy.username?.trim() && (
                   <Field label="프록시 비밀번호" hint={proxyCred ? '저장된 비밀번호가 있습니다. 바꾸려면 새로 입력하세요.' : '볼트에 암호화해 저장합니다.'}>
-                    <input className="input" type="password" value={pPassword} onChange={(e) => setPPassword(e.target.value)} placeholder={proxyCred ? '••••••••  (저장됨)' : '비밀번호'} autoComplete="new-password" />
+                    <SecretInput label="비밀번호" field="password" value={pPassword} onChange={setPPassword} credentialId={proxyCred?.id} onLoaded={(v) => { loaded.current.pPassword = v; setPPassword(v) }} placeholder={proxyCred ? '••••••••  (저장됨 — 눈 버튼으로 보기)' : '비밀번호'} />
                   </Field>
                 )}
                 {proxy.type === 'https' && (
