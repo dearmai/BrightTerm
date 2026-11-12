@@ -1,5 +1,29 @@
 # 작업내역서
 
+## 2026-11-12 — Android 원격 데스크톱(RDP)
+
+### 요청 및 변경
+
+- 사용자가 데스크톱의 원격 데스크톱을 Android 에도 반영하고, 마우스는 터치패드 모드, 핀치줌 확대·축소, 두 손가락 터치 = 오른쪽 클릭, 두 손가락 끌기 = 화면 이동을 요청했다.
+- 서버 데이터: 동기화 투영(SyncSnapshot)에 os·rdp·jumpHostId·directSsh 를 넣고, 기존 설치본은 시작 시 upgrade 로 채운다. Android 에서 바꾼 os·rdp 는 데스크톱 형식으로 되돌려 쓰고, Android 에서 넣은 RDP 전용 비밀번호는 새 계정 항목으로 올린다(공유 계정 보호). RDP 전용 비밀번호(rdp.credentialId)는 목록에 싣지 않고 접속할 때 동기화 볼트에서 복호화한다. Vault 는 rdpPassword 를 비밀값으로 다룬다.
+- 중계(Java): Rdp.java(X.224·RDCleanPath DER·색 깊이/화면 효과/소리 패처·접속 단계 기록, 데스크톱 rdp.ts 와 같은 동작), RdpGateway.java(127.0.0.1 WebSocket 서버, 토큰·Origin 확인, TLS 지문 고정, SSLException 시 TLS 1.2 RSA 재시도, 오류 → RDCleanPath 오류 코드), RdpSessions.java(경로: 직접 / 점프 호스트 / 이 서버의 SSH 터널 — JSch 로컬 포워딩, 허용 상태 확인, 인증서 신뢰 저장, 15비트 대체 기억). TerminalService 의 JSch 세션 준비를 prepareSession() 으로 떼어 터미널·RDP 경로가 같이 쓴다.
+- 브리지(MainActivity): rdpCheck·rdpOpen(저장 작업 뒤에 줄 세움)·rdpInfo·rdpClose·rdpSetOptions·rdpDepthFallback·clipboardText, 인증서 신뢰 창, 디버그 전용 테스트 훅(rdpTestStall·rdpTestCredentials). 클립보드는 바뀐 뒤 한 번만 실제로 읽어 Android 12+ 붙여넣기 알림 반복을 막는다.
+- 화면: 서버 편집에 서버 OS·RDP 설정·허용 상태 확인·"저장 후 RDP 연결", 목록 🖥 버튼(기본 연결이 RDP 면 ❯_ 터미널 버튼), 원격 데스크톱 탭(rdp.html iframe, remote.js). rdp.js 는 IronRDP 연결, 터치패드(한 손가락 이동·탭 클릭·두 번 탭 후 끌기·두 손가락 탭 오른쪽 클릭·두 손가락 끌기 화면 이동/스크롤·핀치 1~5배, CSS 변환 — IronRDP 가 getBoundingClientRect 로 좌표를 계산해 그대로 맞는다), 소프트 키보드(숨은 입력칸, 보내는 동안만 activeElement 를 IronRDP 로 보이게 해 유니코드로), Fn 키 줄·Ctrl+Alt+Del, navigator.clipboard 를 Android 클립보드로 바꿈, 설정 패널, 15→16비트 자동 재연결.
+- 패키징: IronRDP 두 파일을 Gradle 로 assets/vendor/ironrdp 에 복사, Android 제3자 고지에 IronRDP 추가. network_security_config 로 암호화하지 않은 연결은 127.0.0.1 만 허용(나머지는 기존처럼 막음).
+- 개인 기기(R3CY10SXZLZ)에 make android-run 으로 설치했다. main 에 커밋하고 origin/main 으로 푸시한다.
+
+### 직접 검증한 결과
+
+- make android-build 성공, lintDebug 통과(기존 경고 4개), Java 단위 테스트 12개 통과(RdpTest 6개: X.224, DER 왕복, 색 깊이, Client Info, 조각난 흐름 패처, 32비트 무변경).
+- 에뮬레이터(Medium_Phone, Android 16)와 podman xrdp: test/e2e-android-rdp.mjs 통과 — 편집 화면·허용 상태 확인(TLS·지문), 목록 버튼 → 네이티브 인증서 신뢰 → 연결·화면, 한 손가락 끌기 커서 이동(클릭 없음)·탭 = 왼쪽 클릭·두 손가락 탭 = 오른쪽 클릭·핀치 4배·두 손가락 끌기 화면 이동(CDP 터치 이벤트), 소프트 키보드 입력으로 xrdp 로그인, 클립보드 양방향, 설정 패널 표시·저장, 15비트 멈춤 흉내 → 16비트 자동 재연결(저장값 유지), 탭 닫기.
+- test/e2e-android-rdp-route.mjs 통과 — 점프 호스트 경유·이 서버의 SSH 터널 연결, 탭을 닫으면 경로 SSH 세션 정리.
+- test/e2e-android-git-sync.mjs 에 Windows 서버를 추가해 통과 — os·rdp·점프 호스트 가져오기, RDP 전용 비밀번호 복호화, 목록에 비밀번호 없음, Android 변경 올리기(새 계정 항목·기존 항목 유지·원문 노출 없음). 기존 test/e2e-android.mjs 통과(SSH 회귀).
+- 처음 실행에서 WebSocket 이 ERR_CLEARTEXT_NOT_PERMITTED 로 막힌 것을 확인해 network_security_config 로 고쳤고, Fn 키 줄이 hidden 인데 보이는 CSS 문제를 고쳤다.
+
+### 검증 범위
+
+- 실제 Windows(NLA)·실제 휴대폰 손가락 입력의 감도·키보드 앱(한글 조합)·DeX 마우스는 확인하지 않았다(사용자 확인 필요). 소리는 이 기기로 가져오지 못한다. 클립보드는 텍스트만. 점프 호스트는 한 단계, Android 서버 목록에 있는 SSH 서버여야 한다. Telnet Windows 서버는 Android 목록에 나오지 않는다. 릴리스 서명 APK 는 만들지 않았다(debug).
+
 ## 2026-11-12 — 서버 OS 지정과 원격 데스크톱(RDP) 내장 연결
 
 ### 요청 및 변경
