@@ -18,6 +18,7 @@
     <script defer src="themes.js"></script>
     <script defer src="terminal.js"></script>
     <script defer src="app.js"></script>
+    <script defer src="remote.js"></script>
   </head>
   <body>
     <header>
@@ -143,6 +144,65 @@
             실행합니다.
           </p>
         </details>
+        <label
+          >서버 OS<select name="os">
+            <option value="">선택 안 함</option>
+            <option value="linux">Linux</option>
+            <option value="windows">Windows</option>
+            <option value="macos">macOS</option>
+            <option value="unix">Unix</option>
+            <option value="other">기타</option>
+          </select></label
+        >
+        <details id="rdp-settings" hidden>
+          <summary>원격 데스크톱 (RDP)</summary>
+          <div class="rdp-check-row">
+            <button type="button" id="rdp-check">RDP 허용 상태 확인</button>
+            <span id="rdp-check-result" class="hint">RDP 포트에 연결해 원격 데스크톱이 켜져 있는지, 보안 방식과 인증서를 확인합니다 — 로그인은 하지 않습니다</span>
+          </div>
+          <div class="row">
+            <label class="port">RDP 포트<input name="rdpPort" type="number" min="1" max="65535" value="3389" /></label
+            ><label>사용자 이름<input name="rdpUsername" placeholder="비우면 위 사용자명" autocapitalize="off" spellcheck="false" /></label>
+          </div>
+          <label>도메인 (선택)<input name="rdpDomain" placeholder="CORP" autocapitalize="off" spellcheck="false" /></label>
+          <label
+            >RDP 비밀번호<select name="rdpAuth">
+              <option value="host">서버 계정과 같게</option>
+              <option value="own">RDP 전용</option>
+              <option value="ask">매번 묻기</option>
+            </select></label
+          >
+          <label id="rdp-password-row" hidden
+            >RDP 전용 비밀번호<input name="rdpPassword" type="password" autocomplete="off" placeholder="저장된 값 유지"
+          /></label>
+          <label
+            >경로<select name="rdpRoute">
+              <option value="direct">직접</option>
+              <option value="ssh">이 서버의 SSH 터널</option>
+            </select></label
+          >
+          <p id="rdp-route-hint" class="hint"></p>
+          <label
+            >화질<select name="rdpQuality">
+              <option value="best">최고 화질 (32비트)</option>
+              <option value="balanced">균형 (32비트, 배경·애니메이션 끔)</option>
+              <option value="fast">빠르게 (16비트, 효과 모두 끔)</option>
+              <option value="custom" hidden>사용자 지정</option>
+            </select></label
+          >
+          <label
+            >소리<select name="rdpAudio">
+              <option value="off">재생 안 함</option>
+              <option value="remote">원격 PC 에서 재생</option>
+            </select></label
+          >
+          <label class="check"><input type="checkbox" name="rdpClipboard" checked />클립보드 동기화 (텍스트)</label>
+          <label class="check"><input type="checkbox" name="rdpPrimary" />기본 연결을 RDP 로 (목록에서 누르면 원격 데스크톱)</label>
+          <p class="hint">
+            앱 안에서 IronRDP 로 엽니다. 터치패드 방식 — 한 손가락으로 커서 이동, 탭은 클릭, 두 손가락 탭은 오른쪽 클릭,
+            두 손가락 끌기는 화면 이동, 핀치로 확대·축소. 화면 위 ⚙ 에서 화면 맞춤·해상도·배율·색 깊이·화면 효과를 바꿉니다.
+          </p>
+        </details>
         <details id="terminal-settings">
           <summary>터미널 · 인코딩</summary>
           <label
@@ -225,6 +285,7 @@
           <button type="button" id="delete" class="danger" hidden>삭제</button>
           <div class="spacer"></div>
           <button type="button" id="save">저장</button
+          ><button type="button" id="save-rdp" hidden>저장 후 RDP 연결</button
           ><button type="submit" class="primary">연결</button>
         </div>
       </form>

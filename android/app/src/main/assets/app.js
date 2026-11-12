@@ -186,7 +186,10 @@ function select(id) {
   }
   const s = current();
   updateSftpButton();
-  $("welcome").hidden = !!s;
+  // 원격 데스크톱 탭(remote.js)
+  const remoteTab = window.rdpSelect ? window.rdpSelect(id) : false;
+  $("welcome").hidden = !!s || remoteTab;
+  if (remoteTab) return;
   $("status").textContent = s
     ? `${s.name} · ${s.state} · SSH`
     : "연결 대기 · SSH";
@@ -345,19 +348,22 @@ function renderProfiles() {
     const detail = document.createElement("small");
     detail.textContent = `${p.username}@${p.host}:${p.port}`;
     connect.append(title, detail);
-    connect.onclick = () =>
+    connect.onclick = () => {
+      // 기본 연결이 RDP 인 Windows 서버는 원격 데스크톱으로
+      if (window.rdpPrimary?.(p)) return window.openRdp(p);
       invoke(
         "connect",
         JSON.stringify({ savedId: p.id }),
         current()?.term.cols || 80,
         current()?.term.rows || 24,
       );
+    };
     const edit = document.createElement("button");
     edit.className = "edit";
     edit.textContent = "⋯";
     edit.setAttribute("aria-label", `${p.name || p.host} 편집`);
     edit.onclick = () => openEditor(p);
-    row.append(connect, edit);
+    row.append(connect, ...(window.rdpRowButtons?.(p) ?? []), edit);
     $("hosts").append(row);
   }
 }
@@ -383,6 +389,7 @@ function openEditor(profile) {
   $("delete").hidden = !editing;
   $("editor-title").textContent = editing ? "서버 편집" : "SSH 연결";
   $("key-name").textContent = profile?.hasKey ? "저장된 개인키 사용" : "";
+  window.rdpFill?.(profile);
   $("editor").showModal();
 }
 function getProfile() {
@@ -405,6 +412,7 @@ function getProfile() {
     encoding: fields.encoding.value,
     keys: Object.fromEntries(KEY_FIELDS.map((key) => [key, fields[keyField(key)].value])),
     ...(matchingPreset() ? { terminalPreset: matchingPreset().id } : {}),
+    ...(window.rdpFields?.() ?? {}),
   };
 }
 function submit(connect) {
@@ -428,6 +436,7 @@ function submit(connect) {
 }
 window.nativeEvent = (event) => {
   const s = sessions.get(event.id);
+  if (event.type.startsWith("rdp-")) return window.rdpEvent?.(event);
   switch (event.type) {
     case "git-sync":
       gitStatus = JSON.parse(event.value);
@@ -501,6 +510,7 @@ window.nativeEvent = (event) => {
         item.tab.remove();
       }
       sessions.clear();
+      window.rdpResetAll?.();
       select(null);
       break;
   }

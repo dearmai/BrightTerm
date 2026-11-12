@@ -69,7 +69,8 @@ final class Vault {
         for (int i = 0; i < profiles.length(); i++) {
             JSONObject p = profiles.getJSONObject(i);
             p.put("hasKey", !p.optString("privateKey").isEmpty());
-            p.remove("password"); p.remove("privateKey"); p.remove("passphrase");
+            p.put("hasRdpPassword", !p.optString("rdpPassword").isEmpty());
+            p.remove("password"); p.remove("privateKey"); p.remove("passphrase"); p.remove("rdpPassword");
         }
         return profiles;
     }
@@ -78,9 +79,9 @@ final class Vault {
         for (int i = 0; i < profiles.length(); i++) {
             JSONObject old = profiles.getJSONObject(i);
             if (old.getString("id").equals(profile.getString("id"))) {
-                for (String secret : new String[]{"password", "privateKey", "passphrase"})
+                for (String secret : new String[]{"password", "privateKey", "passphrase", "rdpPassword"})
                     if (profile.optString(secret).isEmpty()) profile.put(secret, old.optString(secret));
-                for (String field : new String[]{"persist", "persistName", "persistMouse", "termType", "encoding", "keys", "terminalPreset"}) if (!profile.has(field) && old.has(field)) profile.put(field, old.get(field));
+                for (String field : new String[]{"persist", "persistName", "persistMouse", "termType", "encoding", "keys", "terminalPreset", "os", "rdp", "jumpHostId", "directSsh"}) if (!profile.has(field) && old.has(field)) profile.put(field, old.get(field));
                 if (old.has("unsupported")) profile.put("unsupported", old.get("unsupported"));
                 profiles.put(i, profile); write(profiles); return;
             }

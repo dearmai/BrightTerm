@@ -633,3 +633,43 @@ textarea {
   overflow: auto;
   margin: 0 0 12px;
 }
+/* 원격 데스크톱 탭 (remote.js) */
+.rdp-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+  z-index: 2;
+}
+.rdp-frame[hidden] {
+  display: none;
+}
+.tab .close {
+  padding: 0 10px;
+  color: var(--text-3);
+}
+.host .edit.rdp {
+  padding: 0 8px;
+}
+.rdp-check-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+#rdp-check-result {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+#rdp-check-result.ok {
+  color: var(--ok);
+}
+#rdp-check-result.warn {
+  color: var(--warn);
+}
+#rdp-check-result.err {
+  color: var(--danger);
+}
+body.rdp-active #keys { display: none; }

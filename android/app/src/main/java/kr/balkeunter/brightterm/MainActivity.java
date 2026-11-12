@@ -23,6 +23,16 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     private boolean transferUpload;
     private boolean ready, bound, resumed, lightTheme;
     private final ExecutorService storage = Executors.newSingleThreadExecutor();
+    /**
+     * 원격 데스크톱 클립보드 — IronRDP 가 100ms 마다 읽는다. Android 12+ 는 읽을 때마다 "붙여넣음" 알림을 띄우므로
+     * 클립보드가 바뀐 뒤 한 번만 실제로 읽고, 이 앱이 쓴 값은 그대로 기억한다
+     */
+    private volatile String clipCache = "";
+    private volatile boolean clipDirty = true;
+    private volatile String clipOwn;
+    private android.content.ClipboardManager.OnPrimaryClipChangedListener clipListener;
+    /** 원격 데스크톱 경로 열기·확인 — 네트워크를 기다리므로 저장 작업과 따로 */
+    private final ExecutorService remote = Executors.newCachedThreadPool();
     private final java.util.Set<CompletableFuture<Boolean>> prompts = ConcurrentHashMap.newKeySet();
     private final java.util.Set<CompletableFuture<String>> tmuxPrompts = ConcurrentHashMap.newKeySet();
     private final ServiceConnection connection = new ServiceConnection() {
@@ -69,6 +79,8 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return true; }
         });
         web.addJavascriptInterface(new Bridge(), "Android");
+        clipListener = () -> clipDirty = true;
+        ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).addPrimaryClipChangedListener(clipListener);
         android.widget.FrameLayout root = new android.widget.FrameLayout(this);
         root.addView(web, new android.widget.FrameLayout.LayoutParams(-1, -1));
         setContentView(root);
@@ -117,6 +129,22 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         catch (Exception error) { answer.complete(false); return false; }
         finally { prompts.remove(answer); }
     }
+    @Override public boolean trustCertificate(String hostPort, String fingerprint, String old) {
+        CompletableFuture<Boolean> answer = new CompletableFuture<>(); prompts.add(answer);
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed() || answer.isDone()) { answer.complete(false); return; }
+            AlertDialog dialog = dialogBuilder().setTitle(old == null ? "처음 연결하는 원격 데스크톱" : "원격 데스크톱 인증서가 바뀌었습니다")
+                .setMessage(hostPort + "\n\nRDP TLS 인증서\n" + fingerprint + (old == null ? "" : "\n\n이전 지문\n" + old) + "\n\n서버 관리자가 제공한 지문과 일치할 때만 신뢰하세요.")
+                .setNegativeButton("취소", (d,w) -> answer.complete(false))
+                .setPositiveButton("신뢰하고 접속", (d,w) -> answer.complete(true))
+                .setOnCancelListener(d -> answer.complete(false)).create();
+            dialog.show();
+            answer.whenComplete((value, error) -> runOnUiThread(dialog::dismiss));
+        });
+        try { return answer.get(90, TimeUnit.SECONDS); }
+        catch (Exception error) { answer.complete(false); return false; }
+        finally { prompts.remove(answer); }
+    }
     @Override public String chooseTmux(String host, java.util.List<String> names, java.util.function.BooleanSupplier alive) {
         // null cancels, empty creates a new session, NUL selects a plain SSH shell.
         CompletableFuture<String> answer = new CompletableFuture<>(); tmuxPrompts.add(answer);
@@ -149,8 +177,125 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         storage.execute(() -> { try { event(eventOf("profiles", "", vault.publicProfiles().toString())); } catch (Exception error) { fail(error); } });
     }
     private void fail(Exception error) { event(eventOf("error", "", error.getMessage() == null ? "작업 실패" : error.getMessage())); }
+    /** 편집 중인(저장 전) 서버도 확인할 수 있게 — 저장된 비밀값은 저장본에서 채운다 */
+    private JSONObject rdpProfile(JSONObject request) throws Exception {
+        JSONObject p = request;
+        String id = request.optString("id");
+        if (!id.isEmpty()) {
+            try {
+                JSONObject saved = vault.find(id);
+                for (String secret : new String[]{"password", "privateKey", "passphrase", "rdpPassword"})
+                    if (p.optString(secret).isEmpty() && !saved.optString(secret).isEmpty()) p.put(secret, saved.getString(secret));
+                for (String field : new String[]{"jumpHostId", "directSsh"}) if (!p.has(field) && saved.has(field)) p.put(field, saved.get(field));
+            } catch (IllegalArgumentException notSaved) { }
+        }
+        if (p.optString("host").trim().isEmpty()) throw new IllegalArgumentException("서버 주소를 먼저 입력하세요");
+        return p;
+    }
+    private JSONObject rdpJump(JSONObject p) throws Exception {
+        String jump = p.optString("jumpHostId");
+        if (jump.isEmpty() || "ssh".equals(RdpSessions.options(p).optString("route"))) return null;
+        try { return vault.find(jump); }
+        catch (IllegalArgumentException missing) { throw new IllegalArgumentException("점프 호스트가 Android 서버 목록에 없습니다 (SSH 서버만 가져옵니다)"); }
+    }
+    /** RDP 계정 — 서버 계정과 같게 / RDP 전용(Android 에서 넣은 값 또는 동기화 볼트) / 매번 묻기 */
+    private JSONObject rdpCredentials(JSONObject p) throws Exception {
+        JSONObject o = RdpSessions.options(p);
+        String auth = o.optString("auth", "host"), password = "";
+        if ("host".equals(auth)) password = p.optString("password");
+        else if ("own".equals(auth)) {
+            password = p.optString("rdpPassword");
+            if (password.isEmpty()) password = SyncSnapshot.credentialPassword(vault.readState(), o.optString("credentialId"));
+        }
+        String user = o.optString("username", "").trim();
+        if (user.isEmpty()) user = p.optString("username", "");
+        String domain = o.optString("domain", "").trim();
+        int slash = user.indexOf('\\');
+        if (slash > 0) { if (domain.isEmpty()) domain = user.substring(0, slash); user = user.substring(slash + 1); }
+        return new JSONObject().put("username", user).put("password", password).put("domain", domain);
+    }
+    private void reply(String type, String requestId, JSONObject value) { event(eventOf(type, requestId, value.toString())); }
+    private static JSONObject failure(Exception error) {
+        try { return new JSONObject().put("error", error.getMessage() == null ? error.toString() : error.getMessage()); }
+        catch (JSONException e) { throw new IllegalStateException(e); }
+    }
     class Bridge {
-        @JavascriptInterface public void ready() { runOnUiThread(() -> { ready = true; profiles(); gitSync.attach(MainActivity.this); if (resumed) gitSync.foreground(true); if (service != null) service.attach(MainActivity.this); }); }
+        // ---- 원격 데스크톱
+        @JavascriptInterface public void rdpCheck(String requestId, String json) {
+            remote.execute(() -> {
+                try {
+                    TerminalService s = service; if (s == null) throw new IllegalStateException("연결 서비스 준비 중입니다");
+                    JSONObject p = rdpProfile(new JSONObject(json));
+                    reply("rdp-check", requestId, s.rdp().check(p, rdpJump(p)));
+                } catch (Exception error) { reply("rdp-check", requestId, failure(error)); }
+            });
+        }
+        @JavascriptInterface public void rdpOpen(String requestId, String id) {
+            // 방금 저장한 설정을 읽도록 저장 작업 뒤에 줄 세운다
+            storage.execute(() -> remote.execute(() -> {
+                try {
+                    TerminalService s = service; if (s == null) throw new IllegalStateException("연결 서비스 준비 중입니다");
+                    JSONObject p = vault.find(id);
+                    if (!RdpSessions.capable(p)) throw new IllegalArgumentException("서버 OS 가 Windows 인 서버만 원격 데스크톱으로 열 수 있습니다");
+                    String token = s.rdp().open(p, rdpJump(p), rdpCredentials(p), MainActivity.this::trustCertificate,
+                        (t, m) -> event(eventOf("rdp-log", t, m)),
+                        () -> { try { return vault.find(id); } catch (Exception e) { return null; } }, lightTheme);
+                    reply("rdp-open", requestId, new JSONObject().put("token", token).put("title", p.optString("name", p.optString("host"))));
+                } catch (Exception error) { reply("rdp-open", requestId, failure(error)); }
+            }));
+        }
+        @JavascriptInterface public String rdpInfo(String token) {
+            try {
+                TerminalService s = service; if (s == null) throw new IllegalStateException("연결 서비스 준비 중입니다");
+                String host = s.rdp().hostId(token);
+                JSONObject latest = null;
+                if (host != null) { latest = vault.find(host); JSONObject c = rdpCredentials(latest); s.rdp().info(token, null).put("username", c.optString("username")).put("domain", c.optString("domain")).put("password", c.optString("password")); }
+                return s.rdp().info(token, latest).toString();
+            } catch (Exception error) { return failure(error).toString(); }
+        }
+        @JavascriptInterface public void rdpClose(String token) { TerminalService s = service; if (s != null) remote.execute(() -> s.rdp().close(token)); }
+        @JavascriptInterface public void rdpDepthFallback(String token) { TerminalService s = service; if (s != null) s.rdp().fallback(token); }
+        /** 화면 위 설정 — 서버 설정(rdp)에 저장하고 바뀐 화면 값을 돌려준다 */
+        @JavascriptInterface public String rdpSetOptions(String token, String json) {
+            try {
+                TerminalService s = service; if (s == null) throw new IllegalStateException("연결 서비스 준비 중입니다");
+                String host = s.rdp().hostId(token); if (host == null) throw new IllegalArgumentException("원격 데스크톱 세션이 없습니다");
+                JSONObject patch = new JSONObject(json);
+                synchronized (vault) {
+                    JSONObject p = vault.find(host);
+                    JSONObject o = p.optJSONObject("rdp") == null ? new JSONObject() : p.getJSONObject("rdp");
+                    String[] keys = {"scale", "dpi", "unicodeKeyboard", "clipboard", "resolution", "colorDepth", "audio", "experience"};
+                    for (String k : keys) if (patch.has(k)) o.put(k, patch.get(k));
+                    if (patch.has("colorDepth")) s.rdp().clearFallback(host);
+                    p.put("rdp", o); vault.save(p);
+                    profiles();
+                    return RdpSessions.view(RdpSessions.options(p)).toString();
+                }
+            } catch (Exception error) { return failure(error).toString(); }
+        }
+        @JavascriptInterface public String clipboardText() {
+            if (!clipDirty) return clipCache;
+            String own = clipOwn;
+            if (own != null) { clipOwn = null; clipCache = own; clipDirty = false; return own; }
+            CompletableFuture<String> read = new CompletableFuture<>();
+            runOnUiThread(() -> {
+                try {
+                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                    ClipData clip = clipboard.hasPrimaryClip() ? clipboard.getPrimaryClip() : null;
+                    CharSequence t = clip == null || clip.getItemCount() == 0 ? null : clip.getItemAt(0).coerceToText(MainActivity.this);
+                    read.complete(t == null ? "" : t.toString());
+                } catch (Exception error) { read.complete(""); }
+            });
+            try { clipCache = read.get(2, TimeUnit.SECONDS); clipDirty = false; } catch (Exception ignored) { }
+            return clipCache;
+        }
+        @JavascriptInterface public void rdpTestStall(boolean on) { if (BuildConfig.DEBUG) RdpGateway.testStall15 = on; }
+        /** 디버그 빌드 테스트용 — 접속할 때 쓸 RDP 계정(동기화 볼트 복호화 포함) */
+        @JavascriptInterface public String rdpTestCredentials(String id) {
+            if (!BuildConfig.DEBUG) return "{}";
+            try { return rdpCredentials(vault.find(id)).toString(); } catch (Exception error) { return failure(error).toString(); }
+        }
+        @JavascriptInterface public void ready() { runOnUiThread(() -> { ready = true; if (service != null) service.rdp().closeAll(); profiles(); gitSync.attach(MainActivity.this); if (resumed) gitSync.foreground(true); if (service != null) service.attach(MainActivity.this); }); }
         // App settings stay on this device; Git sync carries only servers and the vault, as on the desktop.
         @JavascriptInterface public String settings() { return getSharedPreferences("app-settings", MODE_PRIVATE).getString("json", "{}"); }
         @JavascriptInterface public void saveSettings(String json) {
@@ -214,7 +359,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
             if (!upload) { intent.setType("application/octet-stream"); intent.putExtra(Intent.EXTRA_TITLE, path.substring(path.lastIndexOf('/') + 1)); }
             startActivityForResult(intent, 12);
         }); }
-        @JavascriptInterface public void copy(String text) { runOnUiThread(() -> ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("BrightTerm", text))); }
+        @JavascriptInterface public void copy(String text) { clipOwn = text; clipCache = text; runOnUiThread(() -> ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("BrightTerm", text))); }
         @JavascriptInterface public void paste() { runOnUiThread(() -> {
             android.content.ClipboardManager clipboard = (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
             if (clipboard.hasPrimaryClip() && clipboard.getPrimaryClip() != null) event(eventOf("paste", "", clipboard.getPrimaryClip().getItemAt(0).coerceToText(MainActivity.this).toString()));
@@ -292,7 +437,8 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         if (service != null && service.listener == this) service.listener = null;
         if (gitSync != null) gitSync.detach(this);
         if (bound) unbindService(connection);
+        if (clipListener != null) ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).removePrimaryClipChangedListener(clipListener);
         if (web != null) { web.removeJavascriptInterface("Android"); web.destroy(); web = null; }
-        storage.shutdown(); super.onDestroy();
+        remote.shutdownNow(); storage.shutdown(); super.onDestroy();
     }
 }

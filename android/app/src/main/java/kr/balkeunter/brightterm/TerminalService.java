@@ -15,7 +15,14 @@ import java.util.concurrent.*;
 
 /** Owns sockets independently of the Activity so window resize/display changes preserve sessions. */
 public class TerminalService extends Service {
-    interface Listener { void event(JSONObject event); boolean trust(String host, String fingerprint); String chooseTmux(String host, List<String> names, java.util.function.BooleanSupplier alive); }
+    interface Listener {
+        void event(JSONObject event); boolean trust(String host, String fingerprint); String chooseTmux(String host, List<String> names, java.util.function.BooleanSupplier alive);
+        /** 원격 데스크톱 서버 인증서 — 처음 보거나(old null) 바뀌었으면 묻는다 */
+        default boolean trustCertificate(String hostPort, String fingerprint, String old) { return false; }
+    }
+    private RdpSessions rdp;
+    /** 원격 데스크톱 연결 — 경로의 SSH 세션을 이 서비스가 쥐고 있어 화면이 다시 만들어져도 유지된다 */
+    synchronized RdpSessions rdp() { if (rdp == null) rdp = new RdpSessions(this); return rdp; }
     volatile Listener listener;
     final ExecutorService workers = Executors.newCachedThreadPool();
     private final Map<String, Connection> connections = new ConcurrentHashMap<>();
@@ -133,6 +140,48 @@ public class TerminalService extends Service {
             });
         }
     }
+    /** SSH 세션 준비(연결 전) — 터미널과 원격 데스크톱 경로(점프 호스트·SSH 터널)가 같이 쓴다 */
+    Session prepareSession(JSONObject profile, String name, Rdp.Log log, java.util.function.BooleanSupplier cancelled) throws Exception {
+        JSch jsch = new JSch();
+        // ssh -v 에 해당 — 알고리즘 협상·인증 방식·끊김. 비밀번호와 터미널 입출력은 찍지 않는다
+        jsch.setInstanceLogger(new com.jcraft.jsch.Logger() {
+            @Override public boolean isEnabled(int level) { return true; }
+            @Override public void log(int level, String message) { log.add(message); }
+        });
+        File known = new File(getFilesDir(), "known_hosts");
+        synchronized (trustLock) { if (!known.exists() && !known.createNewFile()) throw new IOException("호스트 키 파일 생성 실패"); jsch.setKnownHosts(known.getAbsolutePath()); }
+        String privateKey = profile.optString("privateKey");
+        if (!privateKey.isEmpty()) jsch.addIdentity(name, privateKey.getBytes(StandardCharsets.UTF_8), null, profile.optString("passphrase").getBytes(StandardCharsets.UTF_8));
+        // Verify against persistent known_hosts; changed keys are always rejected.
+        HostKeyRepository repository = jsch.getHostKeyRepository();
+        jsch.setHostKeyRepository(new HostKeyRepository() {
+            @Override public int check(String host, byte[] key) {
+                synchronized (trustLock) {
+                    int result = repository.check(host, key);
+                    if (result != NOT_INCLUDED) return result;
+                    try {
+                        String fingerprint = "SHA256:" + Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(key), Base64.NO_WRAP | Base64.NO_PADDING);
+                        Listener l = listener;
+                        if (l == null || !l.trust(host, fingerprint) || cancelled.getAsBoolean()) return NOT_INCLUDED;
+                        repository.add(new HostKey(host, key), null); return OK;
+                    } catch (Exception error) { return NOT_INCLUDED; }
+                }
+            }
+            @Override public void add(HostKey key, UserInfo ui) { synchronized (trustLock) { repository.add(key, ui); } }
+            @Override public void remove(String host, String type) { }
+            @Override public void remove(String host, String type, byte[] key) { }
+            @Override public String getKnownHostsRepositoryID() { return repository.getKnownHostsRepositoryID(); }
+            @Override public HostKey[] getHostKey() { return repository.getHostKey(); }
+            @Override public HostKey[] getHostKey(String host, String type) { return repository.getHostKey(host, type); }
+        });
+        Session session = jsch.getSession(profile.getString("username"), profile.getString("host"), profile.optInt("port", 22));
+        session.setConfig("StrictHostKeyChecking", "yes");
+        session.setConfig("PreferredAuthentications", "publickey,password,keyboard-interactive");
+        String password = profile.optString("password"); session.setPassword(password);
+        session.setUserInfo(new PasswordInfo(password));
+        session.setServerAliveInterval(15000); session.setServerAliveCountMax(3);
+        return session;
+    }
     private void start(Connection c) {
         JSONObject profile = c.profile;
         c.state = "connecting"; c.decoder = new TermCompat.Decoder(c.charset);
@@ -140,44 +189,7 @@ public class TerminalService extends Service {
         workers.execute(() -> {
             try {
                 c.log.add("접속 시작: " + profile.optString("username") + "@" + profile.optString("host") + ":" + profile.optInt("port", 22));
-                JSch jsch = new JSch();
-                // ssh -v 에 해당 — 알고리즘 협상·인증 방식·끊김. 비밀번호와 터미널 입출력은 찍지 않는다
-                jsch.setInstanceLogger(new com.jcraft.jsch.Logger() {
-                    @Override public boolean isEnabled(int level) { return true; }
-                    @Override public void log(int level, String message) { c.log.add(message); }
-                });
-                File known = new File(getFilesDir(), "known_hosts");
-                synchronized (trustLock) { if (!known.exists() && !known.createNewFile()) throw new IOException("호스트 키 파일 생성 실패"); jsch.setKnownHosts(known.getAbsolutePath()); }
-                String privateKey = profile.optString("privateKey");
-                if (!privateKey.isEmpty()) jsch.addIdentity(c.name, privateKey.getBytes(StandardCharsets.UTF_8), null, profile.optString("passphrase").getBytes(StandardCharsets.UTF_8));
-                // Verify against persistent known_hosts; changed keys are always rejected.
-                HostKeyRepository repository = jsch.getHostKeyRepository();
-                jsch.setHostKeyRepository(new HostKeyRepository() {
-                    @Override public int check(String host, byte[] key) {
-                        synchronized (trustLock) {
-                            int result = repository.check(host, key);
-                            if (result != NOT_INCLUDED) return result;
-                            try {
-                                String fingerprint = "SHA256:" + Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(key), Base64.NO_WRAP | Base64.NO_PADDING);
-                                Listener l = listener;
-                                if (l == null || !l.trust(host, fingerprint) || c.closed) return NOT_INCLUDED;
-                                repository.add(new HostKey(host, key), null); return OK;
-                            } catch (Exception error) { return NOT_INCLUDED; }
-                        }
-                    }
-                    @Override public void add(HostKey key, UserInfo ui) { synchronized (trustLock) { repository.add(key, ui); } }
-                    @Override public void remove(String host, String type) { }
-                    @Override public void remove(String host, String type, byte[] key) { }
-                    @Override public String getKnownHostsRepositoryID() { return repository.getKnownHostsRepositoryID(); }
-                    @Override public HostKey[] getHostKey() { return repository.getHostKey(); }
-                    @Override public HostKey[] getHostKey(String host, String type) { return repository.getHostKey(host, type); }
-                });
-                c.session = jsch.getSession(profile.getString("username"), profile.getString("host"), profile.optInt("port", 22));
-                c.session.setConfig("StrictHostKeyChecking", "yes");
-                c.session.setConfig("PreferredAuthentications", "publickey,password,keyboard-interactive");
-                String password = profile.optString("password"); c.session.setPassword(password);
-                c.session.setUserInfo(new PasswordInfo(password));
-                c.session.setServerAliveInterval(15000); c.session.setServerAliveCountMax(3);
+                c.session = prepareSession(profile, c.name, c.log::add, () -> c.closed);
                 if (c.closed) return;
                 c.session.connect(25000);
                 if (c.closed) return;
@@ -389,6 +401,6 @@ public class TerminalService extends Service {
         });
     }
     @Override public void onDestroy() {
-        listener = null; for (Connection c : connections.values()) c.close(); workers.shutdownNow(); super.onDestroy();
+        listener = null; for (Connection c : connections.values()) c.close(); synchronized (this) { if (rdp != null) rdp.closeAll(); } workers.shutdownNow(); super.onDestroy();
     }
 }

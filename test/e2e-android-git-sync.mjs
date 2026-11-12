@@ -105,6 +105,15 @@ const credential = {
     "shared-credential",
   ),
 };
+// 원격 데스크톱 전용 계정 — Android 가 접속할 때만 꺼내 쓴다
+const rdpCredential = {
+  id: "rdp-credential",
+  name: "Windows RDP",
+  kind: "password",
+  username: "rdp-user",
+  updatedAt: 1,
+  ...seal(key, Buffer.from(JSON.stringify({ username: "rdp-user", password: "rdp-desktop-secret" })), "rdp-credential"),
+};
 const host = (id, alias) => ({
   id,
   groupId: "folder",
@@ -135,6 +144,13 @@ const desktop = {
     },
     host("ssh-shared", "Shared server"),
     { ...host("unsupported", "Jump server"), jumpHostId: "ssh-main" },
+    // 점프 호스트 뒤의 Windows — SSH 는 Android 에서 못 쓰지만 RDP 는 점프 호스트를 거쳐 쓴다
+    {
+      ...host("win-rdp", "Windows server"),
+      jumpHostId: "ssh-main",
+      os: "windows",
+      rdp: { mode: "builtin", port: 3390, auth: "own", credentialId: "rdp-credential", clipboard: true, resolution: "window", route: "direct", colorDepth: 16 },
+    },
     {
       ...host("local-host", "Local workstation"),
       protocol: "local",
@@ -147,7 +163,7 @@ const desktop = {
     version: 1,
     kdf,
     wrapped: seal(derive(password, kdf), key, "vault-key"),
-    items: [credential],
+    items: [credential, rdpCredential],
   },
 };
 function envelope(snapshot, cipherKey = key) {
@@ -481,7 +497,15 @@ try {
     () => evaluate("profiles.some(p=>p.id==='ssh-main')"),
     "Imported profiles missing",
   );
-  assert.equal(await evaluate("profiles.length"), 3);
+  assert.equal(await evaluate("profiles.length"), 4);
+  // 원격 데스크톱: OS·RDP 설정·점프 호스트를 가져오고, RDP 전용 비밀번호는 목록에 싣지 않고 접속할 때 동기화 볼트에서 꺼낸다
+  const win = await evaluate("JSON.stringify(profiles.find(p=>p.id==='win-rdp'))");
+  assert.match(win, /"os":"windows"/);
+  assert.equal(JSON.parse(win).rdp.port, 3390);
+  assert.equal(JSON.parse(win).jumpHostId, "ssh-main");
+  assert.equal(JSON.parse(win).directSsh, false);
+  assert(!win.includes("rdp-desktop-secret"));
+  assert.deepEqual(JSON.parse(await evaluate("Android.rdpTestCredentials('win-rdp')")), { username: "desktop-user", password: "rdp-desktop-secret", domain: "" });
   assert(await evaluate("profiles.find(p=>p.id==='ssh-main').persist"));
   assert.equal(
     await evaluate("profiles.find(p=>p.id==='ssh-main').persistName"),
@@ -550,6 +574,28 @@ try {
     !remoteRaw().includes("android-updated-password") &&
       !remoteRaw().includes("example.invalid"),
   );
+  // Android 에서 RDP 설정·전용 비밀번호를 바꾸면 데스크톱 형식으로 올린다(새 계정 항목, 다른 서버 계정은 그대로)
+  await saveProfile({
+    id: "win-rdp", name: "Windows server", host: "example.invalid", port: 22, username: "desktop-user", command: "",
+    os: "windows", rdp: { ...desktop.hosts.find((h) => h.id === "win-rdp").rdp, port: 3391, primary: true }, rdpPassword: "rdp-android-secret",
+  });
+  await until(() => {
+    try { return remoteSnapshot().hosts.find((h) => h.id === "win-rdp").rdp.port === 3391; } catch { return false; }
+  }, "Android RDP change was not pushed");
+  await status("synced");
+  {
+    const s2 = remoteSnapshot();
+    const w = s2.hosts.find((h) => h.id === "win-rdp");
+    assert.equal(w.os, "windows");
+    assert.equal(w.rdp.primary, true);
+    assert.equal(w.rdp.auth, "own");
+    assert.equal(w.jumpHostId, "ssh-main");
+    assert.notEqual(w.rdp.credentialId, "rdp-credential");
+    assert.equal(JSON.parse(open(key, s2.vault.items.find((i) => i.id === w.rdp.credentialId), w.rdp.credentialId)).password, "rdp-android-secret");
+    assert(s2.vault.items.some((i) => i.id === "rdp-credential"), "기존 RDP 계정 항목은 남긴다");
+    assert(!remoteRaw().includes("rdp-android-secret"));
+    snapshot = s2;
+  }
   // Desktop writer changes the encrypted snapshot; Android imports with its device-cached vault key.
   snapshot.hosts.find((h) => h.id === "ssh-main").alias = "Desktop updated";
   commitRemote(envelope(snapshot));

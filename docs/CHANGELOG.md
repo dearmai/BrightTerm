@@ -4,6 +4,13 @@
 
 ## 다음 버전 (미배포)
 
+### Android 원격 데스크톱(RDP)
+
+- Android 앱에도 서버 OS 와 원격 데스크톱을 넣었습니다. 서버 편집 → 서버 OS·RDP 설정·허용 상태 확인, 서버 목록 🖥 버튼, 앱 안의 원격 데스크톱 탭(IronRDP, 데스크톱과 같은 고정 버전). 설정은 데스크톱과 같은 형식으로 Git 동기화됩니다.
+- 중계는 Java 로 새로 만들었습니다(RdpGateway: 127.0.0.1 WebSocket·RDCleanPath·X.224·TLS 지문 고정·KEY_USAGE 시 TLS 1.2 RSA 재시도·색 깊이/화면 효과/소리 고치기·접속 단계 표시). 경로는 직접·점프 호스트(JSch 로컬 포워딩)·이 서버의 SSH 터널입니다.
+- 터치패드 방식 마우스(한 손가락 이동·탭 클릭·두 번 탭 후 끌기·두 손가락 탭 오른쪽 클릭·두 손가락 끌기 화면 이동/스크롤·핀치 확대), 소프트 키보드·특수 키·Ctrl+Alt+Del, 텍스트 클립보드 양방향(Android 12+ 붙여넣기 알림이 반복되지 않게 바뀐 뒤에만 읽음), 화면 위 설정 패널, 15비트 → 16비트 자동 다시 연결.
+- 검증: 에뮬레이터(Android 16)에서 `test/e2e-android-rdp.mjs`(설정·허용 상태 확인·인증서 신뢰·연결·터치 동작·소프트 키보드 로그인·클립보드 양방향·설정 저장·15→16비트·탭 닫기), `test/e2e-android-rdp-route.mjs`(점프 호스트·SSH 터널, 경로 SSH 정리), Git 동기화 e2e(Windows 서버 가져오기·RDP 전용 비밀번호 복호화·Android 변경 올리기), 기존 Android e2e, Java 단위 테스트(RdpTest)를 통과했습니다. 실제 Windows(NLA)·실제 휴대폰의 손가락 입력·IME(한글 조합)는 사용자 확인이 필요합니다.
+
 ### macOS Intel(x64) dmg 제외
 
 - `npm run dist:mac` 은 Apple Silicon(arm64) dmg 만 만듭니다. Intel 맥은 소스에서 `make install` 로 설치합니다.

@@ -36,6 +36,9 @@ def terminalAssets = tasks.register('terminalAssets', Copy) {
     from('../../node_modules/@xterm/xterm/lib') { include 'xterm.js' }
     from('../../node_modules/@xterm/xterm/css') { include 'xterm.css' }
     from('../../node_modules/@xterm/addon-fit/lib') { include 'addon-fit.js' }
+    // 원격 데스크톱(IronRDP 웹 클라이언트, WASM 내장) — 데스크톱과 같은 고정 버전
+    from('../../node_modules/@devolutions/iron-remote-desktop') { include 'iron-remote-desktop.js'; into 'ironrdp' }
+    from('../../node_modules/@devolutions/iron-remote-desktop-rdp') { include 'iron-remote-desktop-rdp.js'; into 'ironrdp' }
     into layout.buildDirectory.dir('generated/terminalAssets/vendor')
     doFirst {
         if (!file('../../node_modules/@xterm/xterm/lib/xterm.js').exists())
