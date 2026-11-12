@@ -116,6 +116,8 @@ export class Session {
   private retry = 0
   /** 인증 실패 뒤 정상 접속하기 전까지는 자동 재접속하지 않는다 */
   private authFailed = false
+  /** 직전 실패 원인 — 자동 재접속이 같은 원인으로 거듭 실패하면 진단을 다시 찍지 않는다 */
+  private diagnosedError: string | null = null
   private retryTimer: NodeJS.Timeout | null = null
   private log: SessionLogWriter | null = null
   private lastOutputAt = 0
@@ -186,6 +188,7 @@ export class Session {
 
   async connect(): Promise<void> {
     const h = this.host
+    this.connectLog.beginAttempt()
     this.setState(this.retry ? 'reconnecting' : 'connecting')
     if (h.protocol !== 'local') this.info_(`${this.info.title} (${this.info.target}) 접속 중...`, '90')
     const enc = this.encoding()
@@ -203,7 +206,7 @@ export class Session {
             this.info = { ...this.info, forwards }
             send('session:state', this.info)
           },
-          onDebug: (m) => this.connectLog.add(m),
+          onDebug: (m) => this.connectLog.debug(m),
           onSavePassword: (username, password) => this.savePassword(username, password),
           tmux: this.tmux,
           secret: this.secret
@@ -244,6 +247,7 @@ export class Session {
       t.resize(this.cols, this.rows)
       this.retry = 0
       this.authFailed = false
+      this.diagnosedError = null
       t.on('data', (d: Buffer) => this.onData(d))
       t.on('close', (reason?: string) => this.onClose(reason))
       this.setState('connected')
@@ -258,10 +262,11 @@ export class Session {
       })
     } catch (e) {
       const msg = (e as Error).message || String(e)
-      this.connectLog.add(`오류 원문: ${msg}`)
+      this.connectLog.debug(`오류 원문: ${msg}`)
       this.info_(`${h.protocol === 'local' ? '셸 실행 실패' : '접속 실패'}: ${translateError(msg)}`, '31')
       const help = localNetworkHelp(e, h.protocol)
       if (help) this.info_(help, '33')
+      this.showDiagnosis(msg)
       this.transport = null
       // 틀린 인증 정보로는 다시 시도해도 실패하고 계정 잠금만 부른다 — 정상 접속할 때까지 자동 재접속을 막는다
       if (isAuthFailure(e)) this.authFailed = true
@@ -279,6 +284,20 @@ export class Session {
       send('store:changed')
       this.info_('비밀번호를 볼트에 저장했습니다', '90')
     } catch { /* ignore */ }
+  }
+
+  /** 접속 실패 원인 파악용 — 이번 시도의 핵심 디버그 줄(ssh -v 요약)을 터미널에 보인다. 비밀번호·입력 내용은 디버그 줄에 없다 */
+  private showDiagnosis(error: string): void {
+    if (this.host.protocol === 'local') return
+    if (this.diagnosedError === error) {
+      this.emitText('\x1b[90m  (직전과 같은 원인 — 접속 진단 생략. 전체: 탭 메뉴 → 접속 상세 로그)\x1b[0m\r\n')
+      return
+    }
+    const lines = this.connectLog.attemptSummary()
+    if (!lines.length) return
+    this.diagnosedError = error
+    const body = lines.map((l) => `\x1b[90m  debug: ${l.replace(/[\x00-\x1f\x7f]/g, ' ')}\x1b[0m`).join('\r\n')
+    this.emitText(`\r\n\x1b[90m● 접속 진단 (ssh -v 요약 · 전체: 탭 메뉴 → 접속 상세 로그)\x1b[0m\r\n${body}\r\n`)
   }
 
   /** 서버별 설정이 있으면 그것, 없으면 앱 설정으로 이 연결의 출력을 기록한다 */
