@@ -222,6 +222,8 @@ input, textarea, select, button { font: inherit; color: inherit; }
 .node { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 6px; border-radius: 6px; cursor: default; color: var(--text); white-space: nowrap; position: relative; }
 .node:hover { background: var(--bg-hover); }
 .node.selected { background: var(--accent-soft); }
+.tree:focus-visible { outline: none; }
+.tree:focus-visible .node.keyboard-cursor { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-soft); }
 .node.drop { outline: 1px dashed var(--accent); background: var(--accent-soft); }
 .node .chev { width: 14px; color: var(--text-3); flex-shrink: 0; display: grid; place-items: center; }
 .node .n-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }

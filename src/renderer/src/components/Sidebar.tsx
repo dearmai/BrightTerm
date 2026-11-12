@@ -48,6 +48,8 @@ function matches(h: Host, q: string, groups: Group[]): boolean {
 export function Sidebar(): JSX.Element {
   const { groups, hosts, filter, tabs, sessions, settings } = useApp()
   const [selected, setSelected] = useState<string | null>(null)
+  const treeRef = useRef<HTMLDivElement>(null)
+  const [cursor, setCursor] = useState<string | null>(null)
   const [dropOn, setDropOn] = useState<string | null>(null)
   const [width, setWidth] = useState(settings.sidebarWidth)
   const dragging = useRef(false)
@@ -85,6 +87,7 @@ export function Sidebar(): JSX.Element {
   useEffect(() => {
     if (!focusedHost) return
     setSelected(focusedHost)
+    setCursor(`sb-host-${focusedHost}`)
     document.querySelector(`.sidebar [data-host="${focusedHost}"]`)?.scrollIntoView({ block: 'nearest' })
   }, [focusedHost])
 
@@ -143,9 +146,67 @@ export function Sidebar(): JSX.Element {
     ])
   }
 
-  const onKey = (e: React.KeyboardEvent): void => {
-    const h = hosts.find((x) => x.id === selected)
-    if (!h) return
+  // Keep focus on the container because nested row components remount on updates.
+  const rows = (): HTMLElement[] => Array.from(treeRef.current?.querySelectorAll<HTMLElement>('[data-nav]') ?? [])
+  const selectRow = (row: HTMLElement | undefined): void => {
+    if (!row) return
+    setCursor(row.id)
+    setSelected(row.dataset.server ?? null)
+    treeRef.current?.focus({ preventScroll: true })
+    row.scrollIntoView({ block: 'nearest' })
+  }
+  useEffect(() => {
+    const items = rows()
+    if (!items.some((row) => row.id === cursor)) {
+      setCursor((items.find((row) => row.dataset.server === selected) ?? items[0])?.id ?? null)
+    }
+  })
+
+  const onKey = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.target !== e.currentTarget || e.nativeEvent.isComposing || st().menu || st().dialog || st().confirmReq) return
+    const items = rows()
+    const index = items.findIndex((row) => row.id === cursor)
+    const row = items[index]
+    const plain = !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey
+    if (plain && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault()
+      e.stopPropagation()
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
+        : index < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1)
+        : Math.max(0, Math.min(items.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)))
+      selectRow(items[next])
+      return
+    }
+    if (plain && e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      document.getElementById('sidebar-search')?.focus()
+      return
+    }
+    const g = groups.find((g) => g.id === row?.dataset.group)
+    if (plain && ['ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key) && g) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Enter' || e.key === ' ') { if (!e.repeat) st().upsertGroup({ ...g, collapsed: !g.collapsed }) }
+      else if (e.key === 'ArrowRight') {
+        if (g.collapsed && !q) st().upsertGroup({ ...g, collapsed: false })
+        else if (items[index + 1]?.dataset.parent === g.id) selectRow(items[index + 1])
+      } else if (!g.collapsed && !q) st().upsertGroup({ ...g, collapsed: true })
+      else selectRow(items.find((item) => item.dataset.group === g.parentId))
+      return
+    }
+    if (plain && e.key === 'ArrowLeft' && row?.dataset.parent) {
+      e.preventDefault()
+      e.stopPropagation()
+      selectRow(items.find((item) => item.dataset.group === row.dataset.parent))
+      return
+    }
+    const h = hosts.find((h) => h.id === row?.dataset.server)
+    if (!h || e.altKey || !['Enter', 'F2', 'Delete'].includes(e.key)) return
+    if (e.key !== 'Enter' && !plain) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.repeat) return
     if (e.key === 'Enter') st().openHost(h.id, modKey(e) ? 'row' : e.shiftKey ? 'col' : 'tab')
     if (e.key === 'F2') useApp.setState({ dialog: { kind: 'host', host: h } })
     if (e.key === 'Delete') {
@@ -154,6 +215,7 @@ export function Sidebar(): JSX.Element {
   }
 
   const HostNode = ({ h, depth, section }: { h: Host; depth: number; section?: string }): JSX.Element => {
+    const navId = `sb-${section ?? 'host'}-${h.id}`
     const color = hostColor(h, groups)
     const live = liveCount[h.id]
     const forwards = hostForwards[h.id] ?? []
@@ -161,13 +223,21 @@ export function Sidebar(): JSX.Element {
     const forwardTitle = `포트 포워딩 ${forwardHealthLabel[health]} ${forwards.length}개\n` + forwards.map((f) => `${f.type} ${f.bindHost || '127.0.0.1'}:${f.bindPort} → ${f.destHost}:${f.destPort} · ${forwardHealthLabel[forwardHealthStatus(f)]}${f.error || f.healthError ? ` (${f.error || f.healthError})` : ''}`).join('\n')
     return (
       <div
-        className={`node ${selected === h.id && !section ? 'selected' : ''}`}
+        id={navId}
+        data-nav
+        data-server={h.id}
+        data-parent={section ? undefined : h.groupId ?? undefined}
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-selected={cursor === navId}
+        aria-label={h.alias || h.host}
+        className={`node ${selected === h.id && !section ? 'selected' : ''} ${cursor === navId ? 'keyboard-cursor' : ''}`}
         style={{ paddingLeft: 6 + depth * 14 }}
         draggable={!section}
         onDragStart={(e) => e.dataTransfer.setData('bt/host', h.id)}
         data-host={section ? undefined : h.id}
-        onClick={() => {
-          setSelected(h.id)
+        onClick={(e) => {
+          selectRow(e.currentTarget)
           // 이미 그 창이 선택돼 있으면 상태가 안 바뀌어 포커스가 사이드바에 남는다 — 키 입력(특히 Enter=새로 열기)이 새지 않게 터미널로 직접 옮긴다
           if (st().revealHost(h.id)) requestAnimationFrame(() => { const id = st().focusedSession()?.id; if (id) focusSession(id) })
         }}
@@ -209,7 +279,16 @@ export function Sidebar(): JSX.Element {
     return (
       <>
         <div
-          className={`node ${dropOn === g.id ? 'drop' : ''}`}
+          id={`sb-group-${g.id}`}
+          data-nav
+          data-group={g.id}
+          data-parent={g.parentId ?? undefined}
+          role="treeitem"
+          aria-level={depth + 1}
+          aria-expanded={open}
+          aria-selected={cursor === `sb-group-${g.id}`}
+          aria-label={g.name}
+          className={`node ${dropOn === g.id ? 'drop' : ''} ${cursor === `sb-group-${g.id}` ? 'keyboard-cursor' : ''}`}
           style={{ paddingLeft: 6 + depth * 14 }}
           draggable
           onDragStart={(e) => e.dataTransfer.setData('bt/group', g.id)}
@@ -224,7 +303,7 @@ export function Sidebar(): JSX.Element {
             if (hid) moveHost(hid, g.id)
             if (gid) moveGroup(gid, g.id)
           }}
-          onClick={() => st().upsertGroup({ ...g, collapsed: !g.collapsed })}
+          onClick={(e) => { selectRow(e.currentTarget); st().upsertGroup({ ...g, collapsed: !g.collapsed }) }}
           onDoubleClick={(e) => e.preventDefault()}
           onContextMenu={(e) => groupMenu(e, g)}
         >
@@ -263,14 +342,27 @@ export function Sidebar(): JSX.Element {
   }
 
   return (
-    <aside className="sidebar" style={{ width }} onKeyDown={onKey} tabIndex={-1}>
+    <aside className="sidebar" style={{ width }}>
       <div className="sb-head">
         <div className="search">
           <Search size={15} />
-          <input id="sidebar-search" className="input" placeholder="서버 검색" value={filter} onChange={(e) => useApp.setState({ filter: e.target.value })}
+          <input id="sidebar-search" className="input" aria-label="서버 검색" placeholder="서버 검색" value={filter} onChange={(e) => useApp.setState({ filter: e.target.value })}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && visibleHosts[0]) st().openHost(visibleHosts[0].id)
-              if (e.key === 'Escape') useApp.setState({ filter: '' })
+              if (e.nativeEvent.isComposing) return
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                e.stopPropagation()
+                const items = rows()
+                selectRow(e.key === 'ArrowDown' ? items[0] : items[items.length - 1])
+              }
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                e.stopPropagation()
+                if (e.repeat) return
+                const first = rows().find((row) => row.dataset.server)
+                if (first?.dataset.server) st().openHost(first.dataset.server, modKey(e) ? 'row' : e.shiftKey ? 'col' : 'tab')
+              }
+              if (e.key === 'Escape') { e.preventDefault(); useApp.setState({ filter: '' }) }
             }} />
         </div>
         <div className="sb-actions">
@@ -281,6 +373,15 @@ export function Sidebar(): JSX.Element {
       </div>
       <div
         className="tree"
+        ref={treeRef}
+        role="tree"
+        aria-label="서버 목록"
+        aria-activedescendant={cursor ?? undefined}
+        tabIndex={0}
+        onKeyDown={onKey}
+        onFocus={(e) => {
+          if (e.target === e.currentTarget) selectRow(rows().find((row) => row.id === cursor) ?? rows()[0])
+        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           const hid = e.dataTransfer.getData('bt/host')
