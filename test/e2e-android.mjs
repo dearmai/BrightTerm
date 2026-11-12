@@ -160,7 +160,19 @@ try {
   await until(() => evaluate("innerWidth>1000 && getComputedStyle($('sidebar')).display!=='none'"),'Desktop layout did not respond');
   await until(() => lastPty?.cols>100,'PTY did not resize'); assert.equal(connections,1,'Resize reconnected SSH'); screenshot('desktop.png');
   // Activity background / foreground retains the service socket.
-  adb('shell','input','keyevent','KEYCODE_HOME'); await delay(500); adb('shell','am','start','-n',`${pkg}/.MainActivity`);
+  browserSocket.close(); // Verify retention without an attached debugger keeping the process awake.
+  adb('shell','input','keyevent','KEYCODE_HOME');
+  adb('shell','dumpsys','battery','unplug');
+  adb('shell','input','keyevent','KEYCODE_SLEEP');
+  adb('shell','dumpsys','deviceidle','force-idle');
+  await delay(20000);
+  assert.match(adb('shell','dumpsys','activity','service',`${pkg}/.TerminalService`), /sessions: ssh=1 rdp=0 wake=true/);
+  adb('shell','dumpsys','deviceidle','unforce');
+  adb('shell','dumpsys','battery','reset');
+  adb('shell','input','keyevent','KEYCODE_WAKEUP');
+  adb('shell','wm','dismiss-keyguard');
+  adb('shell','am','start','-n',`${pkg}/.MainActivity`);
+  await attach();
   await until(() => evaluate("current()?.state==='connected'"),'Background lost session'); assert.equal(connections,1);
   await until(() => probes>0,'Resume did not check the session'); assert.equal(await evaluate("current().state"),'connected','Healthy session marked stale');
   // Return to same trusted host without asking again, exercising saved encrypted credentials.
@@ -254,6 +266,7 @@ try {
   console.error(error); process.exitCode=1; try { screenshot('failure.png'); } catch {}
 } finally {
   browserSocket?.close();
+  adb('shell','dumpsys','deviceidle','unforce'); adb('shell','dumpsys','battery','reset');
   server?.close();
   adb('shell','am','force-stop',pkg);
   adb('shell','wm','size','reset'); adb('shell','wm','density','reset');

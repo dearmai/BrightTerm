@@ -20,7 +20,10 @@ public class TerminalService extends Service {
         /** 원격 데스크톱 서버 인증서 — 처음 보거나(old null) 바뀌었으면 묻는다 */
         default boolean trustCertificate(String hostPort, String fingerprint, String old) { return false; }
     }
-    private RdpSessions rdp;
+    private volatile RdpSessions rdp;
+    private final Handler lifecycle = new Handler(Looper.getMainLooper());
+    private PowerManager.WakeLock sessionWakeLock;
+    private boolean destroyed;
     /** 원격 데스크톱 연결 — 경로의 SSH 세션을 이 서비스가 쥐고 있어 화면이 다시 만들어져도 유지된다 */
     synchronized RdpSessions rdp() { if (rdp == null) rdp = new RdpSessions(this); return rdp; }
     volatile Listener listener;
@@ -68,24 +71,49 @@ public class TerminalService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(
-            new NotificationChannel("sessions", "SSH 연결", NotificationManager.IMPORTANCE_LOW));
+            new NotificationChannel("sessions", "SSH · RDP 연결", NotificationManager.IMPORTANCE_LOW));
+        sessionWakeLock = ((PowerManager)getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BrightTerm:Sessions");
+        sessionWakeLock.setReferenceCounted(false);
     }
     @Override public IBinder onBind(Intent intent) { return binder; }
+    @Override protected void dump(FileDescriptor fd, PrintWriter writer, String[] args) {
+        writer.println("sessions: ssh=" + sshCount() + " rdp=" + (rdp == null ? 0 : rdp.activeCount())
+            + " wake=" + (sessionWakeLock != null && sessionWakeLock.isHeld()));
+    }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && "disconnect".equals(intent.getAction())) {
             for (Connection c : connections.values()) c.close(); connections.clear();
-            emit("reset", "", ""); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY;
+            if (rdp != null) rdp.closeAll();
+            emit("reset", "", ""); refreshSessions(); return START_NOT_STICKY;
         }
-        updateNotification(); return START_NOT_STICKY;
+        updateNotification(); sessionsChanged(); return START_NOT_STICKY;
     }
+    private int sshCount() {
+        int count = 0;
+        for (Connection c : connections.values()) if (!c.closed) count++;
+        return count;
+    }
+    /** All foreground/wake-lock changes run on the service's main thread. */
+    void sessionsChanged() { lifecycle.post(this::refreshSessions); }
+    private void refreshSessions() {
+        if (destroyed) return;
+        if (sshCount() + (rdp == null ? 0 : rdp.activeCount()) == 0) {
+            if (sessionWakeLock.isHeld()) sessionWakeLock.release();
+            stopForeground(STOP_FOREGROUND_REMOVE); stopSelf();
+        } else updateNotification();
+    }
+    @android.annotation.SuppressLint("WakelockTimeout") // User-owned sessions have no fixed duration; release on last disconnect/failure/destruction.
     private void updateNotification() {
+        if (destroyed) return;
+        int ssh = sshCount(), remote = rdp == null ? 0 : rdp.activeCount();
         Intent open = new Intent(this, MainActivity.class);
         PendingIntent content = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         PendingIntent stop = PendingIntent.getService(this, 1, new Intent(this, TerminalService.class).setAction("disconnect"), PendingIntent.FLAG_IMMUTABLE);
         Notification notification = new Notification.Builder(this, "sessions").setSmallIcon(kr.balkeunter.brightterm.R.drawable.ic_terminal)
-            .setContentTitle("BrightTerm").setContentText("SSH 세션 유지 중 · " + connections.size() + "개")
+            .setContentTitle("BrightTerm").setContentText("연결 유지 중 · SSH " + ssh + "개 · RDP " + remote + "개")
             .setContentIntent(content).setOngoing(true).addAction(new Notification.Action.Builder(null, "모두 연결 끊기", stop).build()).build();
         startForeground(1, notification);
+        if (ssh + remote > 0 && !sessionWakeLock.isHeld()) sessionWakeLock.acquire();
     }
     synchronized void emit(String type, String id, String value) {
         try { Listener l = listener; if (l != null) l.event(new JSONObject().put("type", type).put("id", id).put("value", value)); }
@@ -98,6 +126,7 @@ public class TerminalService extends Service {
         }
     }
     void connect(JSONObject profile, int cols, int rows) {
+        startForegroundService(new Intent(this, TerminalService.class));
         Connection c = new Connection(); c.id = UUID.randomUUID().toString();
         c.name = profile.optString("name", profile.optString("host")); c.cols = cols; c.rows = rows;
         c.profile = profile;
@@ -111,6 +140,8 @@ public class TerminalService extends Service {
         if (c == null || !"disconnected".equals(c.state)) return;
         c.cols = Math.max(2, cols); c.rows = Math.max(1, rows);
         c.closed = false; c.stale = false; c.sftp = "checking"; c.session = null; c.shell = null; c.input = null;
+        startForegroundService(new Intent(this, TerminalService.class));
+        updateNotification();
         c.writes = Executors.newSingleThreadExecutor();
         start(c);
     }
@@ -234,7 +265,7 @@ public class TerminalService extends Service {
             } catch (Exception error) {
                 c.log.add("오류: " + error);
                 if (!c.closed) emit("error", c.id, error.getMessage() == null ? "SSH 연결 실패" : error.getMessage());
-            } finally { c.log.add("상태: disconnected"); c.close(); c.state = "disconnected"; emit("state", c.id, c.state); }
+            } finally { c.log.add("상태: disconnected"); c.close(); c.state = "disconnected"; emit("state", c.id, c.state); sessionsChanged(); }
         });
     }
     /** 다음 줄이 비밀번호로 들어가지 않게 멈출 프롬프트 (sessions.ts SECRET_PROMPT) */
@@ -328,7 +359,7 @@ public class TerminalService extends Service {
     }
     void disconnect(String id) {
         Connection c = connections.remove(id); if (c != null) c.close();
-        if (connections.isEmpty()) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); } else updateNotification();
+        sessionsChanged();
     }
     private ChannelSftp sftp(String id) throws Exception {
         Connection c = connections.get(id);
@@ -401,6 +432,8 @@ public class TerminalService extends Service {
         });
     }
     @Override public void onDestroy() {
+        destroyed = true; lifecycle.removeCallbacksAndMessages(null);
+        if (sessionWakeLock != null && sessionWakeLock.isHeld()) sessionWakeLock.release();
         listener = null; for (Connection c : connections.values()) c.close(); synchronized (this) { if (rdp != null) rdp.closeAll(); } workers.shutdownNow(); super.onDestroy();
     }
 }

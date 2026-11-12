@@ -56,6 +56,8 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         }
         catch (Exception error) { dialogBuilder().setTitle("볼트를 열 수 없습니다").setMessage("기기 암호화 키 또는 저장 파일을 확인하세요. 데이터는 덮어쓰지 않았습니다.").setPositiveButton("닫기", (d,w) -> finish()).show(); return; }
         web = new WebView(this); web.setBackgroundColor(0xff0d1117);
+        // IronRDP runs here, including when the Activity is behind another app.
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setAllowFileAccess(false); web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -107,7 +109,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         // 설정 앱에서 돌아오면 배터리 최적화 상태를 다시 알린다
         if (ready) event(eventOf("battery", "", String.valueOf(batteryUnrestricted())));
     }
-    // 배터리 최적화 예외: 화면을 끄거나 다른 앱으로 가도 Doze 가 SSH 소켓·keepalive 를 끊지 않게 한다
+    // SSH·RDP 공통: 화면을 끄거나 다른 앱으로 가도 Doze 가 소켓·keepalive 를 막지 않도록 요청한다
     private boolean batteryUnrestricted() {
         PowerManager power = (PowerManager)getSystemService(POWER_SERVICE);
         return power != null && power.isIgnoringBatteryOptimizations(getPackageName());
@@ -127,6 +129,13 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         if (batteryUnrestricted() || prefs.getBoolean("battery-asked", false)) return;
         prefs.edit().putBoolean("battery-asked", true).apply();
         requestBattery();
+    }
+    /** UI thread: start protection before a permission/settings window backgrounds us. */
+    private void prepareConnection() {
+        startForegroundService(new Intent(this, TerminalService.class));
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 10);
+        else askBatteryOnce();
     }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
@@ -259,17 +268,37 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         }
         @JavascriptInterface public void rdpOpen(String requestId, String id) {
             // 방금 저장한 설정을 읽도록 저장 작업 뒤에 줄 세운다
-            storage.execute(() -> remote.execute(() -> {
+            storage.execute(() -> {
                 try {
                     TerminalService s = service; if (s == null) throw new IllegalStateException("연결 서비스 준비 중입니다");
                     JSONObject p = vault.find(id);
                     if (!RdpSessions.capable(p)) throw new IllegalArgumentException("서버 OS 가 Windows 인 서버만 원격 데스크톱으로 열 수 있습니다");
-                    String token = s.rdp().open(p, rdpJump(p), rdpCredentials(p), MainActivity.this::trustCertificate,
-                        (t, m) -> event(eventOf("rdp-log", t, m)),
-                        () -> { try { return vault.find(id); } catch (Exception e) { return null; } }, lightTheme);
-                    reply("rdp-open", requestId, new JSONObject().put("token", token).put("title", p.optString("name", p.optString("host"))));
+                    runOnUiThread(() -> {
+                        RdpSessions sessions = s.rdp();
+                        String ticket = sessions.beginOpen();
+                        try {
+                            prepareConnection();
+                            remote.execute(() -> {
+                                try {
+                                    String token = sessions.open(ticket, p, rdpJump(p), rdpCredentials(p), MainActivity.this::trustCertificate,
+                                        (t, m) -> event(eventOf("rdp-log", t, m)),
+                                        () -> { try { return vault.find(id); } catch (Exception e) { return null; } }, lightTheme);
+                                    reply("rdp-open", requestId, new JSONObject().put("token", token).put("title", p.optString("name", p.optString("host"))));
+                                } catch (Exception error) { reply("rdp-open", requestId, failure(error)); }
+                                finally { sessions.endOpen(ticket); }
+                            });
+                        } catch (Exception error) { sessions.endOpen(ticket); reply("rdp-open", requestId, failure(error)); }
+                    });
                 } catch (Exception error) { reply("rdp-open", requestId, failure(error)); }
-            }));
+            });
+        }
+        @JavascriptInterface public void rdpState(String token, String state) {
+            runOnUiThread(() -> {
+                TerminalService s = service; if (s == null) return;
+                boolean active = "connected".equals(state) || "connecting".equals(state);
+                if (s.rdp().state(token, active) && active)
+                    startForegroundService(new Intent(MainActivity.this, TerminalService.class));
+            });
         }
         @JavascriptInterface public String rdpInfo(String token) {
             try {
@@ -361,11 +390,8 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
                     final JSONObject selectedProfile = profile;
                     runOnUiThread(() -> {
                         if (service == null) { fail(new IllegalStateException("연결 서비스 준비 중입니다. 다시 시도하세요.")); return; }
-                        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
-                            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 10);
-                        else askBatteryOnce();
-                        startForegroundService(new Intent(MainActivity.this, TerminalService.class));
                         service.connect(selectedProfile, Math.max(2, cols), Math.max(1, rows));
+                        prepareConnection();
                     });
                 } catch (Exception error) { fail(error); }
             });
@@ -464,7 +490,11 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
     @Override protected void onDestroy() {
         for (CompletableFuture<String> prompt : tmuxPrompts) prompt.complete(null);
         for (CompletableFuture<Boolean> prompt : prompts) prompt.complete(false);
-        if (service != null && service.listener == this) service.listener = null;
+        if (service != null && service.listener == this) {
+            service.listener = null;
+            // The RDP client belongs to this WebView; destroying it ends those sessions.
+            service.rdp().closeAll();
+        }
         if (gitSync != null) gitSync.detach(this);
         if (bound) unbindService(connection);
         if (clipListener != null) ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).removePrimaryClipChangedListener(clipListener);

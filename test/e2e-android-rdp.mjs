@@ -9,6 +9,8 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {mkdirSync,writeFileSync} from 'node:fs';
+import {generateKeyPairSync} from 'node:crypto';
+import ssh2 from 'ssh2';
 
 const serial = process.env.ANDROID_SERIAL;
 assert(serial?.startsWith('emulator-'), 'Set ANDROID_SERIAL to an isolated emulator (never a personal device).');
@@ -76,17 +78,43 @@ async function touchRect() {
   return evaluate(`(() => { const f = ${F}.getBoundingClientRect(), t = ${F}.contentDocument.getElementById('touch').getBoundingClientRect(); return { x: f.x + t.x, y: f.y + t.y, w: t.width, h: t.height }; })()`);
 }
 const touch = (type, points) => cdp('Input.dispatchTouchEvent', {type, touchPoints: points.map((p, i) => ({x: p.x, y: p.y, id: i + 1}))});
+const serviceStatus = () => adb('shell', 'dumpsys', 'activity', 'service', `${pkg}/.TerminalService`);
+const protectedSessions = (ssh, rdp) => serviceStatus().includes(`sessions: ssh=${ssh} rdp=${rdp} wake=${ssh + rdp > 0}`);
+let sshServer;
+let sshTrusted = false;
+const sshClients = new Set();
+async function openSsh() {
+  if (!sshServer) {
+    const key = generateKeyPairSync('rsa', {modulusLength:2048}).privateKey.export({type:'pkcs1', format:'pem'});
+    sshServer = new ssh2.Server({hostKeys:[key]}, client => {
+      sshClients.add(client); client.on('close', () => sshClients.delete(client)); client.on('error', () => {});
+      client.on('authentication', ctx => ctx.method === 'password' && ctx.password === 'background-test' ? ctx.accept() : ctx.reject(['password']));
+      client.on('ready', () => client.on('session', accept => {
+        const s = accept(); s.on('pty', accept => accept()); s.on('sftp', (_, reject) => reject());
+        s.on('exec', accept => { const out = accept(); out.exit(0); out.end(); });
+        s.on('shell', accept => { const out = accept(); out.write('background test\r\n'); out.on('data', d => out.write(d)); });
+      }));
+    });
+    await new Promise(resolve => sshServer.listen(0, '127.0.0.1', resolve));
+  }
+  await evaluate(`Android.connect(JSON.stringify({host:'10.0.2.2',port:${sshServer.address().port},username:'test',password:'background-test',name:'Background SSH'}),80,24); 1`);
+  if (!sshTrusted) { await clickNative('신뢰하고 연결'); sshTrusted = true; }
+  await until(() => evaluate(`[...sessions.values()].some(s => s.state === 'connected')`), 'Mixed SSH did not connect');
+}
 
 const rdp = {mode:'builtin', port:PORT, auth:'host', clipboard:true, resolution:'1280x720', route:'direct', colorDepth:16,
   experience:{wallpaper:false, themes:false, fontSmoothing:false, composition:false, windowDrag:false, animations:false, cursorShadow:false}, audio:'off'};
 const profile = {id:'rdp-e2e', name:'RDP E2E', host:'10.0.2.2', port:22, username:'ubuntu', password:'ubuntu', command:'', os:'windows', rdp};
 
 try {
+  adb('shell', 'cmd', 'statusbar', 'collapse');
   try { podman('rm', '-f', NAME); } catch { /* */ }
   podman('run', '-d', '--name', NAME, '-p', `${PORT}:3389`, '--shm-size=1g', 'docker.io/scottyhardy/docker-remote-desktop:latest');
   try { podman('exec', NAME, 'sh', '-c', 'apt-get update -qq >/dev/null 2>&1; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xclip >/dev/null 2>&1'); } catch { console.log('xclip 설치 실패'); }
   adb('shell', 'am', 'force-stop', pkg);
   adb('shell', 'pm', 'clear', pkg);
+  adb('shell', 'pm', 'grant', pkg, 'android.permission.POST_NOTIFICATIONS');
+  adb('shell', 'dumpsys', 'deviceidle', 'whitelist', `-${pkg}`);
   adb('shell', 'am', 'start', '-W', '-n', `${pkg}/.MainActivity`);
   await attach();
   await evaluate(`Android.save(${JSON.stringify(JSON.stringify(profile))}); 1`);
@@ -110,6 +138,8 @@ try {
 
   // 2) 목록의 RDP 버튼 → 인증서 신뢰 → 원격 데스크톱 탭
   await evaluate(`[...$('hosts').querySelectorAll('.edit.rdp')].find(b => b.title.includes('원격 데스크톱')).click(); 1`);
+  await clickNative('Allow');
+  await until(() => evaluate('Android.batteryUnrestricted()'), 'First RDP did not request battery exemption');
   await clickNative('신뢰하고 접속');
   await until(() => evaluate(`!!${F}`), 'RDP tab did not open');
   await until(() => inFrame(`window.rdpTest?.phase === 'connected'`), 'RDP did not connect', 60000);
@@ -120,6 +150,13 @@ try {
   console.log('connected, colors:', colors, steps);
   assert.equal(await evaluate(`document.querySelector('.tab.rdp-tab.active')?.dataset.state`), 'connected');
   screenshot('rdp-connected.png');
+  await until(() => protectedSessions(0, 1), 'RDP-only service/wake lock missing');
+
+  // Last SSH closing must not stop protection for the remaining RDP session.
+  await openSsh();
+  await until(() => protectedSessions(1, 1), 'Mixed sessions not counted');
+  await evaluate(`for (const id of [...sessions.keys()]) { Android.disconnect(id); sessions.get(id).term.dispose(); sessions.get(id).pane.remove(); sessions.get(id).tab.remove(); sessions.delete(id); } select('rdp:' + decodeURIComponent(document.querySelector('.rdp-frame').src.split('t=')[1])); 1`);
+  await until(() => protectedSessions(0, 1), 'Closing last SSH stopped RDP protection');
 
   // 3) 터치패드 — 캔버스가 받는 마우스 단추를 기록한다
   await inFrame(`(() => { window.__btn = []; const c = document.querySelector('iron-remote-desktop').shadowRoot.querySelector('canvas'); c.addEventListener('mousedown', e => window.__btn.push(e.button)); return 1; })()`);
@@ -172,6 +209,22 @@ try {
   await delay(4000);
   screenshot('rdp-session.png');
   console.log('xrdp session', display);
+  await inFrame(`(window.__backgroundSession = rdpTest.ui, 1)`);
+  socket.close(); // A debugger must not keep the background renderer alive for the test.
+  adb('shell', 'input', 'keyevent', 'KEYCODE_HOME');
+  adb('shell', 'dumpsys', 'battery', 'unplug');
+  adb('shell', 'input', 'keyevent', 'KEYCODE_SLEEP');
+  adb('shell', 'dumpsys', 'deviceidle', 'force-idle');
+  await delay(20000);
+  assert(protectedSessions(0, 1), 'Screen-off/Doze lost RDP service/wake lock');
+  adb('shell', 'dumpsys', 'deviceidle', 'unforce');
+  adb('shell', 'dumpsys', 'battery', 'reset');
+  adb('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP');
+  adb('shell', 'wm', 'dismiss-keyguard');
+  adb('shell', 'am', 'start', '-W', '-n', `${pkg}/.MainActivity`);
+  await attach();
+  assert.equal(await inFrame(`rdpTest.phase === 'connected' && rdpTest.ui === window.__backgroundSession`), true, 'RDP reconnected or lost its session in background');
+  console.log('RDP retained across screen-off/Doze without debugger');
 
   // 5) 클립보드 — 원격 → 이 기기, 이 기기 → 원격
   // 원격 세션의 X 는 그 사용자(ubuntu)로만 열린다
@@ -203,6 +256,7 @@ try {
   // 7) 탭 닫기 → 15비트 멈춤 흉내 → 16비트 자동 다시 연결
   await evaluate(`rdpCloseTab([...document.querySelectorAll('.rdp-frame')][0].src.split('t=')[1] && decodeURIComponent([...document.querySelectorAll('.rdp-frame')][0].src.split('t=')[1]), false); 1`);
   await until(() => evaluate(`!document.querySelector('.rdp-frame')`), 'RDP tab did not close');
+  await until(() => protectedSessions(0, 0), 'Last RDP close leaked wake lock');
   await evaluate(`Android.rdpTestStall(true); Android.save(JSON.stringify({ ...${JSON.stringify(profile)}, rdp: { ...${JSON.stringify(rdp)}, colorDepth: 15 } })); 1`);
   await until(() => evaluate(`profiles.find(p => p.id === 'rdp-e2e')?.rdp?.colorDepth === 15`), '15-bit profile not saved');
   await evaluate(`openRdp(profiles.find(p => p.id === 'rdp-e2e')); 1`);
@@ -211,8 +265,33 @@ try {
   assert.equal(await evaluate(`profiles.find(p => p.id === 'rdp-e2e').rdp.colorDepth`), 15, '저장한 설정은 15비트 그대로');
   console.log('15→16 fallback ok');
   await evaluate(`Android.rdpTestStall(false); 1`);
-  await evaluate(`rdpCloseTab(decodeURIComponent(document.querySelector('.rdp-frame').src.split('t=')[1]), false); 1`);
+  // Disconnect/reconnect without closing the tab must release/reacquire protection.
+  await inFrame(`(document.getElementById('disconnect').click(), 1)`);
+  await until(() => protectedSessions(0, 0), 'RDP disconnect leaked wake lock');
+  await inFrame(`(document.getElementById('disconnect').click(), 1)`);
+  await until(() => inFrame(`rdpTest.phase === 'connected'`), 'RDP reconnect failed');
+  await until(() => protectedSessions(0, 1), 'RDP reconnect did not reacquire wake lock');
+  await openSsh();
+  await until(() => protectedSessions(1, 1), 'Mixed reconnect not counted');
+  adb('shell', 'cmd', 'statusbar', 'expand-notifications');
+  await until(async () => {
+    adb('shell', 'uiautomator', 'dump', '/sdcard/bt-rdp.xml');
+    const xml = adb('shell', 'cat', '/sdcard/bt-rdp.xml');
+    const start = xml.indexOf('text="BrightTerm"');
+    if (start < 0) return false;
+    const node = xml.slice(start).match(/resource-id="android:id\/expand_button"[^>]*content-desc="Expand"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+    if (!node) return xml.includes('text="모두 연결 끊기"');
+    adb('shell', 'input', 'tap', String((+node[1] + +node[3]) / 2 | 0), String((+node[2] + +node[4]) / 2 | 0));
+    return true;
+  }, 'BrightTerm notification did not expand');
+  await clickNative('모두 연결 끊기');
+  adb('shell', 'cmd', 'statusbar', 'collapse');
+  await until(() => protectedSessions(0, 0), 'Notification disconnect-all leaked sessions/wake lock');
   await until(() => evaluate(`!document.querySelector('.rdp-frame') && !document.querySelector('.rdp-tab')`), 'RDP tab did not close');
+  await evaluate(`Android.save(JSON.stringify({...${JSON.stringify(profile)}, id:'rdp-failure', rdp:{...${JSON.stringify(rdp)}, port:1}})); 1`);
+  await until(() => evaluate(`profiles.some(p => p.id === 'rdp-failure')`), 'Failure profile not saved');
+  await evaluate(`openRdp(profiles.find(p => p.id === 'rdp-failure'))`);
+  await until(() => protectedSessions(0, 0), 'Failed RDP open leaked wake lock');
   console.log('e2e-android-rdp OK');
 } catch (error) {
   console.error(error);
@@ -220,5 +299,9 @@ try {
   process.exitCode = 1;
 } finally {
   socket?.close();
+  try { adb('shell', 'cmd', 'statusbar', 'collapse'); } catch {}
+  try { adb('shell', 'dumpsys', 'deviceidle', 'unforce'); adb('shell', 'dumpsys', 'battery', 'reset'); } catch {}
+  for (const client of sshClients) client.end();
+  sshServer?.close();
   try { podman('rm', '-f', NAME); } catch { /* */ }
 }

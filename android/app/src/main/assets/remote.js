@@ -110,6 +110,7 @@
   window.rdpState = (token, state) => {
     const v = views.get(token);
     if (!v) return;
+    invoke("rdpState", token, state);
     v.state = state;
     v.tab.dataset.state = state === "connected" ? "connected" : state === "connecting" ? "connecting" : "disconnected";
     if (active === "rdp:" + token) $("status").textContent = `${v.name} · ${state} · 원격 데스크톱`;

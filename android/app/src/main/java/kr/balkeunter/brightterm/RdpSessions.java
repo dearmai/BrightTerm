@@ -21,6 +21,20 @@ final class RdpSessions {
     /** 토큰 → 화면에 넘길 정보(비밀번호 포함 — IronRDP 가 CredSSP 에 넣는다) */
     private final Map<String, JSONObject> infos = new ConcurrentHashMap<>();
     private final Map<String, String> hostOf = new ConcurrentHashMap<>();
+    private final java.util.Set<String> opening = ConcurrentHashMap.newKeySet();
+    private final java.util.Set<String> active = ConcurrentHashMap.newKeySet();
+
+    synchronized String beginOpen() {
+        String ticket = java.util.UUID.randomUUID().toString();
+        opening.add(ticket); service.sessionsChanged(); return ticket;
+    }
+    void endOpen(String ticket) { opening.remove(ticket); service.sessionsChanged(); }
+    int activeCount() { return opening.size() + active.size(); }
+    synchronized boolean state(String token, boolean connected) {
+        if (!infos.containsKey(token)) return false;
+        if (connected) active.add(token); else active.remove(token);
+        service.sessionsChanged(); return true;
+    }
     /** 15비트로 멈춘 서버 — 앱을 켜 둔 동안 16비트로 */
     private final Map<String, Integer> depthFallback = new ConcurrentHashMap<>();
 
@@ -91,7 +105,8 @@ final class RdpSessions {
     /**
      * 연결 준비 — 성공하면 토큰. creds: username·password·domain. current: 접속마다 최신 프로필을 읽는다
      */
-    String open(JSONObject profile, JSONObject jump, JSONObject creds, Trust trust, Events events, java.util.function.Supplier<JSONObject> current, boolean light) throws Exception {
+    String open(String ticket, JSONObject profile, JSONObject jump, JSONObject creds, Trust trust, Events events, java.util.function.Supplier<JSONObject> current, boolean light) throws Exception {
+        if (!opening.contains(ticket)) throw new IllegalStateException("원격 데스크톱 연결이 취소되었습니다");
         JSONObject o = options(profile);
         String id = profile.getString("id");
         RdpGateway.Route route = route(profile, jump, m -> { });
@@ -117,14 +132,18 @@ final class RdpSessions {
                 .put("route", route.label()).put("security", check.optString("security"))
                 .put("theme", light ? "light" : "dark")
                 .put("options", view(o));
-            gateway.register(new RdpGateway.Target(token, route, fp, profile.optString("host"), () -> {
-                try {
-                    JSONObject now = current.get();
-                    return patchOf(options(now == null ? profile : now), depthFallback.get(id));
-                } catch (Exception e) { return new JSONObject(); }
-            }, m -> events.log(token, m)));
-            infos.put(token, info); hostOf.put(token, id);
-            handed = true;
+            synchronized (this) {
+                if (!opening.contains(ticket)) throw new IllegalStateException("원격 데스크톱 연결이 취소되었습니다");
+                gateway.register(new RdpGateway.Target(token, route, fp, profile.optString("host"), () -> {
+                    try {
+                        JSONObject now = current.get();
+                        return patchOf(options(now == null ? profile : now), depthFallback.get(id));
+                    } catch (Exception e) { return new JSONObject(); }
+                }, m -> events.log(token, m)));
+                infos.put(token, info); hostOf.put(token, id);
+                active.add(token);
+                handed = true;
+            }
             return token;
         } finally { if (!handed) route.close(); }
     }
@@ -156,6 +175,6 @@ final class RdpSessions {
     void fallback(String token) { String h = hostOf.get(token); if (h != null) depthFallback.put(h, 16); }
     void clearFallback(String hostId) { depthFallback.remove(hostId); }
 
-    void close(String token) { infos.remove(token); hostOf.remove(token); gateway.unregister(token); }
-    void closeAll() { infos.clear(); hostOf.clear(); gateway.closeAll(); }
+    synchronized void close(String token) { infos.remove(token); hostOf.remove(token); active.remove(token); gateway.unregister(token); service.sessionsChanged(); }
+    synchronized void closeAll() { opening.clear(); active.clear(); infos.clear(); hostOf.clear(); gateway.closeAll(); service.sessionsChanged(); }
 }
