@@ -36,3 +36,11 @@ export function reconnectDelay(policy: ReconnectPolicy, attempt: number): number
 export function canReconnect(policy: ReconnectPolicy, attempted: number): boolean {
   return policy.maxAttempts === 0 || attempted < policy.maxAttempts
 }
+
+/** 인증 정보가 틀려 다시 시도해도 같은 결과가 나오는 접속 실패인지 본다. ssh2는 level 을 'client-authentication' 으로 준다 */
+export function isAuthFailure(error: unknown): boolean {
+  const level = (error as { level?: unknown } | null)?.level
+  if (level === 'client-authentication') return true
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return /All configured authentication methods failed|사용자 이름이 입력되지 않았습니다/i.test(message)
+}

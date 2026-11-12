@@ -5,7 +5,7 @@ import * as iconv from 'iconv-lite'
 import type { AdhocTarget, Host, SessionInfo, SessionState, TmuxPick } from '@shared/types'
 import { ENV_COLORS } from '@shared/types'
 import { DEFAULT_SHELL_PROMPT_EXAMPLE } from '@shared/shellPrompt'
-import { resolveReconnectPolicy, reconnectDelay, canReconnect } from '@shared/reconnect'
+import { resolveReconnectPolicy, reconnectDelay, canReconnect, isAuthFailure } from '@shared/reconnect'
 import { hostKeys, mapKeys } from '@shared/terminal'
 import { isMouseReport } from '@shared/mouse'
 import type { Transport } from './transports/types'
@@ -113,6 +113,8 @@ export class Session {
   private rows = 32
   private userClosed = false
   private retry = 0
+  /** 인증 실패 뒤 정상 접속하기 전까지는 자동 재접속하지 않는다 */
+  private authFailed = false
   private retryTimer: NodeJS.Timeout | null = null
   private log: WriteStream | null = null
   private lastOutputAt = 0
@@ -240,6 +242,7 @@ export class Session {
       // 접속하는 동안(tmux 세션 고르기 등) 바뀐 창 크기는 transport 가 없어 전달되지 못했다 — 지금 크기로 맞춘다
       t.resize(this.cols, this.rows)
       this.retry = 0
+      this.authFailed = false
       t.on('data', (d: Buffer) => this.onData(d))
       t.on('close', (reason?: string) => this.onClose(reason))
       this.setState('connected')
@@ -259,6 +262,8 @@ export class Session {
       const help = localNetworkHelp(e, h.protocol)
       if (help) this.info_(help, '33')
       this.transport = null
+      // 틀린 인증 정보로는 다시 시도해도 실패하고 계정 잠금만 부른다 — 정상 접속할 때까지 자동 재접속을 막는다
+      if (isAuthFailure(e)) this.authFailed = true
       this.scheduleReconnect(true)
     }
   }
@@ -415,7 +420,8 @@ export class Session {
     const auto = (host.autoReconnect ?? settings.autoReconnect) && this.host.protocol !== 'serial' && !this.launched
     const policy = resolveReconnectPolicy(settings.reconnectPolicy, host.reconnectPolicy)
     // only auto-retry when a previously working session drops (or retries in progress)
-    if (auto && (!failed || this.retry > 0) && canReconnect(policy, this.retry)) {
+    if (auto && this.authFailed && this.retry > 0) this.info_('인증에 실패해 자동 재접속을 중단합니다. 인증 정보를 확인한 뒤 다시 접속하세요. 정상 접속 후에는 자동 재접속이 다시 동작합니다.', '33')
+    if (auto && !this.authFailed && (!failed || this.retry > 0) && canReconnect(policy, this.retry)) {
       const delay = reconnectDelay(policy, this.retry)
       this.retry++
       const count = policy.maxAttempts ? `${this.retry}/${policy.maxAttempts}` : `${this.retry}회 · 무제한`
@@ -423,7 +429,7 @@ export class Session {
       this.info_(`${delay}초 후 자동 재접속합니다 (${count}). Enter: 즉시 재접속`, '90')
       this.retryTimer = setTimeout(() => { this.retryTimer = null; void this.connect() }, delay * 1000)
     } else {
-      if (auto && this.retry > 0 && !canReconnect(policy, this.retry)) this.info_(`자동 재접속 최대 ${policy.maxAttempts}회에 도달해 중단합니다.`, '33')
+      if (auto && !this.authFailed && this.retry > 0 && !canReconnect(policy, this.retry)) this.info_(`자동 재접속 최대 ${policy.maxAttempts}회에 도달해 중단합니다.`, '33')
       this.retry = 0
       this.setState(failed ? 'error' : 'closed')
       this.info_('Enter 키를 누르면 다시 접속합니다.', '90')
