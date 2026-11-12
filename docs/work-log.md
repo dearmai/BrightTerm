@@ -1,5 +1,42 @@
 # 작업내역서
 
+## 2026-11-12 — 서버 OS 지정과 원격 데스크톱(RDP) 내장 연결
+
+### 요청 및 변경
+
+- 사용자가 서버 설정에 OS 종류를 두고, Windows 이면 RDP 허용 상태를 확인하고 바로 RDP 로 접속하게 해 달라고 요청했다. 연결 방식은 외부 앱(앱 스키마)과 자체 구현 중 자체 구현을 택했고 클립보드 동기화(서버별 설정)까지 요청했다. 이어서 KEY_USAGE_BIT_INCORRECT 오류 수정, 현재 창의 탭으로 열기, 화질·소리 등 추가 옵션과 접속 중 바꿀 수 있는 항목의 화면 위 설정, 접속 멈춤 진단, Cmd 키를 Windows 키로 온전히(⌘Space·⌘Tab 포함), 15비트 실패 시 16비트 자동 재연결, e2e 종료 확인 창 문제, macOS x64 dmg 제외를 요청했다. 파일 복사·붙여넣기는 사용자가 범위에서 뺐다.
+- 서버 OS(Linux·Windows·macOS·Unix·기타)와 RdpOptions 를 Host 의 새 필드(os, rdp)로 두었다. 새 프로토콜을 만들지 않은 것은 Git 동기화가 프로토콜 목록을 검사해 구버전 앱과의 동기화가 깨지기 때문이다.
+- RDP 허용 상태 확인(src/main/rdp/route.ts): TCP → X.224(SSL·HYBRID·HYBRID_EX 요청) → TLS 까지 해 허용 여부·보안 방식·인증서 지문·응답 시간을 보인다. 경로는 직접 / 서버의 점프 호스트·프록시 / 이 서버의 SSH 터널(127.0.0.1:RDP포트)이며, 점프 호스트 연결은 ssh.ts 에서 openRoute() 로 떼어 SSH 와 같이 쓴다.
+- 내장 연결: IronRDP 웹 컴포넌트(@devolutions/iron-remote-desktop 0.11.0, -rdp 0.7.0 고정)를 쓰고, 메인 프로세스에 127.0.0.1 전용 RDCleanPath 중계(직접 만든 RFC6455 WebSocket, 창마다 무작위 토큰)를 두었다. 서버 인증서는 처음 연결할 때 SSH 호스트 키처럼 지문을 확인받아 known hosts 에 저장한다. Windows 자체 서명 인증서(keyUsage 에 digitalSignature 없음)로 BoringSSL 이 KEY_USAGE_BIT_INCORRECT 를 내면 새 연결로 X.224 부터 다시 해 TLS 1.2 RSA 키 교환으로 맺는다.
+- 외부 앱: .rdp 파일(CRLF, 비밀번호 없음)을 mstsc / Windows App / Remmina 로 연다. 점프 호스트·SSH 터널은 이 PC 의 임시 포트로 이어 주고 2분 쉬면 정리한다.
+- 열 곳: 기본은 현재 창의 탭, 서버별로 별도 창. RDP 탭은 분할·패널 이동·모으기에서 빠지고, 연결 중 닫으면 확인한다. 메인 창을 새로 고치면 탭 연결을 정리한다. IronRDP(약 6MB)는 처음 RDP 탭을 열 때 불러온다.
+- 클립보드 동기화(텍스트·이미지)는 서버별로 켜고 끈다. IronRDP 가 ready 뒤 클립보드 권한을 비동기로 확인하는 동안 연결하면 cliprdr 채널이 빠지는 문제를 같은 확인 뒤에 줄 세워 막았다.
+- 화질·소리: IronRDP 웹에 해당 설정이 없어, 중계가 클라이언트의 Connect-Initial(TS_UD_CS_CORE 색 깊이)과 Client Info(performanceFlags·소리 비트)를 길이를 바꾸지 않고 고친다(src/shared/rdp.ts ClientStreamPatcher). 32비트는 고치지 않는다. CredSSP·빠른 경로 입력은 붙잡지 않고 흘리며, 알아보지 못하는 바이트면 손대지 않는다. 소리는 IronRDP 웹에 오디오 출력이 없어 내장은 원격 재생/재생 안 함만, 외부 앱은 audiomode 로 이 PC 재생도 고른다.
+- 화면 위 설정 패널: 화면 맞춤·해상도·배율(Display Control)·키보드 문자 입력·클립보드는 바로, 화질 프리셋·색 깊이·화면 효과 7가지·소리는 "다시 연결해 적용". 바꾼 값은 서버 설정에 저장한다. 서버 편집 화면에도 같은 항목을 두었다.
+- 연결 진행 단계 표시: 서버 연결 → 협상·TLS → NLA → MCS 연결 요청·도메인·사용자·채널 → 로그온 정보 → Confirm Active 를 "연결 중" 카드에 보이고 20초가 지나면 멈춘 단계별 안내를 보인다. 사용자가 보낸 화면으로 15비트 직후 멈춤을 찾았다.
+- 15비트 자동 대체: 10초 안에 로그온 정보까지 못 가거나 끊기면 16비트로 다시 연결하고 안내한다. 앱을 켜 둔 동안 그 서버는 16비트로 접속하고 저장한 설정은 그대로 둔다.
+- 키 입력(macOS): 원격 화면에 포커스가 있으면 앱 메뉴 단축키(setIgnoreMenuShortcuts)와 앱 단축키를 끄고, 창이 앞에 있는 동안 SkyLight CGSSetGlobalHotKeyOperatingMode 로 시스템 단축키(⌘Tab·⌘Space·Mission Control 등)를 끈다(koffi 2.16.3 고정, MIT). 포커스가 빠지거나 창이 뒤로 가거나 앱이 끝나면 되돌린다. ⌘ 를 누른 동안 macOS 가 다른 키의 keyup 을 보내지 않아 그 키는 바로 뗀 것으로 보낸다. koffi 를 못 부르면 ⌘Space 등 4개 조합만 전역 단축키로 잡는다.
+- 패키징: koffi 는 macOS 패키지에만 빌드 아키텍처의 바이너리를 넣고(asarUnpack) Windows·Linux 패키지에서는 뺀다. macOS dmg 는 arm64 만 만든다(Intel 은 make install). THIRD_PARTY_NOTICES 를 다시 만들었다(IronRDP·koffi).
+- e2e 종료: 연결이 남은 채 app.close() 를 부르면 종료 확인 창에 막혀 앱이 남던 문제를 test/close-app.mjs(_forceClose 표시 후 닫고 8초 안에 안 닫히면 종료)로 고쳐 RDP·SSH e2e 9개에 적용했다.
+- main 에 기능별로 커밋하고 origin/main 으로 푸시한다.
+
+### 직접 검증한 결과
+
+- npm run typecheck 통과, npm run build 성공. test/rdp.test.mjs 10개 통과(X.224·DER 왕복·.rdp 파일·WebSocket 프레임·색 깊이·Client Info 고치기·프리셋·조각난 흐름 패처).
+- podman xrdp(TLS, NLA 없음) e2e 통과: e2e-rdp-podman(확인·인증서 신뢰·로그인·화면·키 입력·클립보드 양방향·서버별 끔), e2e-rdp-ui(편집 화면·메뉴·배지·더블클릭 → 탭 연결·탭 너비·분할 단축키 무시·원격 입력 중 앱 단축키 차단과 시스템 단축키 모드 0↔1·탭 닫기 확인·별도 창·새로 고침 뒤 재연결), e2e-rdp-route-podman(점프 호스트·SSH 터널·경로 SSH 정리), e2e-rdp-options-podman(16비트·효과 끔·소리 끔을 중계가 고친 기록과 화면, 설정 패널 저장, 화질 변경 후 32비트·저장한 해상도로 재연결, 15비트 멈춤 흉내 → 16비트 자동 재연결과 저장값 유지).
+- KEY_USAGE: keyUsage=keyEncipherment,dataEncipherment 인증서의 테스트 서버로 첫 시도 실패·RSA 재시도 성공을 재현했다.
+- xrdp 에서 15·24비트도 IronRDP 가 정상으로 그렸다. 패키지(--dir)에서 arm64 앱은 arm64 koffi 만 포함하고 로드됨을 확인했다(x64 제외 전 빌드에서 x64 앱의 로드도 확인).
+- 회귀: e2e-ssh-config-podman 통과. e2e-ksh-podman 은 변경 전 코드에서도 같은 지점에서 실패해 기존 문제로 기록한다.
+
+### 사용자 확인 결과
+
+- 실제 Windows(Win11, NLA, 점프 호스트 경유)에서 허용 상태 확인·내장 연결이 됐다. 15비트는 접속이 멈췄고 16·32비트는 성공했다. 15→16 자동 재연결, ⌘Tab·⌘Space 를 포함한 키 입력, 탭·설정 등 "전부 잘된다"고 확인했다.
+
+### 검증 범위
+
+- 접속 중 해상도 변경은 테스트용 xrdp(0.9.24·xorgxrdp 0.9.19)에 반영되지 않아 직접 확인하지 못했다(다시 연결하면 적용은 확인). 배율·소리·화면 효과가 Windows 에 실제 적용되는지, 24비트, 외부 앱 실행(mstsc·Windows App·Remmina)은 별도로 확인하지 않았다.
+- xrdp 로그인 창 등 일부 비트맵이 비스듬히 그려지는 IronRDP 표시 문제가 있다. Windows·Linux 에서 BrightTerm 을 실행하는 경우의 Windows 키 처리는 손대지 않았다. dmg·서명 패키지는 만들지 않았다(--dir 만).
+
 ## 2026-11-12 — .ssh/config 기본 Host 이름을 서버 이름 그대로
 
 ### 요청 및 변경
