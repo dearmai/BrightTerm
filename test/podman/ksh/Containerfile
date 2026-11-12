@@ -1,0 +1,19 @@
+# BrightTerm ksh 호환성 검증용 OpenSSH 서버
+# - kshuser: /bin/ksh (ksh93u+m), mkshuser: /bin/mksh (pdksh 계열)
+# - 22: SFTP 서브시스템 사용, 2222: SFTP 서브시스템 없음 (셸 명령 파일 관리 경로)
+FROM docker.io/library/debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssh-server ksh mksh tmux procps \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /run/sshd \
+ && grep -qx /bin/ksh /etc/shells || echo /bin/ksh >> /etc/shells
+COPY sshd-test.conf /etc/ssh/sshd_config.d/test.conf
+COPY sshd-nosftp.conf /etc/ssh/sshd_nosftp_config
+COPY start.sh /usr/local/bin/bt-start
+RUN chmod 755 /usr/local/bin/bt-start \
+ && useradd -m -s /bin/ksh kshuser \
+ && useradd -m -s /bin/mksh mkshuser \
+ && echo 'kshuser:KshPass!1' | chpasswd \
+ && echo 'mkshuser:KshPass!1' | chpasswd
+EXPOSE 22 2222
+CMD ["/usr/local/bin/bt-start"]

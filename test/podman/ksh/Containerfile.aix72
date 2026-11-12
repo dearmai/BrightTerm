@@ -1,0 +1,32 @@
+# BrightTerm AIX 7.2 셸 근사 환경 (OpenSSH 서버)
+# AIX 7.2 실제 셸:  /usr/bin/ksh   = ksh88 "Version M-11/16/88f" (공개 소스 없음 → 재현 불가)
+#                  /usr/bin/ksh93 = "Version M 93t+ 2009-05-01"
+# 이 이미지:        /usr/bin/ksh93 = Debian ksh 93t+-2 (2009-06) 바이너리, "Version JM 93t+ 2009-05-01" — 같은 릴리스
+#                  /usr/bin/ksh   = pdksh 5.2.14 (ksh88 문법 클론) — ksh88 대용. TMOUT 경고 동작은 ksh88 과 다르다
+# 사용자: aixksh93 (/usr/bin/ksh93), aixksh (/usr/bin/ksh). PS1 은 AIX 사이트에서 흔한 'user@host [경로] '
+FROM docker.io/library/debian:bookworm-slim AS fetch
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
+# snapshot.debian.org 의 파일 해시(sha1)로 고정한다
+RUN curl -fsSL -o /tmp/ksh93t.deb https://snapshot.debian.org/file/33e852ac606817ce16b251fbf7efcf163c377268 \
+ && curl -fsSL -o /tmp/pdksh.deb https://snapshot.debian.org/file/8846e572c9535e6027a3b038c8a79bac8fef31ae \
+ && printf '%s  %s\n' 33e852ac606817ce16b251fbf7efcf163c377268 /tmp/ksh93t.deb 8846e572c9535e6027a3b038c8a79bac8fef31ae /tmp/pdksh.deb | sha1sum -c - \
+ && dpkg-deb -x /tmp/ksh93t.deb /tmp/ksh93t && dpkg-deb -x /tmp/pdksh.deb /tmp/pdksh
+
+FROM docker.io/library/debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssh-server tmux procps \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /run/sshd
+COPY --from=fetch /tmp/ksh93t/bin/ksh93 /usr/bin/ksh93
+COPY --from=fetch /tmp/pdksh/bin/pdksh /usr/bin/ksh
+COPY sshd-test.conf /etc/ssh/sshd_config.d/test.conf
+COPY sshd-nosftp.conf /etc/ssh/sshd_nosftp_config
+COPY start.sh /usr/local/bin/bt-start
+RUN chmod 755 /usr/local/bin/bt-start /usr/bin/ksh93 /usr/bin/ksh \
+ && printf '/usr/bin/ksh\n/usr/bin/ksh93\n' >> /etc/shells \
+ && useradd -m -s /usr/bin/ksh93 aixksh93 \
+ && useradd -m -s /usr/bin/ksh aixksh \
+ && echo 'aixksh93:KshPass!1' | chpasswd \
+ && echo 'aixksh:KshPass!1' | chpasswd
+EXPOSE 22 2222
+CMD ["/usr/local/bin/bt-start"]

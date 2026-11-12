@@ -5,8 +5,9 @@ const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[()]
 /** 경고를 본 뒤 이만큼 잠잠하면 보낸다 — 경고 뒤에 프롬프트가 다시 그려질 시간 */
 const WARNING_QUIET_MS = 3000
 
-/** ksh 가 TMOUT 이 다 되면 내는 경고. 셸이 입력을 기다릴 때만 나온다 (뒤에 프롬프트가 다시 올 수 있음) */
-const TIMEOUT_WARNING = /shell will time out in \d+ seconds\s*[^\n]*$/
+/** ksh 가 TMOUT 이 다 되면 내는 경고. 셸이 입력을 기다릴 때만 나온다 (뒤에 프롬프트가 다시 올 수 있음)
+ *  ksh88(AIX): 'shell will time out in 60 seconds', ksh93: 'shell will timeout in 60 seconds due to inactivity' */
+const TIMEOUT_WARNING = /shell will time ?out in \d+ seconds[^\n]*(?:\n[^\n]*)?$/
 
 /** 끝이 $ # % > 인 줄, 또는 user@host [/경로] 형태(AIX 등의 PS1) — [y/n] 같은 질문과 구분하려고 user@host 까지 본다 */
 const PROMPT = /[$#%>]\s*$|\S+@\S+\s+\[[~/][^\]]*\]\s*$/

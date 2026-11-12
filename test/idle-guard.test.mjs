@@ -30,7 +30,9 @@ test('간격이 지나고 조건이 맞을 때만 보낸다', () => {
 })
 
 test('ksh 경고가 보이면 간격 전이라도 보내되, 입력 중이거나 대체 화면이면 안 보낸다', () => {
-  for (const tail of ['ksh: shell will time out in 60 seconds', '\x07ksh: shell will time out in 60 seconds\r\n', 'shell will time out in 60 seconds\r\n$ ']) {
+  for (const tail of ['ksh: shell will time out in 60 seconds', '\x07ksh: shell will time out in 60 seconds\r\n', 'shell will time out in 60 seconds\r\n$ ',
+    // ksh93u+m 실제 출력 (podman 컨테이너에서 확인)
+    '\r\n\x07shell will timeout in 60 seconds due to inactivity\r\n~ [10]$ ']) {
     const warned = { ...ready, tail, idleMs: 3000 }
     assert.equal(shouldSendIdleCommand(warned), true, JSON.stringify(tail))
     assert.equal(shouldSendIdleCommand({ ...warned, idleMs: 1000 }), false)
