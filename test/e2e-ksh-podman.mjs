@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright-core'
+import { closeApp } from './close-app.mjs'
 import { manualsFor } from '../src/renderer/src/manuals/manual.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -270,7 +271,7 @@ try {
   }
   throw e
 } finally {
-  await app?.close().catch(() => {})
+  await closeApp(app)
   for (const sv of used) spawnSync('podman', ['rm', '-f', sv.name])
   rmSync(data, { recursive: true, force: true })
   rmSync(local, { recursive: true, force: true })

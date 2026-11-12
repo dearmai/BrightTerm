@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron } from 'playwright-core'
+import { closeApp } from './close-app.mjs'
 
 const IMAGE = 'localhost/bt-auth-sshd:test'
 const NAME = `bt-auth-sshd-${process.pid}`
@@ -126,7 +127,7 @@ try {
   if (page) console.error('connect log:\n' + await page.evaluate(() => Object.keys(window.__infos)).then((ids) => ids[0] ? call('session:connectLog', ids[0]) : '').catch(() => ''))
   throw e
 } finally {
-  await app?.close().catch(() => {})
+  await closeApp(app)
   spawnSync('podman', ['rm', '-f', NAME])
   rmSync(data, { recursive: true, force: true })
 }

@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright-core'
+import { closeApp } from './close-app.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const IMAGE = 'localhost/bt-ksh-sshd:test'
@@ -113,7 +114,7 @@ try {
   assert.deepEqual(errors, [])
   console.log('PASS: connect failure diagnosis is shown in the terminal')
 } finally {
-  await app?.close().catch(() => {})
+  await closeApp(app)
   spawnSync('podman', ['rm', '-f', NAME])
   rmSync(data, { recursive: true, force: true })
 }

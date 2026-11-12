@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron } from 'playwright-core'
+import { closeApp } from './close-app.mjs'
 
 const data = mkdtempSync(join(tmpdir(), 'bt-reveal-'))
 const OWN = 'Own-Secret-1!'
@@ -109,6 +110,6 @@ try {
   assert.deepEqual(errors, [])
   console.log('PASS: stored passwords can be revealed in the server editor')
 } finally {
-  await app?.close().catch(() => {})
+  await closeApp(app)
   rmSync(data, { recursive: true, force: true })
 }
