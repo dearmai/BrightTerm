@@ -1,5 +1,33 @@
 # 작업내역서
 
+## 2026-11-12 — ksh 호환성 검증 환경(podman, AIX 7.2 근사)·세션 로그·인증 실패 재접속 정리
+
+### 요청 및 변경
+
+- 사용자가 podman으로 ksh 환경을 만들어 기능 호환성 검증 환경을 구축·검증하도록 요청했고, 작업 중 AIX 7.2에 탑재되는 ksh 버전을 확인해 해당 셸로도 검증하도록 추가 요청했다. 이후 실패한 단위 테스트 대응, 다른 세션에서 넘겨받은 세션 로그 기능과 기존 미커밋 변경을 포함한 커밋·푸시를 요청했다.
+- AIX 7.2 셸 확인: 기본 /usr/bin/ksh(/bin/sh)는 ksh88 "Version M-11/16/88f", /usr/bin/ksh93은 "Version M 93t+ 2009-05-01"이다(공개 자료 기준). ksh88은 공개 소스가 없어 컨테이너로 재현하지 않았다.
+- test/podman/ksh/: Containerfile(리눅스, /bin/ksh=ksh93u+m 1.0.4, /bin/mksh)과 Containerfile.aix72(AIX 7.2 근사, /usr/bin/ksh93=Debian ksh 93t+-2 바이너리 "Version JM 93t+ 2009-05-01", /usr/bin/ksh=pdksh 5.2.14를 ksh88 대용)를 만들었다. 패키지는 snapshot.debian.org 파일 해시로 고정했다. 두 이미지 모두 22번(SFTP 사용)과 2222번(SFTP 서브시스템 없음) sshd를 띄운다.
+- test/e2e-ksh-podman.mjs(npm run test:ksh): 셸마다 자동 실행 명령(ksh 문법), TMOUT 조회, 서버 환경 감지·매뉴얼 추천, 상태 표시줄 지표, SFTP, 유휴 방지(간격 < TMOUT), TMOUT 경고 뒤 동작, SFTP 없는 서버의 셸 명령 파일 관리(특수 문자 이름 5개·300KB 바이너리 왕복·이름 변경·권한·미리보기·삭제), tmux 세션 유지·재연결·종료를 실제 앱으로 확인한다. AIX 근사 이미지는 'user@host [경로] ' PS1을 쓴다.
+- 발견·수정: ksh93(93t+, 93u+m)의 TMOUT 경고 "shell will timeout in 60 seconds due to inactivity"를 유휴 방지가 인식하지 못해 경고 뒤 명령을 보내지 않았다. src/main/idleGuard.ts 정규식을 'time ?out'과 경고 줄 뒤 한 줄(프롬프트)까지 허용하도록 고치고 실제 출력을 단위 테스트에 추가했다.
+- 단위 테스트 Windows 실행 수정: importers는 추적되지 않는 생성 파일 test/.imp.mjs 대신 소스를 직접 읽고, android-run은 WSL 런처 대신 Git for Windows bash를 쓰며, shellfs는 Git Bash 경로 변환 때문에 Windows에서 건너뛴다(같은 코드는 ksh podman E2E로 검증).
+- 세션 로그(다른 세션 brightterm-12에서 구현해 이관): 앱 기본 설정과 서버별 설정(앱 따르기/켜기/끄기, 고급 규칙), 크기·날짜 회전, 개수·기간 보관, 선택적 gzip. 기본값 10MB·날짜 변경 회전·서버당 50개·30일·압축 끔.
+- 인증 실패 재접속(이 세션 시작 전부터 있던 미커밋 변경): 인증 실패 시 정상 접속 전까지 자동 재접속을 중단한다. podman OpenSSH E2E 포함.
+- 커밋을 범위별로 나눴다: daa5d98(인증 실패 재접속, sessions.ts는 해당 부분만 스테이징), 510b3b7(ksh93 경고·ksh podman E2E), 04b0e22(Windows 단위 테스트), eaae7c5(세션 로그), 이 문서 커밋. main에 커밋하고 origin/main으로 푸시한다.
+
+### 직접 검증한 결과
+
+- 최종 작업 트리: npm run typecheck 통과, npm run build 성공, 단위 테스트 87개 중 83 통과·0 실패·4 건너뜀(Windows의 shellfs 2개, 원래 조건부인 지표·실제 tmux 2개).
+- node test/e2e-ksh-podman.mjs: ksh93(93u+m), mksh, aix-ksh93t(93t+ 2009-05-01), aix-ksh88-pdksh 4개 셸에서 36개 항목 통과. 정규식 수정 전에는 ksh93u+m에서 TMOUT 경고 뒤 유휴 방지 명령이 10초 안에 전송되지 않아 실패하는 것을 확인했고, 수정 후 경고 뒤 약 4초에 전송되어 접속이 유지됐다.
+- node test/e2e-auth-reconnect-podman.mjs, test/e2e-session-log.mjs, test/e2e-connect-log.mjs, test/e2e-idle-guard.mjs 통과.
+- 인증 실패 재접속 커밋은 스테이징된 트리만 임시 폴더로 꺼내 tsc와 reconnect 단위 테스트를 통과시킨 뒤 커밋했다.
+
+### 검증 범위
+
+- 실제 AIX 서버와 ksh88은 검증하지 않았다. pdksh는 ksh88 문법 대용일 뿐이며 TMOUT 동작이 다르다(mksh·pdksh는 경고 없이 바로 종료, 실제 ksh88은 경고 후 대기). ksh88 경고 처리는 기존 단위 테스트 문자열로만 확인된다. 93t+ 바이너리는 x86_64 Debian 빌드이며 AIX(POWER) 빌드와 옵션 표시(JM/M)가 다르다.
+- /bin/mksh는 매뉴얼 추천에서 ksh로 분류되지 않는다. 의도 여부는 결정하지 않았고 코드를 바꾸지 않았다.
+- 세션 로그는 이관 세션이 Windows에서 검증했다. macOS·Linux 실행, 실제 날짜 회전, 앱 종료 뒤 남은 파일 압축, 텔넷·시리얼·로컬 E2E는 미검증이다. 기존 로그 사용자에게 30일·50개 보관이 바로 적용되고 이전 형식 로그도 삭제 대상이 되는 업그레이드 영향은 사용자 결정 전이며 마이그레이션을 넣지 않았다.
+- 설치 패키지는 생성하지 않았다. out/·dist/·node_modules/는 커밋하지 않았다.
+
 ## 2026-11-12 — Git 동기화 차이 미리보기 구현
 
 ### 요청 및 변경
