@@ -122,6 +122,81 @@ export interface SessionLogOptions {
   compress: boolean
 }
 
+/** 서버 OS — 사용자가 고른다. windows 면 RDP 설정이 열린다 */
+export type HostOs = 'linux' | 'windows' | 'macos' | 'unix' | 'other'
+
+export const OS_LABELS: Record<HostOs, string> = {
+  linux: 'Linux',
+  windows: 'Windows',
+  macos: 'macOS',
+  unix: 'Unix (AIX·HP-UX 등)',
+  other: '기타·장비'
+}
+
+/** 원격 데스크톱(RDP) — OS 가 windows 인 서버. 서버별로 동기화된다 */
+export interface RdpOptions {
+  /** builtin: BrightTerm 창에서 연다 / external: OS 의 원격 데스크톱 앱(.rdp 파일 — mstsc, Windows App, Remmina) */
+  mode: 'builtin' | 'external'
+  port: number
+  /** 비우면 서버 사용자 이름 */
+  username?: string
+  domain?: string
+  /** host: 서버 계정(비밀번호)을 같이 쓴다 / own: RDP 전용 비밀번호(credentialId) / ask: 매번 묻기 */
+  auth: 'host' | 'own' | 'ask'
+  credentialId?: string | null
+  /** 클립보드 동기화(양방향 — 텍스트·이미지) */
+  clipboard: boolean
+  /** 'window': 창 크기에 맞춤(창 크기를 바꾸면 따라 바뀜), 그 밖에는 '1920x1080' 처럼 고정 */
+  resolution: string
+  /** direct: 이 PC 에서 바로(서버의 점프 호스트·프록시 설정을 따른다) / ssh: 이 서버의 SSH 를 거쳐 터널로 */
+  route: 'direct' | 'ssh'
+  /** 더블클릭·Enter·연결 버튼을 RDP 로 */
+  primary?: boolean
+  /** 내장 연결을 열 곳 — tab: 메인 창의 탭(기본) / window: 별도 창 */
+  openIn?: 'tab' | 'window'
+  // ---- 화질·소리 (접속할 때 정해진다 — 바꾸면 다시 연결해야 적용)
+  /** 색 깊이(비트). 기본 32 */
+  colorDepth?: RdpColorDepth
+  /** 화면 효과 — 끄면 그리는 양이 줄어 느린 회선에서 빨라진다. 없으면 모두 켬 */
+  experience?: Partial<RdpExperience>
+  /** 소리 — local: 이 PC 에서 재생(외부 앱만) / remote: 원격 PC 에서 재생 / off: 재생 안 함. 기본 local(내장은 off 로 처리) */
+  audio?: 'local' | 'remote' | 'off'
+  // ---- 화면·입력 (접속 중에도 RDP 화면 위 막대에서 바꿀 수 있다)
+  /** 화면 맞춤 — fit: 비율 유지해 맞춤 / full: 창에 꽉 채움(늘림) / real: 실제 크기(1:1) */
+  scale?: 'fit' | 'full' | 'real'
+  /** 원격 화면 배율(%) — Display Control 로 원격 Windows 의 DPI 를 바꾼다. 기본 100 */
+  dpi?: number
+  /** 키보드를 문자(유니코드)로 보낸다 — 원격과 이 PC 의 자판 배열이 다를 때. 기본 끔(스캔 코드) */
+  unicodeKeyboard?: boolean
+}
+
+export type RdpColorDepth = 32 | 24 | 16 | 15
+
+export interface RdpExperience {
+  wallpaper: boolean
+  themes: boolean
+  fontSmoothing: boolean
+  composition: boolean
+  windowDrag: boolean
+  animations: boolean
+  cursorShadow: boolean
+}
+
+/** RDP 허용 상태 확인 결과 */
+export interface RdpCheck {
+  /** ok: RDP 응답, closed: 연결 거부, timeout: 응답 없음, refused: 서버가 협상을 거절, error: 그 밖의 오류 */
+  state: 'ok' | 'closed' | 'timeout' | 'refused' | 'error'
+  message: string
+  /** 서버가 고른 보안 — 예: NLA (CredSSP) */
+  security?: string
+  /** 어떤 경로로 확인했는지 — 예: 직접 10.0.0.5:3389 */
+  route: string
+  latencyMs?: number
+  /** TLS 인증서 지문 (SHA256:base64) */
+  fingerprint?: string
+  checkedAt: number
+}
+
 export interface Host {
   id: string
   groupId: string | null
@@ -179,6 +254,10 @@ export interface Host {
   sshConfig?: boolean
   /** ~/.ssh/config 의 Host 이름 — 비우면 별칭에서 만든다 */
   sshConfigName?: string
+  /** 서버 OS — 지정하지 않으면 모름 */
+  os?: HostOs
+  /** 원격 데스크톱 — os 가 windows 일 때 쓴다 */
+  rdp?: RdpOptions
   notes?: string
   favorite?: boolean
   lastUsedAt?: number

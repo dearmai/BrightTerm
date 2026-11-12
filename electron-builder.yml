@@ -14,11 +14,16 @@ files:
   - '!node_modules/@serialport/bindings-cpp/build/**'
   - '!node_modules/node-pty/{src,deps,third_party,scripts,typings}/**'
   - '!node_modules/node-pty/**/*.pdb'
+  # koffi: macOS 시스템 단축키 끄기(원격 데스크톱)에만 쓴다 — macOS 바이너리만 남긴다
+  - '!node_modules/koffi/build/koffi/{freebsd,linux,musl,openbsd,win32,darwin}_*/**'
+  - 'node_modules/koffi/build/koffi/darwin_${arch}/**'
+  - '!node_modules/koffi/{src,vendor,doc,lib}/**'
   - '!test/**'
 asarUnpack:
   - node_modules/@serialport/**
   - node_modules/cpu-features/**
   - node_modules/node-pty/**
+  - node_modules/koffi/**
 npmRebuild: false
 beforePack: scripts/prepare-macos-signing.cjs
 afterPack: scripts/prepare-linux-native.cjs
@@ -37,6 +42,8 @@ extraResources:
   - from: node_modules/electron/dist/LICENSES.chromium.html
     to: legal/LICENSES.chromium.html
 win:
+  files:
+    - '!node_modules/koffi/**'
   # Existing external launch bridges locate BrightTerm.exe.
   executableName: BrightTerm
   target:
@@ -78,6 +85,8 @@ mac:
 dmg:
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
 linux:
+  files:
+    - '!node_modules/koffi/**'
   executableName: brightterm
   syncDesktopName: true
   target: [AppImage, deb]

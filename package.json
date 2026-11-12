@@ -18,7 +18,7 @@
     "start": "electron-vite preview",
     "dist:win": "npm run notices && node scripts/build-bridge.mjs && electron-vite build && electron-builder --win --x64",
     "dist:win:signed": "npm run notices && node scripts/build-bridge.mjs && electron-vite build && electron-builder --win --x64 -c electron-builder.win-signed.yml",
-    "dist:dir":"npm run notices && node scripts/build-bridge.mjs && electron-vite build && electron-builder --win --x64 --dir",
+    "dist:dir": "npm run notices && node scripts/build-bridge.mjs && electron-vite build && electron-builder --win --x64 --dir",
     "dist:mac": "npm run notices && electron-vite build && electron-builder --mac",
     "dist:mac:dir": "npm run notices && electron-vite build && electron-builder --mac --dir",
     "dist:mac:signed": "npm run notices && electron-vite build && electron-builder --mac -c electron-builder.signed.yml",
@@ -36,11 +36,14 @@
   },
   "dependencies": {
     "iconv-lite": "^0.7.3",
+    "koffi": "2.16.3",
     "node-pty": "1.1.0",
     "serialport": "^13.0.0",
     "ssh2": "^1.17.0"
   },
   "devDependencies": {
+    "@devolutions/iron-remote-desktop": "0.11.0",
+    "@devolutions/iron-remote-desktop-rdp": "0.7.0",
     "@types/node": "^22.20.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

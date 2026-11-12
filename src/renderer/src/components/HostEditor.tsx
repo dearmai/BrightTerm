@@ -3,7 +3,7 @@ import { Eye, EyeOff, KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOp
 import { useApp, newHost } from '../state'
 import { api } from '../api'
 import { Modal, Field, Seg, ColorPick, Switch } from './ui'
-import { ENV_COLORS, ENV_LABELS, type Env, type Group, type Host, type InlineJump, type KeyOptions, type ProxyConfig, type ProxyType, type SerialOptions, type TmuxCheck } from '@shared/types'
+import { ENV_COLORS, ENV_LABELS, OS_LABELS, type Env, type HostOs, type Group, type Host, type InlineJump, type KeyOptions, type ProxyConfig, type ProxyType, type SerialOptions, type TmuxCheck } from '@shared/types'
 import { isMac, isWindows } from '../platform'
 
 import { TERMINAL_THEMES } from '../themes'
@@ -15,6 +15,8 @@ import { SessionLogOptionsEditor } from './SessionLogOptionsEditor'
 import { defaultSshName, sshNames, validSshName } from '@shared/sshConfig'
 import type { SshConfigStatus } from '@shared/types'
 import { ENCODINGS, TERMINAL_PRESETS, applyPreset, hostKeys, matchPreset } from '@shared/terminal'
+import { DEFAULT_RDP, rdpCapable } from '@shared/rdp'
+import { RdpOptionsEditor } from './RdpOptionsEditor'
 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
 const DEFAULT_SERIAL: SerialOptions = { path: isWindows ? 'COM1' : '', baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none', enterSends: 'CR', localEcho: false }
@@ -76,7 +78,7 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   const appSessionLogOptions = useApp((s) => s.settings.sessionLogOptions)
   const isNew = !initial
   const [h, setH] = useState<Host>(() => initial ? structuredClone(initial) : newHost(groupId ?? null))
-  const [tab, setTab] = useState<'basic' | 'auth' | 'term' | 'adv' | 'fw'>('basic')
+  const [tab, setTab] = useState<'basic' | 'auth' | 'term' | 'adv' | 'fw' | 'rdp'>('basic')
   const [idleHelpOpen, setIdleHelpOpen] = useState(false)
   const idleHelpRef = useRef<HTMLSpanElement>(null)
   const idleHelpButtonRef = useRef<HTMLButtonElement>(null)
@@ -129,6 +131,8 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   const jumpCred = creds.find((c) => c.id === h.jump?.credentialId)
   // 프록시 — 새 비밀번호는 저장 때 볼트로
   const [pPassword, setPPassword] = useState('')
+  // RDP 전용 비밀번호 — 저장 때 볼트로
+  const [rPassword, setRPassword] = useState('')
   /** 눈 버튼으로 볼트에서 읽어 온 값 — 그대로 저장하면 다시 쓰지 않는다(공유 계정이 갈라지지 않게) */
   const loaded = useRef<Record<string, string>>({})
   const changed = (k: string, v: string): boolean => !!v && v !== loaded.current[k]
@@ -184,8 +188,8 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
     }
   }
 
-  /** run: 저장 뒤 새 탭에서 접속해 그 명령을 입력(tmux 설치) */
-  const save = async (connect = false, run?: string): Promise<void> => {
+  /** run: 저장 뒤 새 탭에서 접속해 그 명령을 입력(tmux 설치). connect 'rdp': 저장 뒤 원격 데스크톱 */
+  const save = async (connect: boolean | 'rdp' = false, run?: string): Promise<void> => {
     setErr('')
     const localName = h.local?.cwd?.trim().replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '로컬 터미널'
     const out = { ...h, alias: h.alias.trim() || (h.protocol === 'serial' ? h.serial?.path ?? 'Serial' : h.protocol === 'local' ? localName : h.host.trim()), host: h.host.trim(), username: h.username.trim() }
@@ -250,13 +254,27 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
         out.proxy.credentialId = meta.id
         await st().refreshCreds()
       }
+      if (out.rdp && out.rdp.auth === 'own' && changed('rPassword', rPassword)) {
+        if (!vault.unlocked) { setTab('rdp'); return setErr('볼트가 잠겨 있어 RDP 비밀번호를 저장할 수 없습니다') }
+        const rid = out.rdp.credentialId
+        const meta = await api.cred.save({
+          id: rid && hosts.filter((x) => (x.rdp?.credentialId === rid || x.credentialId === rid) && x.id !== out.id).length === 0 && rid !== out.credentialId ? rid : undefined,
+          name: `${out.alias} RDP`,
+          kind: 'password',
+          username: out.rdp.username || out.username,
+          password: rPassword
+        })
+        out.rdp = { ...out.rdp, credentialId: meta.id }
+        await st().refreshCreds()
+      }
       if (out.authType === 'ask' || out.authType === 'agent') {
         // keep credential link only if shared explicitly
         if (credMode === 'own') out.credentialId = out.authType === 'agent' ? out.credentialId : null
       }
       st().upsertHost(out)
       close()
-      if (connect || run) st().openHost(out.id, 'tab', run)
+      if (connect === 'rdp') void st().openRdp(out.id)
+      else if (connect || run) st().openHost(out.id, 'tab', run, undefined, true)
     } catch (e) {
       setErr((e as Error).message)
     }
@@ -288,10 +306,11 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
         {err && <span className="left err">{err}</span>}
         <button className="btn" onClick={close}>취소</button>
         <button className="btn" onClick={() => save(false)}>저장</button>
-        <button className="btn primary" onClick={() => save(true)}>저장 후 연결</button>
+        {rdpCapable(h) && <button className="btn" onClick={() => save('rdp')}>저장 후 RDP 연결</button>}
+        <button className="btn primary" onClick={() => save(true)}>{rdpCapable(h) ? '저장 후 터미널 연결' : '저장 후 연결'}</button>
       </>}>
       <div className="mtabs">
-        {([['basic', '기본'], ['auth', '인증'], ['term', '터미널'], ['adv', '고급'], ['fw', '포트 포워딩']] as const).filter(([k]) => (h.protocol === 'ssh' || (k !== 'auth' && k !== 'fw')) && (h.protocol !== 'local' || k !== 'term')).map(([k, l]) => (
+        {([['basic', '기본'], ['auth', '인증'], ['term', '터미널'], ['adv', '고급'], ['fw', '포트 포워딩'], ['rdp', '원격 데스크톱']] as const).filter(([k]) => (h.protocol === 'ssh' || (k !== 'auth' && k !== 'fw')) && (h.protocol !== 'local' || k !== 'term') && (k !== 'rdp' || (h.os === 'windows' && (h.protocol === 'ssh' || h.protocol === 'telnet')))).map(([k, l]) => (
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -360,6 +379,12 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                 </div>
                 <div className="toggle"><div className="t-label"><span>로컬 에코</span><small>장비가 입력한 글자를 돌려주지 않을 때 켜세요</small></div><Switch value={serial.localEcho} onChange={(v) => setSerial({ localEcho: v })} /></div>
               </>
+            )}
+            {(h.protocol === 'ssh' || h.protocol === 'telnet') && (
+              <Field label="서버 OS" hint={h.os === 'windows' ? '원격 데스크톱 탭에서 RDP 허용 상태를 확인하고, 서버 목록 우클릭 → RDP 연결로 바로 엽니다.' : 'Windows 를 고르면 원격 데스크톱(RDP) 설정이 열립니다.'}>
+                <Seg value={h.os ?? ''} onChange={(v) => setH((x) => ({ ...x, os: (v || undefined) as HostOs | undefined, rdp: v === 'windows' && !x.rdp ? { ...DEFAULT_RDP } : x.rdp }))}
+                  options={[{ value: '', label: '지정 안 함' }, ...(Object.keys(OS_LABELS) as HostOs[]).map((k) => ({ value: k, label: OS_LABELS[k] }))]} />
+              </Field>
             )}
             {(h.protocol === 'ssh' || (h.protocol === 'local' && (!isWindows || /wsl(\.exe)?$/i.test(h.local?.shell ?? '')))) && (
               <div className="persist-box">
@@ -674,6 +699,11 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
               </div>}
             </div>}
           </>
+        )}
+
+        {tab === 'rdp' && (
+          <RdpOptionsEditor host={h} onChange={(o) => set('rdp', o)} creds={creds} password={rPassword} onPassword={setRPassword} vaultUnlocked={vault.unlocked}
+            secretInput={(p) => <SecretInput label="RDP 비밀번호" field="password" value={p.value} onChange={p.onChange} credentialId={p.credentialId} onLoaded={(v) => { loaded.current.rPassword = v; setRPassword(v) }} placeholder={p.credentialId ? '••••••••  (저장됨 — 눈 버튼으로 보기)' : '비밀번호'} />} />
         )}
 
         {tab === 'term' && (

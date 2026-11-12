@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import type { CredentialMeta, Group, Host, SessionInfo, Settings, Snippet, StoreData, Transfer, UiRequest, VaultStatus, AdhocTarget, TmuxPick, LaunchItem } from '@shared/types'
+import type { CredentialMeta, Group, Host, RdpCheck, SessionInfo, Settings, Snippet, StoreData, Transfer, UiRequest, VaultStatus, AdhocTarget, TmuxPick, LaunchItem } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { api } from './api'
+import { rdpCapable } from '@shared/rdp'
 import { LayoutNode, PaneNode, uid, panes, splitPane, removePane, grid, Dir, findPane, setPaneColor, setPaneTheme, insertNode, type Side } from './layout'
 import { TERMINAL_THEMES, resolveTerminalTheme } from './themes'
 
@@ -14,7 +15,11 @@ export interface Tab {
   /** 사용자가 탭에 직접 지정한 색 — 없으면 포커스된 패널 색을 따른다 */
   color?: string
   zoomed?: string | null
+  /** 내장 원격 데스크톱 탭 — root 는 자리만 채우는 빈 패널(rdp:<token>)이고 분할·이동 대상이 아니다 */
+  rdp?: RdpTab
 }
+
+export interface RdpTab { token: string; hostId: string; title: string; color?: string; state: 'connecting' | 'connected' | 'closed' }
 
 /** 패널·탭을 다른 탭으로 옮기는 자리 — paneId 가 없으면 그 탭 전체의 side 끝에 */
 export interface DockTarget { tabId: string; paneId?: string; side?: Side }
@@ -41,12 +46,13 @@ export function themeMenu(tabId: string, targets: PaneNode[]): MenuItem[] {
 /** 탭 이름 — 직접 지은 이름이 없으면 포커스된 패널의 서버 이름 */
 export function tabTitle(t: Tab): string {
   const p = findPane(t.root, t.focused) ?? panes(t.root)[0]
+  if (t.rdp) return t.title || t.rdp.title
   return t.title || useApp.getState().sessions[p.sessionId]?.title || '세션'
 }
 
 /** 옮겨 갈 수 있는 다른 탭들을 메뉴 항목으로 — 누르면 그 탭의 오른쪽 끝에 붙는다 */
 export function dockMenu(heading: string, exceptTabId: string | null, onPick: (tabId: string) => void): MenuItem[] {
-  const others = useApp.getState().tabs.filter((t) => t.id !== exceptTabId)
+  const others = useApp.getState().tabs.filter((t) => t.id !== exceptTabId && !t.rdp)
   if (!others.length) return []
   return [{ heading }, ...others.map((t) => ({ label: `${tabTitle(t)}${panes(t.root).length > 1 ? ` (${panes(t.root).length})` : ''}`, onClick: () => onPick(t.id) }))]
 }
@@ -131,8 +137,15 @@ interface State {
   upsertGroup(g: Group): void
   removeGroup(id: string): void
 
-  /** run: 세션 유지 없이 접속해 그 명령만 입력(서버에 tmux 설치 등). tmux 'none': 세션 유지 서버를 일반 접속으로 */
-  openHost(hostId: string, where?: 'tab' | Dir, run?: string, tmux?: TmuxPick): Promise<void>
+  /** run: 세션 유지 없이 접속해 그 명령만 입력(서버에 tmux 설치 등). tmux 'none': 세션 유지 서버를 일반 접속으로.
+   *  '기본 연결을 RDP 로' 서버는 새 탭 열기를 원격 데스크톱으로 바꾼다 — terminal 이면 항상 터미널 */
+  openHost(hostId: string, where?: 'tab' | Dir, run?: string, tmux?: TmuxPick, terminal?: boolean): Promise<void>
+  /** 원격 데스크톱 — 허용 상태를 확인한 뒤 내장 창 또는 외부 앱으로 연다 */
+  openRdp(hostId: string, openIn?: 'tab' | 'window'): Promise<void>
+  setRdpState(token: string, state: RdpTab['state']): void
+  /** RDP 허용 상태 확인 — 결과는 rdpChecks 에(서버 목록 표시) */
+  checkRdp(hostId: string): Promise<RdpCheck | null>
+  rdpChecks: Record<string, RdpCheck>
   /** 이미 열린 세션이 있으면 그 탭·패널로 이동(여러 개면 누를 때마다 다음 것). 없으면 false */
   revealHost(hostId: string): boolean
   /** 포커스된 패널의 서버 id — 사이드바 선택 동기화용 */
@@ -183,6 +196,7 @@ export const useApp = create<State>((set, get) => ({
   tabs: [],
   activeTab: null,
   activity: {},
+  rdpChecks: {},
   transfers: {},
   requests: [],
   confirmReq: null,
@@ -252,12 +266,51 @@ export const useApp = create<State>((set, get) => ({
     })
   },
 
-  async openHost(hostId, where = 'tab', run, tmux) {
+  async openHost(hostId, where = 'tab', run, tmux, terminal) {
+    const h = get().hosts.find((x) => x.id === hostId)
+    if (h && !terminal && where === 'tab' && !run && !tmux && h.rdp?.primary && rdpCapable(h)) return get().openRdp(hostId)
     try {
       const info = await api.session.open({ hostId, run, tmux })
       placeSession(info, where)
     } catch (e) {
       get().toast('error', (e as Error).message)
+    }
+  },
+
+  setRdpState(token, state) {
+    set((s) => ({ tabs: s.tabs.map((t) => (t.rdp?.token === token && t.rdp.state !== state ? { ...t, rdp: { ...t.rdp, state } } : t)) }))
+  },
+
+  async openRdp(hostId, openIn) {
+    const h = get().hosts.find((x) => x.id === hostId)
+    if (!h) return
+    const name = h.alias || h.host
+    get().toast('info', `${name}: 원격 데스크톱 확인 중…`)
+    try {
+      const r = await api.rdp.open(hostId, openIn)
+      set((s) => ({ rdpChecks: { ...s.rdpChecks, [hostId]: r.check } }))
+      if (r.tab) {
+        const pane: PaneNode = { type: 'pane', id: uid(), sessionId: `rdp:${r.tab.token}` }
+        const tab: Tab = { id: uid(), root: pane, focused: pane.id, broadcast: false, rdp: { ...r.tab, state: 'connecting' } }
+        set((s) => ({ tabs: [...s.tabs, tab], activeTab: tab.id }))
+      }
+      if (r.mode === 'external') get().toast('ok', `${name}: 외부 원격 데스크톱 앱으로 열었습니다`)
+    } catch (e) {
+      get().toast('error', (e as Error).message)
+    }
+  },
+
+  async checkRdp(hostId) {
+    const h = get().hosts.find((x) => x.id === hostId)
+    if (!h) return null
+    try {
+      const r = await api.rdp.check(h)
+      set((s) => ({ rdpChecks: { ...s.rdpChecks, [hostId]: r } }))
+      get().toast(r.state === 'ok' ? 'ok' : 'error', `${h.alias || h.host}: ${r.message}${r.security ? ` · ${r.security}` : ''}`)
+      return r
+    } catch (e) {
+      get().toast('error', (e as Error).message)
+      return null
     }
   },
 
@@ -329,6 +382,7 @@ export const useApp = create<State>((set, get) => ({
     if (!tab) return
     const pane = findPane(tab.root, paneId)
     if (!pane) return
+    if (tab.rdp) return get().closeTab(tab.id)
     choice ??= (await get().confirmCloseSessions([pane.sessionId], '패널 닫기')) ?? undefined
     if (!choice) return
     api.session.close(pane.sessionId, choice.killTmux)
@@ -350,6 +404,19 @@ export const useApp = create<State>((set, get) => ({
   async closeTab(tabId, choice) {
     const tab = get().tabs.find((t) => t.id === tabId)
     if (!tab) return
+    if (tab.rdp) {
+      const r = tab.rdp
+      // 여러 탭을 한꺼번에 닫을 때(choice 있음)는 이미 물었다
+      if (!choice && r.state === 'connected' && !(await get().confirm({ title: '탭 닫기', message: `[${r.title}] 원격 데스크톱 연결을 끊고 닫을까요?`, detail: '원격 세션은 서버에 남아 있어 다시 연결하면 이어집니다(로그오프하지 않음).', okText: '닫기', danger: true }))) return
+      set((st) => {
+        const idx = st.tabs.findIndex((t) => t.id === tabId)
+        const tabs = st.tabs.filter((t) => t.id !== tabId)
+        const activeTab = st.activeTab === tabId ? (tabs[Math.min(idx, tabs.length - 1)]?.id ?? null) : st.activeTab
+        return { tabs, activeTab }
+      })
+      api.rdp.close(r.token).catch(() => {})
+      return
+    }
     const ps = panes(tab.root)
     choice ??= (await get().confirmCloseSessions(ps.map((p) => p.sessionId), '탭 닫기')) ?? undefined
     if (!choice) return
@@ -357,7 +424,12 @@ export const useApp = create<State>((set, get) => ({
   },
 
   async confirmCloseSessions(sessionIds, title) {
-    const live = sessionIds.map((id) => get().sessions[id]).filter((x): x is SessionInfo => !!x && x.state === 'connected' && x.protocol !== 'local')
+    const live: { title: string; tmuxSession?: string }[] = sessionIds.map((id) => get().sessions[id]).filter((x): x is SessionInfo => !!x && x.state === 'connected' && x.protocol !== 'local')
+    // 원격 데스크톱 탭(rdp:<token>)
+    for (const id of sessionIds) {
+      const r = id.startsWith('rdp:') ? get().tabs.find((t) => t.rdp && `rdp:${t.rdp.token}` === id)?.rdp : undefined
+      if (r?.state === 'connected') live.push({ title: `${r.title} (원격 데스크톱)` })
+    }
     if (!live.length) return { killTmux: false }
     const message = live.length === 1 ? `[${live[0].title}] 서버와 연결되어 있습니다. 연결을 끊고 닫을까요?` : `서버 연결 ${live.length}개를 모두 끊고 닫을까요?`
     // 서버의 tmux 세션에 붙은 창은 세션을 남겨 둘지 함께 끝낼지 고른다
@@ -414,10 +486,12 @@ export const useApp = create<State>((set, get) => ({
   },
 
   gatherAll() {
-    const all = get().tabs.flatMap((t) => panes(t.root))
+    // 원격 데스크톱 탭은 패널로 합칠 수 없어 그대로 둔다
+    const rdpTabs = get().tabs.filter((t) => t.rdp)
+    const all = get().tabs.filter((t) => !t.rdp).flatMap((t) => panes(t.root))
     if (all.length < 2) return
     const tab: Tab = { id: uid(), root: grid(all), focused: all[0].id, broadcast: false, title: '전체 보기' }
-    set({ tabs: [tab], activeTab: tab.id })
+    set({ tabs: [tab, ...rdpTabs], activeTab: tab.id })
   },
 
   splitToTabs(tabId) {
@@ -438,7 +512,8 @@ export const useApp = create<State>((set, get) => ({
     const s = get()
     const src = s.tabs.find((t) => findPane(t.root, paneId))
     const pane = src && findPane(src.root, paneId)
-    if (!src || !pane) return
+    if (!src || !pane || src.rdp) return
+    if (to !== 'newTab' && s.tabs.find((t) => t.id === to.tabId)?.rdp) return
     if (to === 'newTab' ? src.root.type === 'pane' : to.paneId === paneId) return
     const rest = removePane(src.root, paneId)
     let tabs = s.tabs.flatMap((t) => (t.id !== src.id ? [t] : rest ? [{ ...t, root: rest, focused: t.focused === paneId ? panes(rest)[0].id : t.focused, zoomed: null }] : []))
@@ -458,7 +533,7 @@ export const useApp = create<State>((set, get) => ({
   mergeTab(srcTabId, to) {
     const s = get()
     const src = s.tabs.find((t) => t.id === srcTabId)
-    if (!src || srcTabId === to.tabId || !s.tabs.some((t) => t.id === to.tabId)) return
+    if (!src || src.rdp || srcTabId === to.tabId || !s.tabs.some((t) => t.id === to.tabId && !t.rdp)) return
     const tabs = s.tabs
       .filter((t) => t.id !== srcTabId)
       .map((t) => (t.id === to.tabId ? { ...t, root: insertNode(t.root, to.paneId ?? null, to.side ?? 'right', src.root), focused: src.focused, zoomed: null } : t))
@@ -510,7 +585,7 @@ function placeSession(info: SessionInfo, where: 'tab' | Dir): void {
   const st = useApp.getState()
   useApp.setState((s) => ({ sessions: { ...s.sessions, [info.id]: info } }))
   const pane: PaneNode = { type: 'pane', id: uid(), sessionId: info.id }
-  const tab = st.tabs.find((t) => t.id === st.activeTab)
+  const tab = st.tabs.find((t) => t.id === st.activeTab && !t.rdp)
   if (where === 'tab' || !tab) {
     const t: Tab = { id: uid(), root: pane, focused: pane.id, broadcast: false }
     useApp.setState((s) => ({ tabs: [...s.tabs, t], activeTab: t.id }))

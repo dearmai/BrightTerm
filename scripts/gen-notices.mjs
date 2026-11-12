@@ -7,7 +7,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { dirname, join, relative, sep } from 'path'
 
 const ROOT = process.cwd()
-const RENDERER = ['react', 'react-dom', 'zustand', 'lucide-react', '@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-search', '@xterm/addon-unicode11', '@xterm/addon-web-links', '@xterm/addon-webgl']
+const RENDERER = ['@devolutions/iron-remote-desktop', '@devolutions/iron-remote-desktop-rdp', 'react', 'react-dom', 'zustand', 'lucide-react', '@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-search', '@xterm/addon-unicode11', '@xterm/addon-web-links', '@xterm/addon-webgl']
 
 const seen = new Map() // dir -> pkg
 // 이 PC 에 설치되지 않은 선택 의존성(ssh2 의 cpu-features 등 OS 별 네이티브 모듈) — lock 경로 -> { name, version }
@@ -66,9 +66,14 @@ for (const d of [...Object.keys(root.dependencies), ...RENDERER]) walk(d, ROOT)
 // electron 의 npm 의존성(@electron/get 등)은 설치 도구일 뿐 앱에 들어가지 않는다 — 런타임 고지만
 walk('electron', ROOT, false)
 
+/** 패키지에 라이선스 파일이 없는 것 — scripts/licenses/ 에 원 저장소의 전문을 둔다 */
+const LICENSE_FILES = { '@devolutions/iron-remote-desktop': 'ironrdp.txt', '@devolutions/iron-remote-desktop-rdp': 'ironrdp.txt' }
+
 function licenseText(dir) {
   const f = readdirSync(dir).find((n) => /^(licen[cs]e|copying)(\.|$|-mit)/i.test(n))
-  return f ? readFileSync(join(dir, f), 'utf8').trim() : null
+  if (f) return readFileSync(join(dir, f), 'utf8').trim()
+  const name = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name
+  return LICENSE_FILES[name] ? readFileSync(join(ROOT, 'scripts', 'licenses', LICENSE_FILES[name]), 'utf8').trim() : null
 }
 
 const SEP = '='.repeat(78)

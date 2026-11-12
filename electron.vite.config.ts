@@ -38,7 +38,9 @@ export default defineConfig(({ command }) => {
           '@shared': resolve('src/shared')
         }
       },
-      plugins: [react()]
+      plugins: [react()],
+      // rdp.html: 내장 원격 데스크톱 창 — IronRDP(WASM) 는 이 창에서만 읽는다
+      build: { rollupOptions: { input: { index: resolve('src/renderer/index.html'), rdp: resolve('src/renderer/rdp.html') } } }
     }
   }
 })

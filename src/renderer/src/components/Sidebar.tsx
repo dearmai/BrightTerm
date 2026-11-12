@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, ChevronDown, Folder, FolderOpen, Search, Plus, FolderPlus, Download, Star, Terminal, SquareTerminal, Cpu, Radio, Clock, SplitSquareHorizontal, Play, KeyRound, Layers, ArrowLeftRight } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Search, Plus, FolderPlus, Download, Star, Terminal, SquareTerminal, Cpu, Radio, Clock, SplitSquareHorizontal, Play, KeyRound, Layers, ArrowLeftRight, MonitorUp } from 'lucide-react'
 import { useApp, newHost } from '../state'
 import { ENV_COLORS, ENV_LABELS, type Group, type Host, type SessionForward } from '@shared/types'
 import { panes } from '../layout'
 import { isMac, modKey } from '../platform'
 import { focusSession } from '../terms'
+import { rdpCapable, rdpOptions } from '@shared/rdp'
 import { forwardHealthLabel, forwardHealthStatus, overallForwardHealth } from '../forwardStatus'
 
 export function hostColor(h: Host, groups: Group[]): string | undefined {
@@ -19,6 +20,14 @@ export function hostColor(h: Host, groups: Group[]): string | undefined {
     gid = g.parentId
   }
   return undefined
+}
+
+/** Windows 서버 — 마지막 RDP 허용 상태 확인 결과를 색으로 */
+function RdpBadge({ hostId, primary }: { hostId: string; primary: boolean }): JSX.Element {
+  const check = useApp((s) => s.rdpChecks[hostId])
+  const state = check?.state
+  const title = check ? `RDP: ${check.message}${check.security ? ` · ${check.security}` : ''}\n${check.route} · ${new Date(check.checkedAt).toLocaleTimeString()}` : `원격 데스크톱(RDP) 서버${primary ? ' — 더블클릭하면 RDP 로 엽니다' : ''}\n우클릭 → RDP 허용 상태 확인`
+  return <span className={`n-rdp ${state ? `rdp-${state}` : ''}`} title={title} role="img" aria-label={title}><MonitorUp size={11} /></span>
 }
 
 export function ProtoIcon({ p, size = 14 }: { p: Host['protocol']; size?: number }): JSX.Element {
@@ -116,8 +125,15 @@ export function Sidebar(): JSX.Element {
   const hostMenu = (e: React.MouseEvent, h: Host): void => {
     e.preventDefault()
     setSelected(h.id)
+    const rdp = rdpCapable(h)
+    const primary = rdp && !!h.rdp?.primary
     st().showMenu(e, [
-      { label: '새 탭에서 연결', shortcut: 'Enter', onClick: () => st().openHost(h.id) },
+      ...(rdp ? [
+        { label: '원격 데스크톱(RDP) 연결', shortcut: primary ? 'Enter' : undefined, onClick: () => void st().openRdp(h.id) },
+        ...(rdpOptions(h).mode === 'builtin' ? [{ label: rdpOptions(h).openIn === 'window' ? '원격 데스크톱을 탭으로 열기' : '원격 데스크톱을 별도 창으로 열기', onClick: () => void st().openRdp(h.id, rdpOptions(h).openIn === 'window' ? 'tab' as const : 'window' as const) }] : []),
+        { label: 'RDP 허용 상태 확인', onClick: () => void st().checkRdp(h.id) }
+      ] : []),
+      { label: rdp ? '터미널로 연결' : '새 탭에서 연결', shortcut: primary ? undefined : 'Enter', onClick: () => st().openHost(h.id, 'tab', undefined, undefined, true) },
       { label: '오른쪽으로 분할해 연결', onClick: () => st().openHost(h.id, 'row') },
       { label: '아래로 분할해 연결', onClick: () => st().openHost(h.id, 'col') },
       ...(h.persist && (h.protocol === 'ssh' || h.protocol === 'local') ? [{ label: '세션 유지 없이 연결 (일반 접속)', onClick: () => st().openHost(h.id, 'tab', undefined, 'none') }] : []),
@@ -250,6 +266,7 @@ export function Sidebar(): JSX.Element {
         <span className="proto"><ProtoIcon p={h.protocol} size={13} /></span>
         <span className="n-label">{h.alias || h.host}</span>
         {h.persist && (h.protocol === 'ssh' || h.protocol === 'local') && <span className="n-persist" title="세션 유지(tmux) — 창을 닫아도 안의 프로그램이 계속 돕니다"><Layers size={11} /></span>}
+        {rdpCapable(h) && <RdpBadge hostId={h.id} primary={!!h.rdp?.primary} />}
         <span className="n-sub">{h.protocol === 'serial' ? h.serial?.path : h.protocol === 'local' ? h.local?.cwd?.trim() || '~' : h.host}</span>
         {live ? <span className="n-live"><span className="dot connected" style={{ width: 6, height: 6 }} />{live > 1 ? live : ''}</span> : null}
         {!!forwards.length && <span className={`n-forward forward-health forward-${health}`} role="img" aria-label={`포트 포워딩 ${forwardHealthLabel[health]} ${forwards.length}개`} title={forwardTitle}>
@@ -258,7 +275,8 @@ export function Sidebar(): JSX.Element {
         <span className="n-hover">
           {loginsWithPassword(h) && <button className="ibtn sm" title="SSH 키 등록" onClick={(e) => { e.stopPropagation(); useApp.setState({ dialog: { kind: 'sshKey', hostId: h.id } }) }}><KeyRound size={13} /></button>}
           <button className="ibtn sm" title="분할로 연결" onClick={(e) => { e.stopPropagation(); st().openHost(h.id, 'row') }}><SplitSquareHorizontal size={13} /></button>
-          <button className="ibtn sm" title="연결" onClick={(e) => { e.stopPropagation(); st().openHost(h.id) }}><Play size={13} /></button>
+          {rdpCapable(h) && <button className="ibtn sm" title="원격 데스크톱(RDP) 연결" onClick={(e) => { e.stopPropagation(); void st().openRdp(h.id) }}><MonitorUp size={13} /></button>}
+          <button className="ibtn sm" title={h.rdp?.primary && rdpCapable(h) ? '원격 데스크톱(RDP) 연결' : '연결'} onClick={(e) => { e.stopPropagation(); st().openHost(h.id) }}><Play size={13} /></button>
         </span>
       </div>
     )

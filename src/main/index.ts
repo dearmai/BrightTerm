@@ -21,6 +21,7 @@ import { gitSync } from './gitSync'
 import { applySshHost, scheduleSshConfigSync, sshConfigStatus, syncSshConfig } from './sshConfigSync'
 import { listPublicKeys, installPublicKey, checkTmux } from './sshKeys'
 import { handleLaunch, takeLaunches } from './launch'
+import { registerRdp, rdpCount } from './rdp'
 import { MAX_SNIPPET_FILE_BYTES, mergeSnippets, parseSnippets, serializeSnippets } from './snippetsFile'
 import type { AdhocTarget, CredentialInput, GitSyncConfig, Group, Host, ImportCandidate, StoreData } from '@shared/types'
 
@@ -83,7 +84,8 @@ function createWindow(): void {
   win.webContents.on('will-navigate', (e) => e.preventDefault())
   win.on('close', (e) => {
     const live = [...sessions.sessions.values()].filter((s) => s.info.state === 'connected')
-    const open = live.length
+    // 원격 데스크톱 창도 메인 창과 함께 닫힌다
+    const open = live.length + rdpCount()
     const kept = live.filter((s) => s.info.persist).length
     const w = win as BrowserWindow & { _forceClose?: boolean }
     if (open > 0 && !w._forceClose) {
@@ -519,6 +521,7 @@ app.whenReady().then(() => {
   }
   registerIpc()
   createWindow()
+  registerRdp(win!)
   handleLaunch(launchArgv(process.argv))
   startAutoLock()
   startUpdateCheck()

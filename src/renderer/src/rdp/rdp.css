@@ -1,0 +1,65 @@
+/* 내장 원격 데스크톱 창 */
+.rdp-app { position: relative; display: flex; flex-direction: column; height: 100%; background: #000; }
+.rdp-bar {
+  display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; flex: none;
+  background: var(--bg-2); border-bottom: 1px solid var(--border); color: var(--text); z-index: 3;
+  transition: transform 0.15s ease;
+}
+.rdp-app.full .rdp-bar { position: absolute; top: 0; left: 0; right: 0; box-shadow: var(--shadow); }
+.rdp-bar.hidden { transform: translateY(-100%); }
+.rdp-bar .grow { flex: 1; }
+.rdp-title { white-space: nowrap; }
+.rdp-sub { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rdp-clip { display: inline-flex; color: var(--text-2); }
+.rdp-bar .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-3); }
+.rdp-bar .dot.connected { background: var(--ok); }
+.rdp-bar .dot.connecting { background: var(--warn); }
+.rdp-screen { flex: 1; min-height: 0; overflow: hidden; display: flex; }
+.rdp-screen iron-remote-desktop { flex: 1; display: flex; outline: none; }
+.rdp-overlay {
+  position: absolute; inset: 36px 0 0 0; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); z-index: 4; user-select: text;
+}
+.rdp-app.full .rdp-overlay { inset: 0; }
+.rdp-card {
+  min-width: 320px; max-width: 520px; padding: 18px 20px; border-radius: var(--radius); text-align: center;
+  background: var(--bg-2); border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--text);
+}
+.rdp-card.error { border-color: var(--danger); }
+.rdp-card.login { text-align: left; display: flex; flex-direction: column; gap: 10px; width: 380px; }
+.rdp-card .err { color: var(--danger); font-size: 12.5px; }
+.rdp-warn {
+  position: absolute; top: 44px; right: 12px; max-width: 420px; z-index: 5; padding: 8px 12px; font-size: 12px; cursor: pointer;
+  background: var(--bg-3); border: 1px solid var(--warn); border-radius: var(--radius); color: var(--text);
+}
+
+/* 메인 창의 탭 */
+.tab-view > .rdp-app.in-tab { flex: 1; min-width: 0; border-radius: var(--radius); overflow: hidden; }
+.rdp-app.in-tab.full { position: fixed; inset: 0; z-index: 900; border-radius: 0; }
+
+/* 막대의 설정 패널 */
+.rdp-bar .ibtn.on { color: var(--accent); background: var(--bg-3); }
+.rdp-clip.ibtn { color: var(--text-2); }
+.rdp-settings {
+  position: absolute; top: 40px; right: 10px; z-index: 6; width: 400px; max-width: calc(100% - 20px); max-height: calc(100% - 50px); overflow: auto;
+  padding: 10px 14px 12px; border-radius: var(--radius); background: var(--bg-2); border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--text); font-size: 12.5px;
+}
+.rdp-app.full .rdp-settings { top: 44px; }
+.rdp-set-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.rdp-set-head .muted { font-size: 11.5px; }
+.rdp-set-head .grow { flex: 1; }
+.rdp-set-sec { margin: 10px 0 4px; font-weight: 600; font-size: 12px; color: var(--text-2); border-top: 1px solid var(--border); padding-top: 8px; }
+.rdp-set-sec .muted { font-weight: 400; }
+.rdp-set-row { display: flex; align-items: flex-start; gap: 10px; padding: 4px 0; }
+.rdp-set-label { width: 104px; flex: none; padding-top: 5px; color: var(--text-2); }
+.rdp-set-ctl { flex: 1; min-width: 0; }
+.rdp-set-ctl .select { width: 100%; }
+.rdp-set-ctl .seg { flex-wrap: wrap; }
+.rdp-set-hint { margin-top: 3px; font-size: 11.5px; color: var(--text-3); }
+.rdp-set-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; padding: 2px 0 4px 114px; }
+.rdp-set-checks label { display: flex; align-items: center; gap: 6px; }
+.rdp-set-foot { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin-top: 10px; padding: 8px 10px; border-radius: var(--radius); background: color-mix(in srgb, var(--warn) 14%, var(--bg-2)); }
+.rdp-steps { margin-top: 10px; text-align: left; font-size: 11.5px; color: var(--text-3); font-family: var(--mono, monospace); max-height: 140px; overflow: auto; }
+.rdp-steps .now { color: var(--text); }
+.rdp-slow { margin-top: 10px; font-size: 12px; color: var(--warn); text-align: left; }
+.rdp-capture { font-size: 11.5px; padding: 2px 8px; border-radius: 10px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); white-space: nowrap; }

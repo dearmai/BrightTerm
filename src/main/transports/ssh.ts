@@ -91,29 +91,41 @@ function inlineJumpHost(host: Host): Host {
   }
 }
 
-/** Open an authenticated ssh2 Client for the host (recursively via jump host). */
-export async function openClient(host: Host, ctx: SshContext, depth = 0): Promise<{ client: Client; chain: Client[] }> {
+/**
+ * 이 PC 에서 host 의 port 로 가는 길 — 점프 호스트(SSH forwardOut)나 프록시를 거친 스트림.
+ * 둘 다 없으면 sock 이 없다(호출하는 쪽이 바로 연결). chain 은 다 쓴 뒤 닫아야 하는 베스천 연결
+ */
+export async function openRoute(host: Host, port: number, ctx: SshContext, depth = 0): Promise<{ sock?: NodeJS.ReadableStream & NodeJS.WritableStream; chain: Client[]; via?: string }> {
   if (depth > 4) throw new Error('점프 호스트 체인이 너무 깁니다')
   const chain: Client[] = []
-  let sock: NodeJS.ReadableStream | undefined
-  const saved = host.jumpHostId ? store.get().hosts.find((h) => h.id === host.jumpHostId) : undefined
+  const saved = host.protocol === 'ssh' && host.jumpHostId ? store.get().hosts.find((h) => h.id === host.jumpHostId) : undefined
   // 프록시는 이 PC 에서 나가는 첫 연결에 쓴다 — 점프 호스트에 프록시가 없으면 이 서버의 것을 물려준다
-  const jh = host.jump?.host ? inlineJumpHost(host) : saved && !saved.proxy?.host && host.proxy?.host ? { ...saved, proxy: host.proxy } : saved
-  if (host.jumpHostId && !host.jump?.host && !jh) throw new Error('점프 호스트를 찾을 수 없습니다')
+  const jh = host.protocol === 'ssh' && host.jump?.host ? inlineJumpHost(host) : saved && !saved.proxy?.host && host.proxy?.host ? { ...saved, proxy: host.proxy } : saved
+  if (host.protocol === 'ssh' && host.jumpHostId && !host.jump?.host && !jh) throw new Error('점프 호스트를 찾을 수 없습니다')
   if (!jh && host.proxy?.host) {
     ctx.onInfo?.(`프록시 ${proxyLabel(host.proxy)} 경유 중...`)
-    sock = await proxyConnect(host.proxy, host.host, host.port)
+    return { sock: await proxyConnect(host.proxy, host.host, port), chain, via: `프록시 ${proxyLabel(host.proxy)}` }
   }
-  if (jh) {
-    ctx.onInfo?.(`점프 호스트 ${jh.alias} 경유 중...`)
-    // 베스천에서 입력한 비밀번호를 이 서버 계정에 저장하면 안 된다 — 저장 콜백은 넘기지 않는다
-    const onDebug = ctx.onDebug && ((m: string): void => ctx.onDebug!(`[${jh.alias}] ${m}`))
-    const j = await openClient(jh, { ...ctx, title: jh.alias, onSavePassword: undefined, secret: undefined, onDebug }, depth + 1)
-    chain.push(...j.chain, j.client)
-    sock = await new Promise<ClientChannel>((res, rej) =>
-      j.client.forwardOut('127.0.0.1', 0, host.host, host.port, (err, ch) => (err ? rej(err) : res(ch)))
+  if (!jh) return { chain }
+  ctx.onInfo?.(`점프 호스트 ${jh.alias} 경유 중...`)
+  // 베스천에서 입력한 비밀번호를 이 서버 계정에 저장하면 안 된다 — 저장 콜백은 넘기지 않는다
+  const onDebug = ctx.onDebug && ((m: string): void => ctx.onDebug!(`[${jh.alias}] ${m}`))
+  const j = await openClient(jh, { ...ctx, title: jh.alias, onSavePassword: undefined, secret: undefined, onDebug }, depth + 1)
+  chain.push(...j.chain, j.client)
+  try {
+    const sock = await new Promise<ClientChannel>((res, rej) =>
+      j.client.forwardOut('127.0.0.1', 0, host.host, port, (err, ch) => (err ? rej(err) : res(ch)))
     )
+    return { sock, chain, via: `점프 호스트 ${jh.alias}` }
+  } catch (e) {
+    for (const c of chain.reverse()) try { c.end() } catch { /* */ }
+    throw e
   }
+}
+
+/** Open an authenticated ssh2 Client for the host (recursively via jump host). */
+export async function openClient(host: Host, ctx: SshContext, depth = 0): Promise<{ client: Client; chain: Client[] }> {
+  const { sock, chain } = await openRoute(host, host.port, ctx, depth)
 
   const secret = { ...secretFor(host), ...ctx.secret }
   let username = host.username || secret.username || ''

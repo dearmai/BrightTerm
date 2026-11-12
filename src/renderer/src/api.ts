@@ -1,5 +1,5 @@
 import type {
-  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, GitSyncPreviewResult, Host, ImportCandidate, LaunchItem, LocalPublicKey, ServerEnv, SessionInfo, SessionMetrics, SftpEntry, SshConfigStatus, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
+  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, GitSyncPreviewResult, Host, ImportCandidate, LaunchItem, LocalPublicKey, RdpCheck, ServerEnv, SessionInfo, SessionMetrics, SftpEntry, SshConfigStatus, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
 } from '@shared/types'
 
 interface Bt {
@@ -85,6 +85,11 @@ export const api = {
     status: () => bt.call<SshConfigStatus>('sshconfig:status'),
     sync: () => bt.call<SshConfigStatus>('sshconfig:sync'),
     apply: (host: Host) => bt.call<SshConfigStatus>('sshconfig:apply', host)
+  },
+  rdp: {
+    check: (host: Host) => bt.call<RdpCheck>('rdp:check', host),
+    open: (hostId: string, openIn?: 'tab' | 'window') => bt.call<{ mode: 'builtin' | 'external'; check: RdpCheck; tab?: { token: string; hostId: string; title: string; color?: string } }>('rdp:open', hostId, openIn),
+    close: (token: string) => bt.call<void>('rdp:close', token)
   },
   persist: {
     check: (host: Host) => bt.call<TmuxCheck>('persist:check', host)

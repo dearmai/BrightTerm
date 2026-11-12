@@ -113,6 +113,8 @@ export function runAction(a: Action): boolean {
 function useShortcuts(): void {
   useEffect(() => {
     const h = (e: KeyboardEvent): void => {
+      // 원격 데스크톱 화면에 포커스가 있으면 모든 키를 원격으로 — 앱 단축키를 쓰지 않는다
+      if (document.activeElement?.tagName === 'IRON-REMOTE-DESKTOP') return
       const a = actionOf(e)
       if (a && runAction(a)) {
         e.preventDefault()

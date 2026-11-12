@@ -9,6 +9,7 @@ import { GitSyncIndicator } from './GitSyncIndicator'
 
 function tabInfo(t: Tab): { title: string; color?: string; state: string; count: number; activity: boolean } {
   const st = useApp.getState()
+  if (t.rdp) return { title: tabTitle(t), color: t.color ?? t.rdp.color, state: t.rdp.state, count: 1, activity: false }
   const ps = panes(t.root)
   const fp = findPane(t.root, t.focused) ?? ps[0]
   const s = st.sessions[fp.sessionId]
@@ -48,6 +49,19 @@ export function TitleBar(): JSX.Element {
 
   const menu = (e: React.MouseEvent, t: Tab): void => {
     e.preventDefault()
+    if (t.rdp) {
+      const hostId = t.rdp.hostId
+      st().showMenu(e, [
+        { label: '탭 이름 바꾸기', onClick: async () => { const name = await st().prompt('탭 이름 바꾸기', tabInfo(t).title); if (name !== null) st().updateTab(t.id, { title: name || undefined }) } },
+        { label: '탭 색상', submenu: [{ colors: { value: t.color, onPick: (c) => st().updateTab(t.id, { color: c }) } }] },
+        { separator: true },
+        { label: '같은 서버를 별도 창으로 열기', onClick: () => void st().openRdp(hostId, 'window') },
+        { label: '터미널로 연결', disabled: !st().hosts.some((h) => h.id === hostId), onClick: () => void st().openHost(hostId, 'tab', undefined, undefined, true) },
+        { separator: true },
+        { label: '탭 닫기', shortcut: isMac ? undefined : SC.closePane, danger: true, onClick: () => st().closeTab(t.id) }
+      ])
+      return
+    }
     const n = panes(t.root).length
     // 패널이 여럿이면 포커스된 패널의 서버
     const logSession = (findPane(t.root, t.focused) ?? panes(t.root)[0])?.sessionId

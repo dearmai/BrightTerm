@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Columns2, Rows2, X, Maximize2, Minimize2, FolderTree, RotateCw, Search, ChevronUp, ChevronDown, ImageUp, Radio } from 'lucide-react'
 import { useApp, Tab, dockMenu, themeMenu } from '../state'
 import { LayoutNode, PaneNode, panes, setSizes, type Side } from '../layout'
@@ -9,6 +9,18 @@ import { TERMINAL_THEMES, resolveTerminalTheme } from '../themes'
 import { Welcome } from './Welcome'
 import { SC } from '../platform'
 
+// IronRDP(WASM) 는 크다 — 원격 데스크톱 탭을 처음 열 때 불러온다
+const RdpView = lazy(() => import('../rdp/RdpView').then((m) => ({ default: m.RdpView })))
+
+function RdpTabView({ tab, active }: { tab: Tab; active: boolean }): JSX.Element {
+  const r = tab.rdp!
+  return (
+    <Suspense fallback={<div className="muted" style={{ margin: 'auto' }}>원격 데스크톱 준비 중…</div>}>
+      <RdpView token={r.token} mode="tab" active={active} onState={(s) => useApp.getState().setRdpState(r.token, s)} onClose={() => void useApp.getState().closeTab(tab.id)} />
+    </Suspense>
+  )
+}
+
 export function Workspace(): JSX.Element {
   const tabs = useApp((s) => s.tabs)
   const activeTab = useApp((s) => s.activeTab)
@@ -17,7 +29,7 @@ export function Workspace(): JSX.Element {
       {tabs.length === 0 && <Welcome />}
       {tabs.map((t) => (
         <div key={t.id} className={`tab-view ${t.id === activeTab ? '' : 'hidden'}`}>
-          <TabView tab={t} active={t.id === activeTab} />
+          {t.rdp ? <RdpTabView tab={t} active={t.id === activeTab} /> : <TabView tab={t} active={t.id === activeTab} />}
         </div>
       ))}
     </div>
