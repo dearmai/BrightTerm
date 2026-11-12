@@ -486,3 +486,7 @@ button.ph-forward:focus-visible { outline: 2px solid var(--accent); outline-offs
 .reconnect-policy { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .reconnect-policy:disabled { opacity: .65; }
 .reconnect-policy > .hint { color: var(--text-3); font-size: 11.5px; line-height: 1.6; }
+.session-log-options { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.session-log-options > .hint { color: var(--text-3); font-size: 11.5px; line-height: 1.6; }
+.persist-box .session-log-options .card .toggle { padding: 9px 0; border-bottom: 1px solid var(--border); }
+.persist-box .session-log-options .card .toggle:last-child { border-bottom: none; }

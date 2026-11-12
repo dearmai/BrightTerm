@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Palette, Keyboard, ImageUp, Plug, Shield, Archive, Info, Trash2, FolderOpen, GitBranch } from 'lucide-react'
+import { Palette, Keyboard, ImageUp, Plug, Shield, Archive, Info, Trash2, GitBranch, ScrollText } from 'lucide-react'
 import { GitSyncSettings } from './GitSyncSettings'
 import { ReconnectPolicyEditor } from './ReconnectPolicyEditor'
+import { SessionLogOptionsEditor } from './SessionLogOptionsEditor'
 import { useApp } from '../state'
 import { api } from '../api'
 import { Modal, Field, Toggle, Seg } from './ui'
@@ -10,7 +11,7 @@ import { SHORTCUTS } from './Welcome'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { isMac, SC, osUnlockText } from '../platform'
 
-type Sec = 'look' | 'input' | 'image' | 'conn' | 'security' | 'backup' | 'git-sync' | 'about'
+type Sec = 'look' | 'input' | 'image' | 'conn' | 'log' | 'security' | 'backup' | 'git-sync' | 'about'
 
 export function SettingsDialog({ section }: { section?: string }): JSX.Element {
   const { settings, vault, creds, hosts } = useApp()
@@ -28,6 +29,7 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
     ['input', '입력·붙여넣기', <Keyboard size={15} key="b" />],
     ['image', '이미지·파일 전송', <ImageUp size={15} key="c" />],
     ['conn', '연결', <Plug size={15} key="d" />],
+    ['log', '세션 로그', <ScrollText size={15} key="log" />],
     ['security', '보안·계정', <Shield size={15} key="e" />],
     ['backup', '백업', <Archive size={15} key="f" />],
     ['git-sync', 'Git 동기화', <GitBranch size={15} key="sync" />],
@@ -123,10 +125,18 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
               <div className="card">
                 <Toggle label="끊기면 자동 재접속" desc="연결이 끊어지면 아래 재시도 규칙으로 다시 연결합니다. 서버별 설정으로 덮어쓸 수 있습니다" value={settings.autoReconnect} onChange={(v) => set({ autoReconnect: v })} />
                 <Toggle label="시작할 때 지난 탭·분할 다시 열기" desc="앱을 다시 켜면 닫을 때 열려 있던 탭과 분할 배치로 다시 접속합니다. 세션 유지(tmux)를 켠 창은 하던 화면 그대로 돌아옵니다" value={settings.restoreTabs} onChange={(v) => set({ restoreTabs: v })} />
-                <Toggle label="세션 로그 저장" desc="터미널 출력을 텍스트 파일로 저장합니다 (새 연결부터 적용)" value={settings.sessionLog} onChange={(v) => set({ sessionLog: v })} />
               </div>
               <ReconnectPolicyEditor value={settings.reconnectPolicy} onChange={(reconnectPolicy) => set({ reconnectPolicy })} />
-              <button className="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => api.app.openLogs()}><FolderOpen size={13} />로그 폴더 열기</button>
+            </>
+          )}
+          {sec === 'log' && (
+            <>
+              <div className="card">
+                <Toggle label="세션 로그 저장" desc="모든 서버의 기본값입니다. 서버 편집 → 고급에서 서버별로 켜고 끄거나 규칙을 따로 정할 수 있습니다 (새 연결부터 적용)" value={settings.sessionLog} onChange={(v) => set({ sessionLog: v })} />
+              </div>
+              <h3>기본 로그 규칙</h3>
+              <SessionLogOptionsEditor value={settings.sessionLogOptions} onChange={(sessionLogOptions) => set({ sessionLogOptions })} />
+              <button className="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => set({ sessionLogOptions: DEFAULT_SETTINGS.sessionLogOptions })}>기본값으로</button>
             </>
           )}
           {sec === 'security' && (

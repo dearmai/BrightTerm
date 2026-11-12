@@ -10,6 +10,8 @@ import { TERMINAL_THEMES } from '../themes'
 import { DEFAULT_SHELL_PROMPT_EXAMPLE } from '@shared/shellPrompt'
 import { ReconnectPolicyEditor } from './ReconnectPolicyEditor'
 import { normalizeReconnectPolicy } from '@shared/reconnect'
+import { normalizeSessionLogOptions } from '@shared/sessionLog'
+import { SessionLogOptionsEditor } from './SessionLogOptionsEditor'
 import { ENCODINGS, TERMINAL_PRESETS, applyPreset, hostKeys, matchPreset } from '@shared/terminal'
 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
@@ -30,6 +32,8 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   const { groups, hosts, creds, vault } = useApp()
   const appAutoReconnect = useApp((s) => s.settings.autoReconnect)
   const appReconnectPolicy = useApp((s) => s.settings.reconnectPolicy)
+  const appSessionLog = useApp((s) => s.settings.sessionLog)
+  const appSessionLogOptions = useApp((s) => s.settings.sessionLogOptions)
   const isNew = !initial
   const [h, setH] = useState<Host>(() => initial ? structuredClone(initial) : newHost(groupId ?? null))
   const [tab, setTab] = useState<'basic' | 'auth' | 'term' | 'adv' | 'fw'>('basic')
@@ -574,6 +578,18 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                   options={[{ value: 'app', label: '앱 기본 규칙' }, { value: 'custom', label: '서버별 규칙' }]} />
               </Field>
               <ReconnectPolicyEditor value={h.reconnectPolicy ?? appReconnectPolicy} disabled={!h.reconnectPolicy} onChange={(policy) => set('reconnectPolicy', policy)} />
+            </div>}
+            <Field label="세션 로그 저장" hint="앱 설정 따르기를 고르면 설정 → 세션 로그의 값을 씁니다. 새 연결부터 적용됩니다.">
+              <Seg<'app' | 'on' | 'off'> value={h.sessionLog === undefined ? 'app' : h.sessionLog ? 'on' : 'off'}
+                onChange={(v) => set('sessionLog', v === 'app' ? undefined : v === 'on')}
+                options={[{ value: 'app', label: `앱 설정 따르기 (${appSessionLog ? '켜짐' : '꺼짐'})` }, { value: 'on', label: '켜기' }, { value: 'off', label: '끄기' }]} />
+            </Field>
+            {(h.sessionLog ?? appSessionLog) && <div className="persist-box">
+              <div className="toggle">
+                <div className="t-label"><span>로그 고급 설정</span><small>이 서버만 저장 폴더·형식·회전·보관 규칙을 따로 정합니다. 끄면 앱의 기본 로그 규칙을 따릅니다.</small></div>
+                <Switch value={!!h.sessionLogOptions} onChange={(v) => set('sessionLogOptions', v ? normalizeSessionLogOptions(appSessionLogOptions) : undefined)} />
+              </div>
+              {h.sessionLogOptions && <SessionLogOptionsEditor value={h.sessionLogOptions} onChange={(o) => set('sessionLogOptions', o)} />}
             </div>}
           </>
         )}

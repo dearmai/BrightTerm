@@ -1,5 +1,6 @@
 // Shared types between main / preload / renderer
 import { DEFAULT_RECONNECT_POLICY } from './reconnect'
+import { DEFAULT_SESSION_LOG_OPTIONS } from './sessionLog'
 
 export type Env = 'prod' | 'stage' | 'dev' | 'device' | 'none'
 export type Protocol = 'ssh' | 'telnet' | 'serial' | 'local'
@@ -101,6 +102,26 @@ export interface ReconnectPolicy {
   maxAttempts: number
 }
 
+/** 세션 로그 규칙 — 앱 기본값, 서버별 고급 설정으로 덮어쓸 수 있다 */
+export interface SessionLogOptions {
+  /** 저장 폴더 — 비우면 데이터 폴더/logs. ~ 는 홈 폴더 */
+  dir: string
+  /** text: 색·커서 제어 코드를 뺀 텍스트, raw: 받은 그대로(cat 으로 다시 볼 수 있다) */
+  format: 'text' | 'raw'
+  /** text 형식에서 줄마다 앞에 시각을 붙인다 */
+  timestamp: boolean
+  /** 파일이 이 크기(MB)를 넘으면 새 파일로. 0 = 크기로 나누지 않음 */
+  maxSizeMB: number
+  /** 날짜가 바뀌면 새 파일로 */
+  rotateDaily: boolean
+  /** 서버마다 남길 최근 파일 수. 0 = 제한 없음 */
+  maxFiles: number
+  /** 이 기간(일)보다 오래된 파일은 지운다. 0 = 제한 없음 */
+  retentionDays: number
+  /** 다 쓴 파일을 gzip(.log.gz)으로 압축 */
+  compress: boolean
+}
+
 export interface Host {
   id: string
   groupId: string | null
@@ -135,6 +156,10 @@ export interface Host {
   autoReconnect?: boolean
   /** 없으면 앱의 재시도 규칙을 따른다 */
   reconnectPolicy?: ReconnectPolicy
+  /** 세션 로그 저장 — 지정하지 않으면 앱 설정을 따른다 */
+  sessionLog?: boolean
+  /** 서버별 로그 규칙(고급) — 없으면 앱의 로그 규칙을 따른다 */
+  sessionLogOptions?: SessionLogOptions
   /** 유휴 방지 — 셸 프롬프트에서 이 시간(초) 동안 입출력이 없으면 명령을 보낸다(TMOUT 대응). 없으면 끔. SSH·텔넷만 */
   idleCommandSec?: number
   /** 유휴 방지 명령 — 없으면 date, 빈 문자열이면 Enter 만 */
@@ -196,6 +221,7 @@ export interface Settings {
   uploadCleanupDays: number
   insertPathQuote: boolean
   sessionLog: boolean
+  sessionLogOptions: SessionLogOptions
   bell: boolean
   sidebarWidth: number
   rightPanelWidth: number
@@ -466,6 +492,7 @@ export const DEFAULT_SETTINGS: Settings = {
   uploadCleanupDays: 7,
   insertPathQuote: true,
   sessionLog: false,
+  sessionLogOptions: { ...DEFAULT_SESSION_LOG_OPTIONS },
   bell: false,
   sidebarWidth: 260,
   rightPanelWidth: 340,

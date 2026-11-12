@@ -1,5 +1,4 @@
 import { randomUUID } from 'crypto'
-import { createWriteStream, WriteStream, mkdirSync } from 'fs'
 import { join } from 'path'
 import * as iconv from 'iconv-lite'
 import type { AdhocTarget, Host, SessionInfo, SessionState, TmuxPick } from '@shared/types'
@@ -22,6 +21,8 @@ import { ConnectLog } from './connectLog'
 import { persistSupported, startupPlan, tmuxMouse, tmuxMouseScript, tmuxName } from './persist'
 import { send } from './ui'
 import { store, dataDir } from './store'
+import { SessionLogWriter } from './sessionLog'
+import { logStem, resolveSessionLog } from '@shared/sessionLog'
 import { vault } from './vault'
 import { claimLaunch, type LaunchClaim } from './launch'
 import { localNetworkHelp } from './localNetworkHelp'
@@ -116,7 +117,7 @@ export class Session {
   /** 인증 실패 뒤 정상 접속하기 전까지는 자동 재접속하지 않는다 */
   private authFailed = false
   private retryTimer: NodeJS.Timeout | null = null
-  private log: WriteStream | null = null
+  private log: SessionLogWriter | null = null
   private lastOutputAt = 0
   private outputTail = ''
   // 유휴 방지 명령 판단용 (idleGuard.ts)
@@ -248,7 +249,7 @@ export class Session {
       this.setState('connected')
       if (h.protocol !== 'local') this.emitText('\x1b[2K\r')
       if (this.persistent) store.touchHost(h.id)
-      if (store.get().settings.sessionLog) this.openLog()
+      this.openLog()
       if (t instanceof SshTransport) void this.checkSftp(t)
       this.startupRunning = startup.length > 0
       if (h.protocol === 'ssh' || h.protocol === 'telnet') this.startIdleGuard()
@@ -280,15 +281,24 @@ export class Session {
     } catch { /* ignore */ }
   }
 
+  /** 서버별 설정이 있으면 그것, 없으면 앱 설정으로 이 연결의 출력을 기록한다 */
   private openLog(): void {
-    try {
-      const dir = join(dataDir(), 'logs')
-      mkdirSync(dir, { recursive: true })
-      const d = new Date()
-      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`
-      const safe = this.host.alias.replace(/[\\/:*?"<>|]/g, '_')
-      this.log = createWriteStream(join(dir, `${safe}-${stamp}.log`), { flags: 'a' })
-    } catch { /* */ }
+    this.closeLog()
+    const { enabled, options } = resolveSessionLog(store.get().settings, this.savedHost())
+    if (!enabled) return
+    this.log = SessionLogWriter.open({
+      stem: logStem(this.host.alias),
+      title: `${this.info.title} (${this.info.target})`,
+      options,
+      baseDir: join(dataDir(), 'logs'),
+      onNotice: (m) => this.info_(m, '33')
+    })
+    if (this.log) this.connectLog.add(`세션 로그: ${this.log.path}`)
+  }
+
+  private closeLog(): void {
+    this.log?.close()
+    this.log = null
   }
 
   private onData(d: Buffer): void {
@@ -299,7 +309,7 @@ export class Session {
       this.altScreen = nextAltScreen(this.altScreen, this.outputTail.slice(-12) + s)
       this.outputTail = (this.outputTail + s).slice(-300)
       this.emitText(s)
-      this.log?.write(s.replace(ANSI, '').replace(/\r/g, ''))
+      this.log?.write(s)
       if (this.tmoutCheck === 'reading') {
         this.tmoutOutput = (this.tmoutOutput + s).slice(-2048)
         const value = readTmoutResult(this.tmoutOutput.replace(ANSI, ''))
@@ -402,8 +412,7 @@ export class Session {
   private onClose(reason?: string): void {
     this.transport = null
     this.stopIdleGuard()
-    this.log?.end()
-    this.log = null
+    this.closeLog()
     if (this.userClosed) return
     if (this.host.protocol === 'local') {
       this.setState('closed')
@@ -492,7 +501,7 @@ export class Session {
     this.transport = null
     if (killTmux && t instanceof SshTransport) await t.killTmux()
     t?.close()
-    this.log?.end()
+    this.closeLog()
   }
 }
 

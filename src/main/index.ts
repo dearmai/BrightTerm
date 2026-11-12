@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto'
 import { store, dataDir } from './store'
 import { vault, VaultFile } from './vault'
 import { sessions } from './sessions'
+import { resolveLogDir } from './sessionLog'
 import { remoteExec, sessionMetrics } from './metrics'
 import { parseServerEnv, SERVER_ENV_SCRIPT } from './serverEnv'
 import * as sftp from './sftp'
@@ -301,7 +302,13 @@ function registerIpc(): void {
     try { win?.setTitleBarOverlay?.({ color: bg, symbolColor: fg, height: 38 }) } catch { /* */ }
     nativeTheme.themeSource = store.get().settings.theme === 'light' ? 'light' : 'dark'
   })
-  handle('app:openLogs', () => shell.openPath(join(dataDir(), 'logs')))
+  // dir: 서버별 로그 폴더 — 없으면 앱 설정의 폴더
+  handle('app:openLogs', async (dir?: string) => {
+    const d = resolveLogDir(typeof dir === 'string' ? dir : store.get().settings.sessionLogOptions.dir, join(dataDir(), 'logs'))
+    await fs.mkdir(d, { recursive: true })
+    const err = await shell.openPath(d)
+    if (err) throw new Error(err)
+  })
   // 라이선스 전문·제3자 고지 — 패키지 앱은 resources/legal/, 개발 중에는 저장소 루트 파일
   handle('app:openLegal', async (kind: 'license' | 'notices' | 'chromium') => {
     const files = { license: ['LICENSE.txt', 'LICENSE'], notices: ['THIRD_PARTY_NOTICES.txt', 'THIRD_PARTY_NOTICES.txt'], chromium: ['LICENSES.chromium.html', 'node_modules/electron/dist/LICENSES.chromium.html'] }
