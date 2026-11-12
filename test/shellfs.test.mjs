@@ -28,8 +28,11 @@ function fakeClient(root) {
   }
 }
 
+// Windows 의 sh(Git Bash)는 경로를 /tmp/… 로 바꿔 보여 로컬 경로와 비교할 수 없다 — 실제 원격 셸은 npm run test:ksh(podman)로 확인한다
+const posixHost = process.platform === 'win32' ? 'Windows 호스트: POSIX 경로가 필요한 테스트 (npm run test:ksh 로 검증)' : false
+
 for (const perl of [true, false]) {
-  test(`셸 명령으로 파일 다루기 (${perl ? 'perl' : 'ls -la'})`, async () => {
+  test(`셸 명령으로 파일 다루기 (${perl ? 'perl' : 'ls -la'})`, { skip: posixHost }, async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'bt-shellfs-')))
     try {
       const fs = new ShellFs(fakeClient(root))

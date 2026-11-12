@@ -7,11 +7,21 @@ import {
   chmodSync,
   rmSync,
 } from "node:fs";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-test("android-run selects devices explicitly and never launches after an install failure", () => {
+// Windows 의 PATH 에서 bash 는 WSL 런처(System32\bash.exe)가 먼저 잡힌다 — Git for Windows 의 bash 를 쓴다
+function findBash() {
+  if (process.platform !== "win32") return "bash";
+  const exec = spawnSync("git", ["--exec-path"], { encoding: "utf8" }).stdout?.trim();
+  const bash = exec && join(exec, "..", "..", "..", "bin", "bash.exe");
+  return bash && existsSync(bash) ? bash : null;
+}
+const BASH = findBash();
+
+test("android-run selects devices explicitly and never launches after an install failure", { skip: !BASH && "Git for Windows bash 가 없습니다" }, () => {
   const root = mkdtempSync(join(tmpdir(), "bt-adb-test-")),
     adb = join(root, "adb with spaces"),
     log = join(root, "calls"),
@@ -29,7 +39,7 @@ else console.log(process.env.BT_LAUNCH_ERROR?'Error: Activity class does not exi
   chmodSync(adb, 0o755);
   function run(devices, serial = "", extras = {}) {
     writeFileSync(log, "");
-    const result = spawnSync("bash", ["scripts/android-run.sh"], {
+    const result = spawnSync(BASH, ["scripts/android-run.sh"], {
       encoding: "utf8",
       env: {
         ...process.env,

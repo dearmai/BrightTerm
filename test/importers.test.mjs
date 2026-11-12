@@ -1,4 +1,13 @@
-import { parseRegOutput, puttyToCandidates, parseSshConfig } from './.imp.mjs'
+// node --test test/importers.test.mjs
+// 생성 파일(test/.imp.mjs) 대신 소스를 직접 읽는다 — 메인 프로세스 모듈의 @shared/* 를 소스 파일로 잇는다
+import { registerHooks } from 'node:module'
+registerHooks({
+  resolve(spec, ctx, next) {
+    if (spec.startsWith('@shared/')) return next(new URL(`../src/shared/${spec.slice(8)}.ts`, import.meta.url).href, ctx)
+    return next(spec, ctx)
+  }
+})
+const { parseRegOutput, puttyToCandidates, parseSshConfig, parsePuttySessionFiles } = await import('../src/main/importers.ts')
 const out = `
 HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\Default%20Settings
     Present    REG_DWORD    0x1
@@ -26,7 +35,6 @@ console.log(JSON.stringify(c.map(x => ({ n: x.name, h: x.host.host, p: x.host.po
 const s = parseSshConfig(`Host *\n  ServerAliveInterval 30\nHost bastion db1\n  HostName 1.2.3.4\n  User ubuntu\n  Port 2200\n  IdentityFile ~/.ssh/id_ed25519\n`)
 console.log(s.map(x => `${x.name} ${x.host.username}@${x.host.host}:${x.host.port} key=${!!x.keyFile}`))
 // Unix PuTTY (~/.putty/sessions): one Key=Value file per session, numbers in decimal
-import { parsePuttySessionFiles } from './.imp.mjs'
 const u = puttyToCandidates(parsePuttySessionFiles([
   { name: 'stg-api%20mac', text: 'HostName=deploy@10.0.0.21\nPortNumber=2200\nProtocol=ssh\nPublicKeyFile=/Users/me/.ssh/api.ppk\nLineCodePage=UTF-8\n' },
   { name: 'usb-console', text: 'Protocol=serial\nSerialLine=/dev/cu.usbserial-110\nSerialSpeed=115200\nSerialParity=0\n' }
