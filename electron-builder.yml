@@ -70,7 +70,7 @@ portable:
 mac:
   target:
     - target: dmg
-      arch: [x64, arm64]
+      arch: [arm64]
   icon: build/icon.png
   category: public.app-category.developer-tools
   artifactName: ${productName}-${version}-mac-${arch}.${ext}

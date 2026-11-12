@@ -4,6 +4,10 @@
 
 ## 다음 버전 (미배포)
 
+### macOS Intel(x64) dmg 제외
+
+- `npm run dist:mac` 은 Apple Silicon(arm64) dmg 만 만듭니다. Intel 맥은 소스에서 `make install` 로 설치합니다.
+
 ### 서버 OS 지정과 원격 데스크톱(RDP)
 
 - 서버 편집 → 기본에 **서버 OS**(Linux·Windows·macOS·Unix·기타)를 추가했습니다. Windows 를 고르면 **원격 데스크톱** 탭이 생깁니다. 서버 정보와 함께 동기화됩니다(이전 버전은 새 필드를 무시합니다).

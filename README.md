@@ -32,7 +32,6 @@ make android-run
 | Windows | `BrightTerm Extended-Setup-1.3.0.exe` | 설치형. 설치 경로 선택, 바탕화면 바로가기 |
 | Windows | `BrightTerm Extended-Portable-1.3.0.exe` | 설치 없이 실행. 설정·볼트는 실행 파일 옆 `BrightTerm-data` 폴더에 저장 |
 | macOS (Apple Silicon) | `BrightTerm Extended-1.3.0-mac-arm64.dmg` | M1 이후 맥 |
-| macOS (Intel) | `BrightTerm Extended-1.3.0-mac-x64.dmg` | Intel 맥 |
 
 - **Windows**: "Windows의 PC 보호" 창이 뜨면 `추가 정보 → 실행`을 누르세요(코드 서명 전 빌드).
 - **macOS**: Apple 공증을 받은 빌드입니다. dmg에서 앱을 응용 프로그램 폴더로 끌어 넣고 바로 여세요. 처음 사내망(192.168.x.x 등) 서버에 접속할 때 **로컬 네트워크 접근**을 물으면 `허용`을 누르세요. 거부했다면 `시스템 설정 → 개인정보 보호 및 보안 → 로컬 네트워크`에서 켤 수 있습니다.
@@ -309,7 +308,7 @@ npm run dist:win:signed # 위와 같고 셀프 인증서로 서명 (사내 배�
 npm run dist:linux   # Linux AppImage + deb (dist/) — 빌드한 PC의 아키텍처
 npm run dist:linux:deb:arm64 # Linux ARM64 deb (Linux에서 빌드, 교차 빌드는 위 컴파일러 필요)
 npm run dist:linux:dir # Linux 실행 폴더 (dist/linux-unpacked/)
-npm run dist:mac     # macOS dmg x64 + arm64 (dist/) — ad-hoc 서명(인증서 없이)
+npm run dist:mac     # macOS dmg arm64 (dist/) — Intel 맥 dmg 는 만들지 않는다(Intel 은 make install) — ad-hoc 서명(인증서 없이)
 APPLE_KEYCHAIN_PROFILE=<notarytool 프로필> npm run dist:mac:signed  # Developer ID 서명 + 공증 (electron-builder.signed.yml)
 ```
 
