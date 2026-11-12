@@ -104,6 +104,33 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         super.onResume(); resumed = true; if (gitSync != null && ready) gitSync.foreground(true);
         // 잠든 동안 끊긴 세션을 찾아 터미널에 재접속 안내를 띄운다
         if (service != null && ready) service.check();
+        // 설정 앱에서 돌아오면 배터리 최적화 상태를 다시 알린다
+        if (ready) event(eventOf("battery", "", String.valueOf(batteryUnrestricted())));
+    }
+    // 배터리 최적화 예외: 화면을 끄거나 다른 앱으로 가도 Doze 가 SSH 소켓·keepalive 를 끊지 않게 한다
+    private boolean batteryUnrestricted() {
+        PowerManager power = (PowerManager)getSystemService(POWER_SERVICE);
+        return power != null && power.isIgnoringBatteryOptimizations(getPackageName());
+    }
+    private void requestBattery() {
+        if (batteryUnrestricted()) { event(eventOf("battery", "", "true")); return; }
+        try { startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()))); }
+        catch (ActivityNotFoundException error) {
+            // 요청 창을 막은 기기(일부 제조사)는 배터리 최적화 목록을 연다
+            try { startActivity(new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)); }
+            catch (ActivityNotFoundException ignored) { fail(new IllegalStateException("이 기기에서는 배터리 최적화 설정을 열 수 없습니다. 시스템 설정 → 앱 → BrightTerm Extended → 배터리에서 바꾸세요.")); }
+        }
+    }
+    /** 첫 연결 때 한 번만 묻는다. 거절해도 다시 묻지 않고 설정 화면의 버튼으로 바꿀 수 있다 */
+    private void askBatteryOnce() {
+        SharedPreferences prefs = getSharedPreferences("app-state", MODE_PRIVATE);
+        if (batteryUnrestricted() || prefs.getBoolean("battery-asked", false)) return;
+        prefs.edit().putBoolean("battery-asked", true).apply();
+        requestBattery();
+    }
+    @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(request, permissions, results);
+        if (request == 10) askBatteryOnce();
     }
     @Override protected void onPause() { resumed = false; if (gitSync != null) gitSync.foreground(false); super.onPause(); }
     private static JSONObject eventOf(String type, String id, String value) {
@@ -304,6 +331,8 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
         }
         @JavascriptInterface public boolean nightMode() { return night(getResources().getConfiguration()); }
         @JavascriptInterface public void setAppearance(boolean light) { runOnUiThread(() -> appearance(light)); }
+        @JavascriptInterface public boolean batteryUnrestricted() { return MainActivity.this.batteryUnrestricted(); }
+        @JavascriptInterface public void requestBattery() { runOnUiThread(MainActivity.this::requestBattery); }
         @JavascriptInterface public void syncStatus() { runOnUiThread(() -> gitSync.attach(MainActivity.this)); }
         @JavascriptInterface public void configureSync(String config) { gitSync.configure(config); }
         @JavascriptInterface public void sync(String choice, String password) { gitSync.request(choice, password); }
@@ -334,6 +363,7 @@ public class MainActivity extends androidx.activity.ComponentActivity implements
                         if (service == null) { fail(new IllegalStateException("연결 서비스 준비 중입니다. 다시 시도하세요.")); return; }
                         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
                             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 10);
+                        else askBatteryOnce();
                         startForegroundService(new Intent(MainActivity.this, TerminalService.class));
                         service.connect(selectedProfile, Math.max(2, cols), Math.max(1, rows));
                     });

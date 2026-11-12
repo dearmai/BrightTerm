@@ -609,6 +609,19 @@ button:disabled {
 #settings-dialog .row label {
   flex: 1;
 }
+.battery-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.battery-row .grow {
+  flex: 1;
+  min-width: 12em;
+}
+#battery-request[hidden] {
+  display: none;
+}
 #settings {
   font-size: 18px;
 }

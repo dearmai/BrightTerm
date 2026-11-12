@@ -503,6 +503,16 @@
           ><input type="checkbox" name="osc52Clipboard" />서버 프로그램의
           클립보드 복사 허용 (tmux·vim 등의 OSC 52, 읽기는 허용 안 함)</label
         >
+        <h3>백그라운드</h3>
+        <div class="battery-row">
+          <span id="battery-state" class="grow"></span>
+          <button type="button" id="battery-request">배터리 최적화 해제</button>
+        </div>
+        <p class="hint">
+          배터리 최적화를 해제하면 화면을 끄거나 다른 앱으로 가도 SSH 연결이
+          덜 끊깁니다. 제조사 절전 기능(예: 삼성 절전 앱 목록)은 따로
+          확인하세요.
+        </p>
         <p class="hint">
           설정은 바로 적용되며 이 기기에만 저장합니다. 두 손가락 핀치줌과 Ctrl
           +/-로 바꾼 글자 크기도 기억합니다.

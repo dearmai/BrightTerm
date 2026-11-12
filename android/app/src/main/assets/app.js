@@ -446,6 +446,9 @@ window.nativeEvent = (event) => {
       systemNight = event.value === "true";
       if (settings.theme === "system") applyAppTheme();
       break;
+    case "battery":
+      renderBattery(event.value === "true");
+      break;
     case "git-key":
       gitKey = event.value;
       $("git-key-state").textContent = " 개인키 선택됨";
@@ -707,8 +710,18 @@ function fillSettings() {
   }
   renderThemes();
 }
+function renderBattery(unrestricted) {
+  if (unrestricted === undefined)
+    unrestricted = native?.batteryUnrestricted?.() ?? false;
+  $("battery-state").textContent = unrestricted
+    ? "배터리 최적화 해제됨 — 백그라운드 연결 유지"
+    : "배터리 최적화 사용 중 — 백그라운드에서 연결이 끊길 수 있음";
+  $("battery-request").hidden = unrestricted;
+}
+$("battery-request").onclick = () => invoke("requestBattery");
 function openSettings() {
   fillSettings();
+  renderBattery();
   $("settings-dialog").showModal();
 }
 for (const id of ["settings", "open-settings"]) $(id).onclick = openSettings;
