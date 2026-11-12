@@ -127,6 +127,9 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
                 <Toggle label="시작할 때 지난 탭·분할 다시 열기" desc="앱을 다시 켜면 닫을 때 열려 있던 탭과 분할 배치로 다시 접속합니다. 세션 유지(tmux)를 켠 창은 하던 화면 그대로 돌아옵니다" value={settings.restoreTabs} onChange={(v) => set({ restoreTabs: v })} />
               </div>
               <ReconnectPolicyEditor value={settings.reconnectPolicy} onChange={(reconnectPolicy) => set({ reconnectPolicy })} />
+              <div className="card">
+                <Toggle label=".ssh/config 자동 동기화" desc="서버 편집 → 고급에서 .ssh/config 동기화를 켠 SSH 서버를 저장할 때마다 이 PC의 ~/.ssh/brightterm.conf 에 자동으로 씁니다. 끄면 이 PC에서는 자동으로 쓰거나 지우지 않고, 서버 편집의 'config에 반영' 버튼으로 서버별로 직접 반영합니다. 이 설정은 PC마다 따로 저장됩니다" value={settings.sshConfigAutoSync} onChange={(v) => set({ sshConfigAutoSync: v })} />
+              </div>
             </>
           )}
           {sec === 'log' && (

@@ -1,5 +1,5 @@
 import type {
-  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, GitSyncPreviewResult, Host, ImportCandidate, LaunchItem, LocalPublicKey, ServerEnv, SessionInfo, SessionMetrics, SftpEntry, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
+  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, GitSyncPreviewResult, Host, ImportCandidate, LaunchItem, LocalPublicKey, ServerEnv, SessionInfo, SessionMetrics, SftpEntry, SshConfigStatus, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
 } from '@shared/types'
 
 interface Bt {
@@ -80,6 +80,11 @@ export const api = {
   sshKey: {
     list: () => bt.call<LocalPublicKey[]>('sshkey:list'),
     install: (hostId: string, pubPath: string) => bt.call<'added' | 'exists'>('sshkey:install', hostId, pubPath)
+  },
+  sshConfig: {
+    status: () => bt.call<SshConfigStatus>('sshconfig:status'),
+    sync: () => bt.call<SshConfigStatus>('sshconfig:sync'),
+    apply: (host: Host) => bt.call<SshConfigStatus>('sshconfig:apply', host)
   },
   persist: {
     check: (host: Host) => bt.call<TmuxCheck>('persist:check', host)

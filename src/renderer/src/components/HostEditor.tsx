@@ -12,6 +12,8 @@ import { ReconnectPolicyEditor } from './ReconnectPolicyEditor'
 import { normalizeReconnectPolicy } from '@shared/reconnect'
 import { normalizeSessionLogOptions } from '@shared/sessionLog'
 import { SessionLogOptionsEditor } from './SessionLogOptionsEditor'
+import { defaultSshName, sshNames, validSshName } from '@shared/sshConfig'
+import type { SshConfigStatus } from '@shared/types'
 import { ENCODINGS, TERMINAL_PRESETS, applyPreset, hostKeys, matchPreset } from '@shared/terminal'
 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
@@ -53,6 +55,24 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
     return () => document.removeEventListener('pointerdown', outside, true)
   }, [idleHelpOpen])
   useEffect(() => setIdleHelpOpen(false), [tab, h.protocol])
+  // ~/.ssh/config 동기화 — 저장된 다른 서버와 겹치지 않는 실제 Host 이름을 미리 보인다
+  const [sshStatus, setSshStatus] = useState<SshConfigStatus | null>(null)
+  useEffect(() => { if (tab === 'adv' && h.protocol === 'ssh') api.sshConfig.status().then(setSshStatus, () => {}) }, [tab, h.protocol, h.sshConfig])
+  const sshApplied = !!sshStatus?.ids.includes(h.id)
+  /** 자동 동기화를 끈 PC — 이 서버만 지금 반영(켜짐) 또는 빼기(꺼짐) */
+  const applySshConfig = async (): Promise<void> => {
+    const remove = !h.sshConfig
+    try {
+      const st = await api.sshConfig.apply(h)
+      setSshStatus(st)
+      if (st.error) useApp.getState().toast('error', `.ssh/config 반영 실패: ${st.error}`)
+      else useApp.getState().toast('ok', remove ? `.ssh/config 에서 뺐습니다` : `.ssh/config 에 반영했습니다 — ssh ${sshPreview}`)
+    } catch (e) {
+      useApp.getState().toast('error', `.ssh/config 반영 실패: ${(e as Error).message}`)
+    }
+  }
+  const sshPreview = sshNames([...hosts.filter((x) => x.id !== h.id), { ...h, sshConfig: true, host: h.host || 'x' }]).get(h.id) ?? defaultSshName(h)
+  const sshNameError = h.sshConfigName?.trim() && !validSshName(h.sshConfigName.trim()) ? '공백·* ? ! , " \' # = 는 쓸 수 없습니다. 이대로 저장하면 별칭에서 만든 이름을 씁니다.' : undefined
   const [password, setPassword] = useState('')
   const [keyText, setKeyText] = useState('')
   const [keyPath, setKeyPath] = useState('')
@@ -590,6 +610,25 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
                 <Switch value={!!h.sessionLogOptions} onChange={(v) => set('sessionLogOptions', v ? normalizeSessionLogOptions(appSessionLogOptions) : undefined)} />
               </div>
               {h.sessionLogOptions && <SessionLogOptionsEditor value={h.sessionLogOptions} onChange={(o) => set('sessionLogOptions', o)} />}
+            </div>}
+            {h.protocol === 'ssh' && <div className="persist-box ssh-config-sync">
+              <div className="toggle">
+                <div className="t-label"><span>.ssh/config 동기화</span><small>켜면 이 서버를 ~/.ssh/config 에서 읽는 ~/.ssh/brightterm.conf 에 씁니다. 터미널에서 ssh·scp·VS Code Remote 로 같은 이름을 쓸 수 있습니다. 별칭·그룹·태그·메모는 주석으로 남고, 비밀번호·개인 키는 쓰지 않습니다.</small></div>
+                <Switch value={!!h.sshConfig} onChange={(v) => set('sshConfig', v || undefined)} />
+              </div>
+              {h.sshConfig && <>
+                <Field label="Host 이름" hint={sshNameError ?? `터미널에서 ssh ${sshPreview} 로 접속합니다. 비우면 별칭에서 만듭니다. 이름이 겹치면 -2 를 붙입니다.`}>
+                  <input className="input mono" value={h.sshConfigName ?? ''} placeholder={defaultSshName(h)} onChange={(e) => set('sshConfigName', e.target.value || undefined)} />
+                </Field>
+                {h.authType === 'key' && <div className="muted small">개인 키는 BrightTerm 볼트에만 있어 ssh 에서 바로 쓰지 못합니다. ssh-agent 에 키를 올리거나 ~/.ssh/config 에 IdentityFile 을 따로 지정하세요.</div>}
+              </>}
+              {sshStatus && !sshStatus.auto && (h.sshConfig || sshApplied) && <div className="row ssh-config-manual">
+                <span className="muted small grow">이 PC는 설정 → 연결에서 자동 동기화가 꺼져 있습니다. {sshApplied ? '이 서버는 config 에 반영되어 있습니다.' : '이 서버는 아직 config 에 없습니다.'} {h.sshConfig ? '지금 값으로 반영하려면 버튼을 누르세요.' : '동기화를 껐으므로 버튼으로 이 서버만 뺄 수 있습니다.'}</span>
+                <button className="btn" onClick={() => void applySshConfig()}>{h.sshConfig ? (sshApplied ? 'config 다시 반영' : 'config에 반영') : 'config에서 빼기'}</button>
+              </div>}
+              {sshStatus && (h.sshConfig || sshApplied) && <div className={sshStatus.error ? 'err small' : 'muted small'}>
+                {sshStatus.error ? `동기화 실패: ${sshStatus.error}` : `${sshStatus.auto ? '자동 동기화' : '수동 반영'} · 현재 ${sshStatus.count}개 서버 반영됨 · ${sshStatus.file || '~/.ssh/brightterm.conf'}`}
+              </div>}
             </div>}
           </>
         )}

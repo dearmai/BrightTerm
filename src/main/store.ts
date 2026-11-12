@@ -51,6 +51,8 @@ export function readJson<T>(file: string): T | null {
 
 class Store {
   onSyncChange: () => void = () => {}
+  /** 서버·그룹이 바뀌었다 (~/.ssh/config 동기화) */
+  onHostsChange: () => void = () => {}
   private data!: StoreData
   private file = ''
   private timer: NodeJS.Timeout | null = null
@@ -75,15 +77,19 @@ class Store {
   }
 
   patch(p: Partial<StoreData>): void {
+    const autoBefore = this.data.settings.sshConfigAutoSync
     this.data = { ...this.data, ...p }
     this.scheduleSave()
     if (p.hosts !== undefined || p.groups !== undefined || p.snippets !== undefined) this.onSyncChange()
+    // 자동 동기화를 다시 켜면 그때 전체를 맞춘다
+    if (p.hosts !== undefined || p.groups !== undefined || (p.settings && p.settings.sshConfigAutoSync !== autoBefore)) this.onHostsChange()
   }
 
   replaceAll(d: StoreData): void {
     this.data = { ...d, settings: withDefaults(d.settings) }
     this.flush()
     this.onSyncChange()
+    this.onHostsChange()
   }
 
   findKnownHost(hostPort: string): KnownHost | undefined {

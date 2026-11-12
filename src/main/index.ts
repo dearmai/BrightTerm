@@ -18,6 +18,7 @@ import { initialBounds, resetWindow, trackWindow } from './windowState'
 import { scanAws } from './aws'
 import { checkUpdate, startUpdateCheck, updateInfo } from './update'
 import { gitSync } from './gitSync'
+import { applySshHost, scheduleSshConfigSync, sshConfigStatus, syncSshConfig } from './sshConfigSync'
 import { listPublicKeys, installPublicKey, checkTmux } from './sshKeys'
 import { handleLaunch, takeLaunches } from './launch'
 import { MAX_SNIPPET_FILE_BYTES, mergeSnippets, parseSnippets, serializeSnippets } from './snippetsFile'
@@ -184,6 +185,9 @@ function registerIpc(): void {
   handle('sshkey:list', () => listPublicKeys())
   handle('sshkey:install', (hostId: string, pubPath: string) => installPublicKey(hostId, pubPath))
   handle('persist:check', (host: Host) => checkTmux(host))
+  handle('sshconfig:status', () => sshConfigStatus())
+  handle('sshconfig:sync', () => syncSshConfig())
+  handle('sshconfig:apply', (host: Host) => applySshHost(host))
 
   // sftp
   handle('sftp:home', (id: string) => sftp.home(id))
@@ -504,6 +508,8 @@ app.whenReady().then(() => {
   })
   Menu.setApplicationMenu(process.platform === 'darwin' ? buildMacMenu() : null)
   store.load()
+  store.onHostsChange = () => scheduleSshConfigSync()
+  syncSshConfig()
   vault.init()
   gitSync.init()
   vault.onLockChange = (u) => {

@@ -175,6 +175,10 @@ export interface Host {
   persistName?: string
   /** tmux 마우스 모드 — 지정하지 않으면 켠다 */
   persistMouse?: boolean
+  /** ~/.ssh/config 동기화 대상 — SSH 서버만. 기본 끔 */
+  sshConfig?: boolean
+  /** ~/.ssh/config 의 Host 이름 — 비우면 별칭에서 만든다 */
+  sshConfigName?: string
   notes?: string
   favorite?: boolean
   lastUsedAt?: number
@@ -222,6 +226,8 @@ export interface Settings {
   insertPathQuote: boolean
   sessionLog: boolean
   sessionLogOptions: SessionLogOptions
+  /** 동기화를 켠 서버를 ~/.ssh/brightterm.conf 에 자동으로 쓴다. 끄면(기본) 서버 편집의 버튼으로만 반영 (PC 별 설정) */
+  sshConfigAutoSync: boolean
   bell: boolean
   sidebarWidth: number
   rightPanelWidth: number
@@ -283,6 +289,22 @@ export type SavedLayout =
   | { type: 'split'; dir: 'row' | 'col'; sizes: number[]; children: SavedLayout[] }
 export interface SavedTab { title?: string; color?: string; root: SavedLayout; focused: number; zoomed?: number | null }
 export interface SavedWorkspace { tabs: SavedTab[]; active: number; savedAt: number }
+
+/** ~/.ssh/config 동기화 결과 */
+export interface SshConfigStatus {
+  /** 파일에 반영된 서버 수 */
+  count: number
+  /** 파일에 반영된 서버 id */
+  ids: string[]
+  /** 이 PC 의 자동 동기화 설정 */
+  auto: boolean
+  /** ~/.ssh/brightterm.conf */
+  file: string
+  /** ~/.ssh/config */
+  config: string
+  at?: number
+  error?: string
+}
 
 export interface StoreData {
   version: number
@@ -493,6 +515,7 @@ export const DEFAULT_SETTINGS: Settings = {
   insertPathQuote: true,
   sessionLog: false,
   sessionLogOptions: { ...DEFAULT_SESSION_LOG_OPTIONS },
+  sshConfigAutoSync: false,
   bell: false,
   sidebarWidth: 260,
   rightPanelWidth: 340,
