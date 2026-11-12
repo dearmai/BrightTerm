@@ -10,16 +10,20 @@ export const INCLUDE_MARKER = '# BrightTerm: 아래 Include 는 BrightTerm 이 �
 export const INCLUDE_LINE = `Include ${SSH_CONFIG_FILE}`
 
 /** Host 이름으로 쓸 수 없는 글자: 공백·와일드카드·부정·쉼표·따옴표·주석 */
-const BAD_NAME = /[\s*?!,"'#=]/
+const BAD_NAME = /[\s\x00-\x1f\x7f*?!,"'#=]/
+const BAD_RUN = /[\s\x00-\x1f\x7f*?!,"'#=]+/g
 
 export function validSshName(name: string): boolean {
   return !!name && name.length <= 100 && !BAD_NAME.test(name)
 }
 
-/** 별칭에서 만든 기본 Host 이름 — 영문·숫자·. _ - 만 남긴다 */
+/**
+ * 별칭에서 만든 기본 Host 이름 — 쓸 수 있는 글자로만 되어 있으면 별칭 그대로 쓴다.
+ * 쓸 수 없는 글자(공백·* ? ! , " ' # = 등)만 - 로 바꾸고, ssh 옵션으로 읽히지 않게 앞의 - 는 뺀다
+ */
 export function defaultSshName(h: Pick<Host, 'id' | 'alias' | 'host'>): string {
-  const slug = (s: string): string => s.normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 60)
-  return slug(h.alias) || slug(h.host) || `bt-${h.id.slice(0, 8)}`
+  const clean = (s: string): string => s.trim().replace(BAD_RUN, '-').replace(/^-+|-+$/g, '').slice(0, 100)
+  return clean(h.alias) || clean(h.host) || `bt-${h.id.slice(0, 8)}`
 }
 
 export const isSshConfigTarget = (h: Host): boolean => h.protocol === 'ssh' && !!h.sshConfig && !!h.host.trim()

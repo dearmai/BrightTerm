@@ -1,5 +1,22 @@
 # 작업내역서
 
+## 2026-11-12 — .ssh/config 기본 Host 이름을 서버 이름 그대로
+
+### 요청 및 변경
+
+- 사용자가 .ssh/config 저장 시 허용하지 않는 글자가 없으면 서버 이름을 그대로 Host 이름으로 제시해 달라고 요청했다(예: 별칭 homelab/morefine/-dearmai 가 homelab-morefine--dearmai 로 바뀌어 보이던 문제).
+- src/shared/sshConfig.ts defaultSshName: 영문·숫자·. _ - 만 남기던 방식을 바꿔, 쓸 수 없는 글자(공백·제어 문자·* ? ! , " ' # =)만 - 로 바꾸고 나머지(한글, / 등)는 그대로 둔다. ssh 옵션으로 읽히지 않게 맨 앞·끝의 - 는 뺀다. 길이 한도는 직접 지정 이름과 같은 100자. 남는 글자가 없으면 주소, 그다음 bt-<id> 를 쓴다. 금지 글자 목록에 제어 문자를 추가했다.
+- test/ssh-config.test.mjs 기대값을 새 규칙에 맞게 고치고 사례를 추가했다. main에 커밋하고 origin/main으로 푸시한다.
+
+### 직접 검증한 결과
+
+- node --test test/ssh-config.test.mjs 7개 통과, npm run typecheck 통과.
+
+### 검증 범위
+
+- 앱 화면(Host 이름 칸·미리보기)은 직접 열어 확인하지 않았다. 한글·/ 가 든 Host 이름의 실제 ssh 접속은 확인하지 않았다.
+- Host 이름을 비워 둔 채 동기화를 켠 기존 서버는 다음 동기화 때 이름이 바뀐다(옛 이름을 쓰던 바로가기·VS Code Remote 설정은 고쳐야 함). 직접 지정한 이름은 그대로다.
+
 ## 2026-11-12 — 서버 목록 ~/.ssh/config 동기화·저장된 비밀번호 보기
 
 ### 요청 및 변경

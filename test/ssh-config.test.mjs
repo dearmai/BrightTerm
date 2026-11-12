@@ -30,9 +30,12 @@ test('기본값은 대상 아님 — 켠 SSH 서버만 들어간다', () => {
 })
 
 test('Host 이름: 별칭에서 만들고, 직접 정한 이름이 우선이며, 겹치면 -2', () => {
-  assert.equal(defaultSshName({ id: 'abcdef123', alias: '운영 Web #1', host: '' }), 'Web-1')
-  assert.equal(defaultSshName({ id: 'abcdef123', alias: '운영', host: '' }), 'bt-abcdef12')
-  assert.equal(defaultSshName({ id: 'abcdef123', alias: '운영', host: 'db.example.com' }), 'db.example.com')
+  assert.equal(defaultSshName({ id: 'abcdef123', alias: 'homelab/morefine/-dearmai', host: '' }), 'homelab/morefine/-dearmai')
+  assert.equal(defaultSshName({ id: 'abcdef123', alias: '운영', host: '' }), '운영')
+  assert.equal(defaultSshName({ id: 'abcdef123', alias: '운영 Web #1', host: '' }), '운영-Web-1')
+  assert.equal(defaultSshName({ id: 'abcdef123', alias: '-web', host: '' }), 'web')
+  assert.equal(defaultSshName({ id: 'abcdef123', alias: ' # ', host: 'db.example.com' }), 'db.example.com')
+  assert.equal(defaultSshName({ id: 'abcdef123', alias: '', host: '' }), 'bt-abcdef12')
   assert.equal(validSshName('prod web'), false)
   assert.equal(validSshName('prod*'), false)
   assert.equal(validSshName('prod-web.1'), true)
