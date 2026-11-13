@@ -26,8 +26,8 @@
 | 항목 | 값 |
 | --- | --- |
 | 주체 | `CN=Dany Kim, O=BrightTerm` |
-| 지문(SHA-1) | `07848F6B01D73F5D7C2F3DAF3648B38868DE0FC9` |
-| 유효기간 | 2026-10-24 ~ 2031-10-24 |
+| 지문(SHA-1) | `32FA25DC5BE857930C7579D87E30CAE73F01E9E0` |
+| 유효기간 | 2026-11-13 ~ 2031-11-13 |
 | 키 | RSA 3072, 서명 해시 SHA-256, 내보내기 허용 |
 | 만든 방법 | `scripts/codesign-cert.ps1` (기본값) |
 
@@ -79,8 +79,8 @@ npm run dist:win:signed
 
 1. 모든 대상 PC 에서 예전 인증서의 신뢰를 지웁니다. GPO 로 배포했다면 GPO 에서 제거합니다. 직접 등록했다면 관리자 권한으로 다음을 실행합니다(현재 사용자에게만 등록했으면 `-user`를 붙입니다).
    ```cmd
-   certutil -delstore Root 07848F6B01D73F5D7C2F3DAF3648B38868DE0FC9
-   certutil -delstore TrustedPublisher 07848F6B01D73F5D7C2F3DAF3648B38868DE0FC9
+   certutil -delstore Root 32FA25DC5BE857930C7579D87E30CAE73F01E9E0
+   certutil -delstore TrustedPublisher 32FA25DC5BE857930C7579D87E30CAE73F01E9E0
    ```
 2. 원하면 예전 인증서를 "신뢰할 수 없는 인증서"(Disallowed) 저장소에 넣어 확실히 막습니다: `certutil -addstore Disallowed BrightTerm-codesign-old.cer`
 3. 빌드 PC 저장소와 모든 백업에서 예전 키를 지웁니다.

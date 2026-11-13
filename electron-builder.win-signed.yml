@@ -7,7 +7,7 @@ extends: ./electron-builder.yml
 win:
   signtoolOptions:
     certificateSubjectName: Dany Kim
-    certificateSha1: 07848F6B01D73F5D7C2F3DAF3648B38868DE0FC9
+    certificateSha1: 32FA25DC5BE857930C7579D87E30CAE73F01E9E0
     publisherName: Dany Kim
     signingHashAlgorithms: [sha256]
     rfc3161TimeStampServer: http://timestamp.digicert.com
