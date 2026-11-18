@@ -1,5 +1,5 @@
-import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { CircleHelp, X } from 'lucide-react'
 import { useApp, type MenuItem } from '../state'
 import { PALETTE } from '@shared/types'
 import { refocusTerminal } from '../terms'
@@ -9,7 +9,9 @@ export function Modal(props: { title: ReactNode; onClose: () => void; children: 
     const k = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        props.onClose()
+        // 도움말 팝업이 열려 있으면 그것만 닫는다
+        if (closeOpenHelp) closeOpenHelp()
+        else props.onClose()
       }
     }
     window.addEventListener('keydown', k, true)
@@ -37,6 +39,43 @@ export function Modal(props: { title: ReactNode; onClose: () => void; children: 
         }}>{props.foot}</div>}
       </div>
     </div>
+  )
+}
+
+/** 열려 있는 도움말 팝업 닫기 — Modal 의 Esc 가 창 대신 팝업을 닫는다 */
+let closeOpenHelp: (() => void) | null = null
+
+/**
+ * "?" 아이콘 도움말 — 두 줄 이상의 설명은 화면에 늘어놓지 않고 이 팝업에 넣는다.
+ * 바깥을 누르거나 Esc 로 닫는다. align: 팝업을 아이콘의 왼쪽 끝(start)·오른쪽 끝(end)에 맞춘다
+ */
+export function HelpTip(props: { title: string; children: ReactNode; align?: 'start' | 'end' }): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const anchor = useRef<HTMLSpanElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const id = useId()
+  useEffect(() => {
+    if (!open) return
+    const close = (): void => { setOpen(false); button.current?.focus() }
+    closeOpenHelp = close
+    const down = (e: MouseEvent): void => { if (!anchor.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', down, true)
+    return () => {
+      if (closeOpenHelp === close) closeOpenHelp = null
+      document.removeEventListener('mousedown', down, true)
+    }
+  }, [open])
+  return (
+    <span className="help-anchor" ref={anchor}>
+      <button type="button" className="ibtn sm" ref={button} title={`${props.title} 도움말`} aria-label={`${props.title} 도움말`} aria-haspopup="dialog" aria-expanded={open}
+        aria-controls={open ? id : undefined} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o) }}><CircleHelp size={14} /></button>
+      {open && (
+        <span id={id} className={`help-popup ${props.align === 'end' ? 'end' : ''}`} role="dialog" aria-label={props.title} onClick={(e) => e.stopPropagation()}>
+          <span className="help-head"><strong>{props.title}</strong><button type="button" className="ibtn sm" autoFocus aria-label="도움말 닫기" onClick={() => { setOpen(false); button.current?.focus() }}><X size={14} /></button></span>
+          {props.children}
+        </span>
+      )}
+    </span>
   )
 }
 

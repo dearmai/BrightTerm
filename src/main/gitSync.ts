@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'path'
 import { randomUUID } from 'crypto'
 import type { GitSyncConfig, GitSyncStatus, GitSyncPreviewResult, Snippet, StoreData } from '@shared/types'
 import { dataDir, readJson, store, writeJsonAtomicSync } from './store'
-import { vault, type VaultFile, type VaultSyncEnvelope } from './vault'
+import { vault, VaultUpdateRequired, type VaultFile, type VaultSyncEnvelope } from './vault'
 import { canonical, digest, parseSnapshot, type SyncSnapshot } from './gitSyncFormat'
 import { compareSnapshots } from './gitSyncDiff'
 import { send } from './ui'
@@ -88,7 +88,10 @@ export class GitSyncManager {
       }
       let snapshot: SyncSnapshot | null = null
       try { snapshot = decoded && remote.envelope ? parseSnapshot(decoded.plain, remote.envelope) : null }
-      catch { throw new Error('원격 동기화 데이터의 형식이 올바르지 않습니다. 미리보기를 중단했습니다.') }
+      catch (e) {
+        if (e instanceof VaultUpdateRequired) throw e
+        throw new Error('원격 동기화 데이터의 형식이 올바르지 않습니다. 미리보기를 중단했습니다.')
+      }
       const localSecrets = vault.readLocalSyncSecrets()
       const remoteSecrets = snapshot && decoded ? vault.readSyncSecrets(snapshot.vault, decoded.key) : {}
       const differences = compareSnapshots(local, snapshot, localSecrets, remoteSecrets)
@@ -242,7 +245,11 @@ export class GitSyncManager {
             this.accepted(localHash, remote.hash!)
             return
           }
-        } catch { /* choosing remote can supply its password */ }
+        } catch (e) {
+          // 새 버전이 올린 데이터 — 로컬로 덮어쓰면 그 기능의 데이터가 사라지므로 동기화를 멈춘다
+          if (e instanceof VaultUpdateRequired) throw e
+          /* choosing remote can supply its password */
+        }
         finally { key?.fill(0) }
       }
       if (remoteChanged || !this.tracking.localDigest) {

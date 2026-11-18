@@ -2,7 +2,10 @@ import { randomBytes, scryptSync, createCipheriv, createDecipheriv, randomUUID }
 import { safeStorage, systemPreferences, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { dataDir, readJson, writeJsonAtomicSync } from './store'
-import type { CredentialInput, CredentialMeta, CredentialSecret, VaultStatus } from '@shared/types'
+import type { CredentialInput, CredentialKind, CredentialMeta, CredentialSecret, TotpMeta, VaultStatus } from '@shared/types'
+import { KINDS, VaultUpdateRequired, checkVaultFeatures, stampVaultFeatures } from './vaultFeatures'
+
+export { VaultUpdateRequired, checkVaultFeatures }
 
 /*
  * Key hierarchy
@@ -16,9 +19,13 @@ import type { CredentialInput, CredentialMeta, CredentialSecret, VaultStatus } f
 
 interface Enc { iv: string; tag: string; ct: string }
 interface Kdf { alg: 'scrypt'; N: number; r: number; p: number; salt: string }
-interface VaultItem extends Enc { id: string; name: string; kind: 'password' | 'key'; username?: string; updatedAt: number }
+interface VaultItem extends Enc { id: string; name: string; kind: CredentialKind; username?: string; totp?: TotpMeta; updatedAt: number }
 interface VaultFile {
   version: 1
+  /** 이 볼트가 쓰는 새 기능 — 모르는 기능이 있으면 읽지 않고 업데이트를 안내한다. 쓰지 않으면 없다(이전 버전과 호환) */
+  features?: string[]
+  /** features 를 읽을 수 있는 최소 앱 버전 — 안내 문구용 */
+  minAppVersion?: string
   kdf: Kdf
   wrapped: Enc
   recoveryKdf?: Kdf
@@ -45,9 +52,10 @@ function validKdf(k: Kdf): boolean {
 }
 
 export function validateVaultFile(v: VaultFile): void {
+  checkVaultFeatures(v)
   if (!v || v.version !== 1 || !validKdf(v.kdf) || !validEnc(v.wrapped) || !Array.isArray(v.items) || v.items.length > 10000 ||
     (v.recoveryKdf && !validKdf(v.recoveryKdf)) || (v.recoveryWrapped && !validEnc(v.recoveryWrapped)) ||
-    v.items.some((i) => !validEnc(i) || typeof i.id !== 'string' || typeof i.name !== 'string' || !['password', 'key'].includes(i.kind)) ||
+    v.items.some((i) => !validEnc(i) || typeof i.id !== 'string' || typeof i.name !== 'string' || !KINDS.includes(i.kind)) ||
     new Set(v.items.map((i) => i.id)).size !== v.items.length) throw new Error('올바른 동기화 볼트가 아닙니다')
 }
 
@@ -116,7 +124,10 @@ class Vault {
   }
 
   private save(): void {
-    if (this.v) writeJsonAtomicSync(this.file, this.v)
+    if (this.v) {
+      stampVaultFeatures(this.v)
+      writeJsonAtomicSync(this.file, this.v)
+    }
     this.onSyncChange()
   }
 
@@ -232,7 +243,7 @@ class Vault {
   }
 
   list(): CredentialMeta[] {
-    return (this.v?.items ?? []).map(({ id, name, kind, username, updatedAt }) => ({ id, name, kind, username, updatedAt }))
+    return (this.v?.items ?? []).map(({ id, name, kind, username, totp, updatedAt }) => ({ id, name, kind, username, ...(totp ? { totp: { ...totp } } : {}), updatedAt }))
   }
 
   get(id: string): CredentialSecret | null {
@@ -251,14 +262,18 @@ class Vault {
       username: input.username ?? prev?.username,
       password: input.password ?? prev?.password,
       privateKey: input.privateKey ?? prev?.privateKey,
-      passphrase: input.passphrase ?? prev?.passphrase
+      passphrase: input.passphrase ?? prev?.passphrase,
+      totpSecret: input.totpSecret ?? prev?.totpSecret
     }
+    const old = this.v.items.find((x) => x.id === id)
+    // 이름만 바꿀 때(cred:save 에 totp 없이) 기존 TOTP 설정을 지우지 않는다
+    const totp = input.kind === 'totp' ? input.totp ?? old?.totp : undefined
     const enc = seal(this.key!, Buffer.from(JSON.stringify(secret), 'utf8'), id)
-    const item: VaultItem = { id, name: input.name, kind: input.kind, username: secret.username, updatedAt: Date.now(), ...enc }
+    const item: VaultItem = { id, name: input.name, kind: input.kind, username: secret.username, ...(totp ? { totp } : {}), updatedAt: Date.now(), ...enc }
     this.v.items = [...this.v.items.filter((x) => x.id !== id), item]
     this.save()
     const { name, kind, username, updatedAt } = item
-    return { id, name, kind, username, updatedAt }
+    return { id, name, kind, username, ...(totp ? { totp: { ...totp } } : {}), updatedAt }
   }
 
   remove(id: string): void {
@@ -312,7 +327,10 @@ class Vault {
           return [item.id, secret]
         } finally { plain.fill(0) }
       }))
-    } catch { throw new Error('볼트 계정의 복호화 또는 형식 확인에 실패했습니다. 비밀값은 표시하지 않습니다.') }
+    } catch (e) {
+      if (e instanceof VaultUpdateRequired) throw e
+      throw new Error('볼트 계정의 복호화 또는 형식 확인에 실패했습니다. 비밀값은 표시하지 않습니다.')
+    }
   }
 
   readLocalSyncSecrets(): Record<string, CredentialSecret> {
@@ -335,6 +353,7 @@ class Vault {
   }
 
   importRaw(v: VaultFile): void {
+    checkVaultFeatures(v)
     // an OS-wrapped key only opens on the machine (and OS) that made it – e.g. a Windows backup on a Mac
     const { osWrapped: _drop, ...rest } = v
     this.v = rest

@@ -258,10 +258,64 @@ export interface Host {
   os?: HostOs
   /** 원격 데스크톱 — os 가 windows 일 때 쓴다 */
   rdp?: RdpOptions
+  /** OTP 프롬프트에 볼트의 TOTP 코드를 자동으로 입력한다 — SSH(keyboard-interactive·터미널), 텔넷(터미널) */
+  totp?: HostTotp
   notes?: string
   favorite?: boolean
   lastUsedAt?: number
   sort: number
+}
+
+/** 서버의 TOTP 인증 — items 순서대로 OTP 프롬프트에 쓴다 */
+export interface HostTotp {
+  enabled: boolean
+  items: HostTotpItem[]
+  /** 접속 뒤 터미널에 나오는 OTP 프롬프트(베스천 메뉴·셸 2단계 인증 등)에도 입력한다. 텔넷은 이 방식만 쓴다 */
+  terminal?: boolean
+}
+
+export interface HostTotpItem {
+  /** 볼트의 TOTP 항목 id (kind 'totp') */
+  id: string
+  /** 이 TOTP 를 쓸 프롬프트 예시 — *는 가변 부분. 비우면 앱 설정의 OTP 프롬프트 템플릿으로 인식한다 */
+  prompt?: string
+  /** 터미널 프롬프트에 코드를 넣은 뒤 Enter 를 보낸다 — 없으면 보낸다. 자릿수가 차면 바로 확인하는 프롬프트는 false */
+  enter?: boolean
+}
+
+export type TotpPurpose = 'server' | 'app' | 'other'
+export type TotpAlgorithm = 'SHA1' | 'SHA256' | 'SHA512'
+
+export const TOTP_PURPOSE_LABELS: Record<TotpPurpose, string> = {
+  server: '서버 로그인',
+  app: '앱·서비스',
+  other: '기타'
+}
+
+/** TOTP 항목의 공개 정보 — 비밀키(totpSecret)는 볼트 안에 암호화된다 */
+export interface TotpMeta {
+  purpose: TotpPurpose
+  issuer?: string
+  account?: string
+  digits: 6 | 7 | 8
+  period: number
+  algorithm: TotpAlgorithm
+  note?: string
+}
+
+export interface TotpInput extends Partial<TotpMeta> {
+  id?: string
+  name: string
+  /** Base32 비밀키 또는 otpauth:// URI. 수정할 때 비우면 기존 비밀키를 유지한다 */
+  secret?: string
+}
+
+export interface TotpCode {
+  id: string
+  code: string
+  /** 현재 코드가 바뀌기까지 남은 초 */
+  remaining: number
+  period: number
 }
 
 export interface Snippet {
@@ -316,6 +370,8 @@ export interface Settings {
   rememberWindow: boolean
   /** 새 버전이 나오면 상태 표시줄에 알림 (GitHub 릴리스 확인) */
   checkUpdates: boolean
+  /** keyboard-interactive 에서 OTP 를 묻는 프롬프트 예시 — *는 가변 부분, 대소문자 무시, 포함되면 인식 */
+  totpPrompts: string[]
 }
 
 /** 지금 쓰는 것보다 새 버전 — url 은 GitHub 릴리스 페이지 */
@@ -395,11 +451,15 @@ export interface StoreData {
   workspace?: SavedWorkspace
 }
 
+export type CredentialKind = 'password' | 'key' | 'totp'
+
 export interface CredentialMeta {
   id: string
   name: string
-  kind: 'password' | 'key'
+  kind: CredentialKind
   username?: string
+  /** kind 'totp' 의 설정 */
+  totp?: TotpMeta
   updatedAt: number
 }
 
@@ -408,12 +468,15 @@ export interface CredentialSecret {
   password?: string
   privateKey?: string
   passphrase?: string
+  /** kind 'totp' 의 Base32 비밀키 */
+  totpSecret?: string
 }
 
 export interface CredentialInput extends CredentialSecret {
   id?: string
   name: string
-  kind: 'password' | 'key'
+  kind: CredentialKind
+  totp?: TotpMeta
 }
 
 export interface VaultStatus {
@@ -600,7 +663,8 @@ export const DEFAULT_SETTINGS: Settings = {
   rightPanelWidth: 340,
   restoreTabs: true,
   rememberWindow: true,
-  checkUpdates: true
+  checkUpdates: true,
+  totpPrompts: ['Verification code', 'One-time password', 'One time password', 'OTP', 'Passcode', 'Token code', 'Authenticator code', 'Google Authenticator', '인증 코드', '인증번호', '일회용 비밀번호']
 }
 
 export const ENV_COLORS: Record<Env, string> = {

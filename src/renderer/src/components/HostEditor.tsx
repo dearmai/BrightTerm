@@ -17,6 +17,7 @@ import type { SshConfigStatus } from '@shared/types'
 import { ENCODINGS, TERMINAL_PRESETS, applyPreset, hostKeys, matchPreset } from '@shared/terminal'
 import { DEFAULT_RDP, rdpCapable } from '@shared/rdp'
 import { RdpOptionsEditor } from './RdpOptionsEditor'
+import { HostTotpEditor } from './HostTotpEditor'
 
 const ENVS: Env[] = ['none', 'prod', 'stage', 'dev', 'device']
 const DEFAULT_SERIAL: SerialOptions = { path: isWindows ? 'COM1' : '', baudRate: 9600, dataBits: 8, parity: 'none', stopBits: 1, flowControl: 'none', enterSends: 'CR', localEcho: false }
@@ -239,6 +240,16 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
       if (!out.proxy.username || out.proxy.type === 'socks4') out.proxy.credentialId = null
     }
     if (out.protocol === 'serial' && !out.serial?.path) { setTab('basic'); return setErr('시리얼 포트를 선택하세요') }
+    if ((out.protocol !== 'ssh' && out.protocol !== 'telnet') || (!out.totp?.enabled && !out.totp?.items.length)) delete out.totp
+    else if (out.totp) {
+      const terminal = out.protocol === 'ssh' && !!out.totp.terminal
+      out.totp = {
+        enabled: out.totp.enabled,
+        ...(terminal ? { terminal } : {}),
+        items: out.totp.items.map((x) => ({ id: x.id, ...(x.prompt?.trim() ? { prompt: x.prompt.trim() } : {}), ...(x.enter === false ? { enter: false } : {}) }))
+      }
+      if (out.totp.enabled && !out.totp.items.length) { setTab(out.protocol === 'ssh' ? 'auth' : 'adv'); return setErr('TOTP 인증에 쓸 TOTP 를 하나 이상 고르세요') }
+    }
     try {
       const needsSecret = (out.authType === 'password' && changed('password', password)) || (out.authType === 'key' && keyText)
       if (needsSecret && credMode === 'own') {
@@ -554,11 +565,13 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
             ) : (
               <div className="notice">접속할 때마다 비밀번호를 묻습니다. 입력 창에서 "저장"을 선택하면 다음부터 자동으로 로그인됩니다.</div>
             )}
+            <HostTotpEditor value={h.totp} onChange={(v) => set('totp', v)} />
           </>
         )}
 
         {tab === 'adv' && (
           <>
+            {h.protocol === 'telnet' && <HostTotpEditor terminalOnly value={h.totp} onChange={(v) => set('totp', v)} />}
             {h.protocol === 'ssh' && (
               <Field label="점프 호스트 (배스천 경유)" hint="이 서버에 접속하기 전에 먼저 거쳐 갈 서버입니다 (ProxyJump).">
                 <select className="select" value={jumpInline ? '__inline' : h.jumpHostId ?? ''} onChange={(e) => {

@@ -138,6 +138,7 @@ final class GitSync {
                         snapshot = SyncCrypto.decode(remote.envelope, key);
                     } catch (Exception error) {
                         if (key != null) Arrays.fill(key, (byte)0);
+                        if (error instanceof SyncCrypto.UpdateRequired) throw error;
                         JSONObject previous = sync.optJSONObject("portable");
                         if (password.isEmpty() && previous != null && SyncCrypto.canonical(previous.getJSONObject("vault").get("wrapped")).equals(SyncCrypto.canonical(remote.envelope.get("wrapped"))))
                             throw new java.io.IOException("동기화 데이터의 인증 또는 형식 검증에 실패했습니다.");
@@ -192,6 +193,7 @@ final class GitSync {
             }
         } catch (OutOfMemoryError error) { update("error", "볼트 암호화를 위한 메모리가 부족합니다. 다른 앱을 닫고 다시 시도하세요.", false); }
         catch (LinkageError error) { update("error", "이 Android 환경에서 Git 라이브러리를 실행할 수 없습니다.", false); }
+        catch (SyncCrypto.UpdateRequired error) { update("error", error.getMessage(), false); }
         catch (Exception error) {
             if (BuildConfig.DEBUG) {
                 Throwable cause = error; while (cause.getCause() != null) cause = cause.getCause();

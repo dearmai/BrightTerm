@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Palette, Keyboard, ImageUp, Plug, Shield, Archive, Info, Trash2, GitBranch, ScrollText } from 'lucide-react'
+import { Palette, Keyboard, ImageUp, Plug, Shield, Archive, Info, Trash2, GitBranch, ScrollText, KeyRound } from 'lucide-react'
 import { GitSyncSettings } from './GitSyncSettings'
+import { TotpSettings } from './TotpSettings'
 import { ReconnectPolicyEditor } from './ReconnectPolicyEditor'
 import { SessionLogOptionsEditor } from './SessionLogOptionsEditor'
 import { useApp } from '../state'
@@ -11,7 +12,7 @@ import { SHORTCUTS } from './Welcome'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { isMac, SC, osUnlockText } from '../platform'
 
-type Sec = 'look' | 'input' | 'image' | 'conn' | 'log' | 'security' | 'backup' | 'git-sync' | 'about'
+type Sec = 'look' | 'input' | 'image' | 'conn' | 'log' | 'security' | 'totp' | 'backup' | 'git-sync' | 'about'
 
 export function SettingsDialog({ section }: { section?: string }): JSX.Element {
   const { settings, vault, creds, hosts } = useApp()
@@ -31,6 +32,7 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
     ['conn', '연결', <Plug size={15} key="d" />],
     ['log', '세션 로그', <ScrollText size={15} key="log" />],
     ['security', '보안·계정', <Shield size={15} key="e" />],
+    ['totp', 'TOTP 인증', <KeyRound size={15} key="totp" />],
     ['backup', '백업', <Archive size={15} key="f" />],
     ['git-sync', 'Git 동기화', <GitBranch size={15} key="sync" />],
     ['about', '정보·단축키', <Info size={15} key="g" />]
@@ -44,6 +46,7 @@ export function SettingsDialog({ section }: { section?: string }): JSX.Element {
         </nav>
         <div className="s-body">
           {sec === 'git-sync' && <GitSyncSettings />}
+          {sec === 'totp' && <TotpSettings />}
           {sec === 'look' && (
             <>
               <div className="card">

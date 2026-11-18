@@ -96,8 +96,22 @@ final class SyncCrypto {
         }
         return snapshot;
     }
+    /** 볼트 기능 — 데스크톱 src/main/vault.ts 의 VAULT_FEATURES 와 같게 유지 */
+    private static final List<String> FEATURES = List.of("totp");
+    private static final List<String> KINDS = List.of("key", "password", "totp");
+    /** 이 앱이 모르는 기능을 쓰는 동기화 데이터 — 형식 오류와 구분해 업데이트를 안내한다 */
+    static final class UpdateRequired extends IllegalArgumentException {
+        UpdateRequired(String message) { super(message); }
+    }
+    private static UpdateRequired updateRequired(JSONObject vault) {
+        String min = vault.optString("minAppVersion", "");
+        return new UpdateRequired("이 동기화 데이터는 BrightTerm " + (min.matches("\\d+(\\.\\d+){0,3}") ? min + " 이상" : "최신 버전") + "이 필요합니다. 앱을 업데이트한 뒤 다시 시도하세요.");
+    }
     static void validateSnapshot(JSONObject snapshot) throws Exception {
         JSONObject vault = snapshot.getJSONObject("vault");
+        JSONArray features = vault.optJSONArray("features");
+        if (features != null) for (int i = 0; i < features.length(); i++)
+            if (!FEATURES.contains(features.optString(i, ""))) throw updateRequired(vault);
         integers(snapshot, "version"); integers(vault, "version");
         if (snapshot.getInt("version") != 1 || vault.getInt("version") != 1 || vault.has("osWrapped")) throw new IllegalArgumentException("잘못된 동기화 볼트입니다.");
         validateKdf(vault.getJSONObject("kdf")); validateEnc(vault.getJSONObject("wrapped"));
@@ -126,7 +140,8 @@ final class SyncCrypto {
         }
         for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.getJSONObject(i); validateEnc(item); strings(item, "name", "kind");
-            if (!List.of("key", "password").contains(item.getString("kind"))) throw new IllegalArgumentException("잘못된 자격 증명입니다.");
+            // totp: 데스크톱의 TOTP 인증 — Android 는 쓰지 않지만 동기화에 그대로 보존한다
+            if (!KINDS.contains(item.getString("kind"))) throw updateRequired(vault);
         }
     }
     private static void strings(JSONObject value, String... fields) throws Exception {

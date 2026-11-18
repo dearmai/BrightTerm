@@ -9,6 +9,7 @@ import { connectSshClient } from './sshConnection'
 import { ask } from '../ui'
 import { store } from '../store'
 import { vault } from '../vault'
+import { TotpResponder } from '../totp'
 import { proxyConnect, proxyLabel } from '../proxy'
 import { persistSupported, tmuxName, TMUX_LIST_SCRIPT, parseTmuxList, nextTmuxName, tmuxKillScript } from '../persist'
 
@@ -159,6 +160,7 @@ export async function openClient(host: Host, ctx: SshContext, depth = 0): Promis
   let saveTyped = false
   const tried = new Set<string>()
   let askCount = 0
+  const otp = host.protocol === 'ssh' ? TotpResponder.for(host, store.get().settings.totpPrompts ?? [], ctx.onInfo) : null
 
   const hostPort = `${host.host}:${host.port}`
   const cfg: ConnectConfig = {
@@ -213,23 +215,36 @@ export async function openClient(host: Host, ctx: SshContext, depth = 0): Promis
             type: 'keyboard-interactive',
             username,
             prompt: (name, instructions, _lang, prompts, finish) => {
-              if (prompts.length === 1 && !prompts[0].echo && /pass/i.test(prompts[0].prompt) && password && !usedSaved) {
-                usedSaved = true
-                return finish([password])
-              }
-              if (prompts.length === 1 && !prompts[0].echo && /pass/i.test(prompts[0].prompt)) {
-                ask<{ password: string; save: boolean }>({
-                  kind: 'password', sessionTitle: ctx.title, prompt: prompts[0].prompt, username, allowSave: true, failed: askCount++ > 0 || usedSaved
-                }).then((r) => {
-                  if (!r) return finish([])
+              // 비밀번호·기타 프롬프트 — TOTP 로 답하지 못한 것만
+              const answerRest = async (rest: { prompt: string; echo?: boolean }[]): Promise<string[] | null> => {
+                if (!rest.length) return []
+                if (rest.length === 1 && !rest[0].echo && /pass/i.test(rest[0].prompt) && password && !usedSaved) {
+                  usedSaved = true
+                  return [password]
+                }
+                if (rest.length === 1 && !rest[0].echo && /pass/i.test(rest[0].prompt)) {
+                  const r = await ask<{ password: string; save: boolean }>({
+                    kind: 'password', sessionTitle: ctx.title, prompt: rest[0].prompt, username, allowSave: true, failed: askCount++ > 0 || usedSaved
+                  })
+                  if (!r) return null
                   typedPassword = r.password
                   saveTyped = r.save
-                  finish([r.password])
-                })
-                return
+                  return [r.password]
+                }
+                return ask<string[]>({ kind: 'keyboard', sessionTitle: ctx.title, name, instructions, prompts: rest.map((p) => ({ prompt: p.prompt, echo: !!p.echo })) })
               }
-              ask<string[]>({ kind: 'keyboard', sessionTitle: ctx.title, name, instructions, prompts: prompts.map((p) => ({ prompt: p.prompt, echo: !!p.echo })) })
-                .then((ans) => finish(ans ?? []))
+              ;(async () => {
+                const answers: (string | null)[] = prompts.map(() => null)
+                // 'Passcode' 처럼 /pass/ 와도 맞는 OTP 프롬프트가 있어 TOTP 를 먼저 본다
+                if (otp) {
+                  for (const [n, p] of prompts.entries()) if (otp.matches(p.prompt)) answers[n] = (await otp.answer(p.prompt))?.code ?? null
+                }
+                const restIdx = prompts.map((_p, n) => n).filter((n) => answers[n] === null)
+                const rest = await answerRest(restIdx.map((n) => prompts[n]))
+                if (!rest) return finish([])
+                restIdx.forEach((n, k) => (answers[n] = rest[k] ?? ''))
+                finish(answers.map((a) => a ?? ''))
+              })().catch(() => finish([]))
             }
           })
         }

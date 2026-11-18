@@ -19,6 +19,7 @@ export function GitSyncSettings(): JSX.Element {
   const groups = useApp((s) => s.groups)
   const snippets = useApp((s) => s.snippets)
   const creds = useApp((s) => s.creds)
+  const totps = useApp((s) => s.totps)
   const toast = useApp.getState().toast
   useEffect(() => {
     let live = true
@@ -32,7 +33,7 @@ export function GitSyncSettings(): JSX.Element {
     setPreview(null)
     setPassword('')
     setPreviewError('')
-  }, [unlocked, hosts, groups, snippets, creds, config.remote, config.branch, config.enabled])
+  }, [unlocked, hosts, groups, snippets, creds, totps, config.remote, config.branch, config.enabled])
   useEffect(() => {
     if (status && !['conflict', 'password-required'].includes(status.state)) { setPreview(null); setPassword('') }
   }, [status?.state])

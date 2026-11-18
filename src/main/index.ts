@@ -4,7 +4,7 @@ import { join } from 'path'
 import { promises as fs } from 'fs'
 import { randomUUID } from 'crypto'
 import { store, dataDir } from './store'
-import { vault, VaultFile } from './vault'
+import { vault, checkVaultFeatures, VaultFile } from './vault'
 import { sessions } from './sessions'
 import { resolveLogDir } from './sessionLog'
 import { remoteExec, sessionMetrics } from './metrics'
@@ -21,10 +21,11 @@ import { gitSync } from './gitSync'
 import { applySshHost, scheduleSshConfigSync, sshConfigStatus, syncSshConfig } from './sshConfigSync'
 import { listPublicKeys, installPublicKey, checkTmux } from './sshKeys'
 import { testConnection } from './connTest'
+import { saveTotp, totpCodes } from './totp'
 import { handleLaunch, takeLaunches } from './launch'
 import { registerRdp, rdpCount } from './rdp'
 import { MAX_SNIPPET_FILE_BYTES, mergeSnippets, parseSnippets, serializeSnippets } from './snippetsFile'
-import type { AdhocTarget, CredentialInput, CredentialSecret, GitSyncConfig, Group, Host, ImportCandidate, StoreData } from '@shared/types'
+import type { AdhocTarget, CredentialInput, CredentialSecret, GitSyncConfig, Group, Host, ImportCandidate, StoreData, TotpInput } from '@shared/types'
 
 /** electron.vite.config.ts 가 빌드할 때 넣는다 */
 declare const __BUILD_ID__: string
@@ -158,6 +159,8 @@ function registerIpc(): void {
   handle('cred:get', (id: string) => vault.get(id))
   handle('cred:save', (c: CredentialInput) => vault.save_(c))
   handle('cred:delete', (id: string) => vault.remove(id))
+  handle('totp:save', (t: TotpInput) => saveTotp(t))
+  handle('totp:codes', (ids?: string[]) => totpCodes(ids))
 
   // sessions
   handle('session:open', (o: Parameters<typeof sessions.open>[0]) => sessions.open(o))
@@ -279,6 +282,8 @@ function registerIpc(): void {
     if (r.canceled || !r.filePaths[0]) return false
     const data = JSON.parse(await fs.readFile(r.filePaths[0], 'utf8')) as { app: string; store: StoreData; vault: VaultFile | null }
     if (data.app !== 'brightterm') throw new Error('BrightTerm 백업 파일이 아닙니다')
+    // 새 버전의 볼트면 아무것도 바꾸기 전에 업데이트를 안내한다
+    checkVaultFeatures(data.vault)
     store.replaceAll(data.store)
     if (data.vault) vault.importRaw(data.vault)
     return true

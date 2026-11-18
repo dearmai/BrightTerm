@@ -505,3 +505,20 @@ button.ph-forward:focus-visible { outline: 2px solid var(--accent); outline-offs
 .secret-input .input { flex: 1; min-width: 0; }
 .select + .secret-input { margin-top: 6px; }
 .rdp-exp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 12px; margin: -4px 0 12px; }
+.totp-form { padding-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+.totp-row .t-label { min-width: 0; }
+.totp-code { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--bg-2, var(--bg)); color: var(--text); border-radius: 7px; padding: 3px 6px 3px 10px; cursor: pointer; }
+.totp-code:hover { border-color: var(--accent); }
+.totp-code .mono { font-family: 'D2Coding ligature', 'D2Coding', 'Cascadia Mono', Consolas, monospace; font-size: 15px; font-weight: 700; letter-spacing: 1px; }
+.totp-timer { position: relative; width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; background: conic-gradient(var(--accent) var(--p), var(--bg-3) 0); }
+.totp-timer::before { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--bg); }
+.totp-timer b { position: relative; font-size: 10px; font-weight: 600; color: var(--text); }
+.pill.ok { color: var(--accent); }
+.totp-enter { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.totp-host-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto auto auto auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+/* "?" 도움말 팝업 (HelpTip) — 두 줄 이상 설명 */
+.help-anchor { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; text-transform: none; letter-spacing: 0; }
+.help-popup { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; width: min(360px, calc(100vw - 64px)); padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-2); color: var(--text); box-shadow: 0 8px 24px #0005; display: flex; flex-direction: column; gap: 8px; font-size: 12px; font-weight: 400; line-height: 1.6; white-space: normal; text-align: left; cursor: default; }
+.help-popup.end { left: auto; right: 0; }
+.help-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.help-popup code { font-family: 'D2Coding ligature', 'D2Coding', 'Cascadia Mono', Consolas, monospace; background: var(--bg-3); padding: 0 4px; border-radius: 4px; }

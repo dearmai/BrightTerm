@@ -9,7 +9,7 @@ const labels: Record<string, string> = {
   reconnectPolicy: '재접속 규칙', mouseReporting: '마우스 입력 전달', persist: '세션 유지', persistMouse: 'tmux 마우스 모드',
   persistName: 'tmux 세션 이름', idleCommandSec: '유휴 방지 간격(초)', idleCommand: '유휴 방지 명령', shellPromptExample: '셸 프롬프트 예시',
   forwards: '포트 포워딩', local: '로컬 셸 설정', serial: '시리얼 설정', color: '색상', env: '환경', tags: '태그',
-  os: '서버 OS', rdp: '원격 데스크톱(RDP) 설정', sshConfig: '.ssh/config 동기화', sshConfigName: '.ssh/config Host 이름',
+  os: '서버 OS', rdp: '원격 데스크톱(RDP) 설정', totp: 'TOTP 설정', sshConfig: '.ssh/config 동기화', sshConfigName: '.ssh/config Host 이름',
   notes: '메모', sort: '정렬 순서', favorite: '즐겨찾기', body: '스니펫 본문', sendEnter: 'Enter 전송', kind: '계정 종류', updatedAt: '수정 시각'
 }
 const concealed = new Set(['body', 'startupCommand', 'notes', 'idleCommand', 'shellPromptExample'])
@@ -72,7 +72,7 @@ export function compareSnapshots(local: SyncSnapshot, remote: SyncSnapshot | nul
         if (!same(a?.username, b?.username) && same(l?.username, r?.username)) {
           fields.push({ label: '계정 내부 사용자', local: display(a?.username, 'username', local), remote: remote ? display(b?.username, 'username', remote) : '항목 없음' })
         }
-        for (const [key, label] of [['password', '비밀번호'], ['privateKey', '개인 키'], ['passphrase', '키 암호']] as const) {
+        for (const [key, label] of [['password', '비밀번호'], ['privateKey', '개인 키'], ['passphrase', '키 암호'], ['totpSecret', 'TOTP 비밀키']] as const) {
           if (same(a?.[key], b?.[key])) continue
           const presence = (v: string | undefined): string => v === undefined ? '없음' : '값 있음 (내용 숨김)'
           fields.push({ label: `${label} — 값이 다름`, local: presence(a?.[key]), remote: presence(b?.[key]) })

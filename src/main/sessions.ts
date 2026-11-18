@@ -26,6 +26,8 @@ import { logStem, resolveSessionLog } from '@shared/sessionLog'
 import { vault } from './vault'
 import { claimLaunch, type LaunchClaim } from './launch'
 import { localNetworkHelp } from './localNetworkHelp'
+import { TotpResponder } from './totp'
+import { pendingPromptLine } from './totpTerminal'
 
 /** SFTP 확인을 기다리는 시간 — 응답이 없으면 쓸 수 없는 것으로 본다 */
 const SFTP_CHECK_MS = 10000
@@ -35,6 +37,9 @@ function withTimeout<T>(p: Promise<T>, fallback: T, ms = SFTP_CHECK_MS): Promise
   return Promise.race([p, new Promise<T>((res) => { timer = setTimeout(() => res(fallback), ms) })]).finally(() => clearTimeout(timer))
 }
 
+/** 접속 뒤 터미널 OTP 프롬프트를 지켜보는 시간과, 프롬프트로 볼 만큼 출력이 멎은 시간 */
+const OTP_WATCH_MS = 120_000
+const OTP_QUIET_MS = 250
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[=>78DEHMc]/g
 
 export function resolveHostColor(h: Host): string | undefined {
@@ -128,6 +133,8 @@ export class Session {
   private altScreen = false
   private idleTimer: NodeJS.Timeout | null = null
   private startupRunning = false
+  /** 접속 뒤 터미널에 나오는 OTP 프롬프트 자동 입력 — 접속하고 OTP_WATCH_MS 동안만 */
+  private otpWatch: { responder: TotpResponder; until: number; timer: NodeJS.Timeout | null; busy: boolean } | null = null
   private tmoutCheck: 'off' | 'waiting' | 'reading' | 'done' = 'off'
   private tmoutDeadline = 0
   private tmoutOutput = ''
@@ -257,6 +264,7 @@ export class Session {
       if (t instanceof SshTransport) void this.checkSftp(t)
       this.startupRunning = startup.length > 0
       if (h.protocol === 'ssh' || h.protocol === 'telnet') this.startIdleGuard()
+      this.startOtpWatch()
       if (startup.length) void this.typeStartup(startup).finally(() => {
         if (this.transport === t) this.startupRunning = false
       })
@@ -329,6 +337,7 @@ export class Session {
       this.outputTail = (this.outputTail + s).slice(-300)
       this.emitText(s)
       this.log?.write(s)
+      if (this.otpWatch) this.checkOtpPrompt()
       if (this.tmoutCheck === 'reading') {
         this.tmoutOutput = (this.tmoutOutput + s).slice(-2048)
         const value = readTmoutResult(this.tmoutOutput.replace(ANSI, ''))
@@ -421,6 +430,40 @@ export class Session {
     this.idleTimer.unref()
   }
 
+  private startOtpWatch(): void {
+    this.stopOtpWatch()
+    const h = this.savedHost()
+    if (!(h.protocol === 'telnet' || (h.protocol === 'ssh' && h.totp?.terminal))) return
+    const responder = TotpResponder.for(h, store.get().settings.totpPrompts ?? [], (m) => this.info_(m, '90'))
+    if (responder) this.otpWatch = { responder, until: Date.now() + OTP_WATCH_MS, timer: null, busy: false }
+  }
+
+  private stopOtpWatch(): void {
+    if (this.otpWatch?.timer) clearTimeout(this.otpWatch.timer)
+    this.otpWatch = null
+  }
+
+  /** 출력이 잠시 멎었을 때(입력을 기다릴 때) 마지막 줄이 OTP 프롬프트면 코드를 넣는다 */
+  private checkOtpPrompt(): void {
+    const w = this.otpWatch
+    if (!w || w.busy) return
+    if (Date.now() > w.until || w.responder.exhausted) return this.stopOtpWatch()
+    if (w.timer) clearTimeout(w.timer)
+    w.timer = setTimeout(() => {
+      w.timer = null
+      if (this.otpWatch !== w || this.altScreen) return
+      const line = pendingPromptLine(this.outputTail)
+      if (!line || !w.responder.matches(line)) return
+      w.busy = true
+      void w.responder.answer(line).then((r) => {
+        w.busy = false
+        if (!r || this.otpWatch !== w || !this.transport) return
+        this.transport.write(Buffer.from(r.code, 'utf8'))
+        if (r.item.enter !== false) this.write('\r')
+      })
+    }, OTP_QUIET_MS)
+  }
+
   private stopIdleGuard(): void {
     if (this.idleTimer) clearInterval(this.idleTimer)
     this.idleTimer = null
@@ -431,6 +474,7 @@ export class Session {
   private onClose(reason?: string): void {
     this.transport = null
     this.stopIdleGuard()
+    this.stopOtpWatch()
     this.closeLog()
     if (this.userClosed) return
     if (this.host.protocol === 'local') {
@@ -515,6 +559,7 @@ export class Session {
   async close(killTmux = false): Promise<void> {
     this.userClosed = true
     this.stopIdleGuard()
+    this.stopOtpWatch()
     if (this.retryTimer) clearTimeout(this.retryTimer)
     const t = this.transport
     this.transport = null

@@ -109,6 +109,8 @@ interface State {
   snippets: Snippet[]
   settings: Settings
   creds: CredentialMeta[]
+  /** 볼트의 TOTP 항목 — creds 에는 넣지 않는다(서버 계정 목록에 섞이지 않게) */
+  totps: CredentialMeta[]
   vault: VaultStatus
   sessions: Record<string, SessionInfo>
   tabs: Tab[]
@@ -191,6 +193,7 @@ export const useApp = create<State>((set, get) => ({
   snippets: [],
   settings: DEFAULT_SETTINGS,
   creds: [],
+  totps: [],
   vault: { initialized: false, unlocked: false, osUnlockAvailable: false, osUnlockEnabled: false },
   sessions: {},
   tabs: [],
@@ -223,7 +226,8 @@ export const useApp = create<State>((set, get) => ({
 
   async refreshCreds() {
     try {
-      set({ creds: await api.cred.list() })
+      const all = await api.cred.list()
+      set({ creds: all.filter((c) => c.kind !== 'totp'), totps: all.filter((c) => c.kind === 'totp') })
     } catch { /* */ }
   },
 

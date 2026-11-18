@@ -1,5 +1,5 @@
 import type {
-  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, GitSyncPreviewResult, Host, ImportCandidate, LaunchItem, LocalPublicKey, RdpCheck, ServerEnv, SessionInfo, SessionMetrics, SftpEntry, SshConfigStatus, StoreData, TmuxCheck, TmuxPick, Transfer, UiRequest, UpdateInfo, VaultStatus
+  AdhocTarget, ClipboardInfo, CredentialInput, CredentialMeta, CredentialSecret, GitSyncConfig, GitSyncStatus, GitSyncPreviewResult, Host, ImportCandidate, LaunchItem, LocalPublicKey, RdpCheck, ServerEnv, SessionInfo, SessionMetrics, SftpEntry, SshConfigStatus, StoreData, TmuxCheck, TmuxPick, TotpCode, TotpInput, Transfer, UiRequest, UpdateInfo, VaultStatus
 } from '@shared/types'
 
 interface Bt {
@@ -64,6 +64,12 @@ export const api = {
     get: (id: string) => bt.call<CredentialSecret | null>('cred:get', id),
     save: (c: CredentialInput) => bt.call<CredentialMeta>('cred:save', c),
     remove: (id: string) => bt.call<void>('cred:delete', id)
+  },
+  totp: {
+    /** 비밀키는 Base32 또는 otpauth:// URI — 수정할 때 비우면 그대로 둔다 */
+    save: (t: TotpInput) => bt.call<CredentialMeta>('totp:save', t),
+    /** 지금 코드 — 볼트가 잠겨 있으면 빈 목록 */
+    codes: (ids?: string[]) => bt.call<TotpCode[]>('totp:codes', ids)
   },
   session: {
     metrics: (id: string) => bt.call<SessionMetrics | null>('session:metrics', id),
