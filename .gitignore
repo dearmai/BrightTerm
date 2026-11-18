@@ -12,3 +12,4 @@ android/local.properties
 android/**/build/
 
 /android/deploy.local.json
+.env

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Eye, EyeOff, KeyRound, Lock, Plus, Trash2, RefreshCw, FileKey, FolderOpen, Search, Check, Copy, SquareTerminal, CircleHelp, X } from 'lucide-react'
 import { useApp, newHost } from '../state'
 import { api } from '../api'
-import { Modal, Field, Seg, ColorPick, Switch } from './ui'
+import { Modal, Field, Seg, ColorPick, Switch, useEscLayer } from './ui'
 import { ENV_COLORS, ENV_LABELS, OS_LABELS, type Env, type HostOs, type Group, type Host, type InlineJump, type KeyOptions, type ProxyConfig, type ProxyType, type SerialOptions, type TmuxCheck } from '@shared/types'
 import { isMac, isWindows } from '../platform'
 
@@ -83,6 +83,8 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   const [idleHelpOpen, setIdleHelpOpen] = useState(false)
   /** 폴더 선택 옆에서 바로 만드는 새 폴더 이름 — null 이면 입력란을 닫은 상태 */
   const [newFolder, setNewFolder] = useState<string | null>(null)
+  // 폴더 이름 입력 중 Esc 는 입력란만 닫는다(편집 창은 그대로)
+  useEscLayer(newFolder !== null, () => setNewFolder(null))
   const addFolder = (): void => {
     const name = newFolder?.trim()
     if (!name) return

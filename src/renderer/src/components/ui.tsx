@@ -9,8 +9,9 @@ export function Modal(props: { title: ReactNode; onClose: () => void; children: 
     const k = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        // 도움말 팝업이 열려 있으면 그것만 닫는다
-        if (closeOpenHelp) closeOpenHelp()
+        // 도움말 팝업·입력란 같은 안쪽 층이 열려 있으면 가장 위의 것만 닫는다
+        const layer = escLayers[escLayers.length - 1]
+        if (layer) layer()
         else props.onClose()
       }
     }
@@ -42,8 +43,26 @@ export function Modal(props: { title: ReactNode; onClose: () => void; children: 
   )
 }
 
-/** 열려 있는 도움말 팝업 닫기 — Modal 의 Esc 가 창 대신 팝업을 닫는다 */
-let closeOpenHelp: (() => void) | null = null
+/** 대화상자 안에서 Esc 로 먼저 닫을 층(도움말 팝업, 인라인 입력란 등) — 나중에 연 것이 위 */
+const escLayers: (() => void)[] = []
+
+/**
+ * active 인 동안 Modal 의 Esc 가 대화상자를 닫지 않고 onEsc 를 부른다.
+ * 대화상자 안의 팝업·인라인 입력란처럼 Esc 로 그것만 닫아야 하는 곳에 쓴다
+ */
+export function useEscLayer(active: boolean, onEsc: () => void): void {
+  const ref = useRef(onEsc)
+  ref.current = onEsc
+  useEffect(() => {
+    if (!active) return
+    const layer = (): void => ref.current()
+    escLayers.push(layer)
+    return () => {
+      const i = escLayers.lastIndexOf(layer)
+      if (i >= 0) escLayers.splice(i, 1)
+    }
+  }, [active])
+}
 
 /**
  * "?" 아이콘 도움말 — 두 줄 이상의 설명은 화면에 늘어놓지 않고 이 팝업에 넣는다.
@@ -54,16 +73,12 @@ export function HelpTip(props: { title: string; children: ReactNode; align?: 'st
   const anchor = useRef<HTMLSpanElement>(null)
   const button = useRef<HTMLButtonElement>(null)
   const id = useId()
+  useEscLayer(open, () => { setOpen(false); button.current?.focus() })
   useEffect(() => {
     if (!open) return
-    const close = (): void => { setOpen(false); button.current?.focus() }
-    closeOpenHelp = close
     const down = (e: MouseEvent): void => { if (!anchor.current?.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', down, true)
-    return () => {
-      if (closeOpenHelp === close) closeOpenHelp = null
-      document.removeEventListener('mousedown', down, true)
-    }
+    return () => document.removeEventListener('mousedown', down, true)
   }, [open])
   return (
     <span className="help-anchor" ref={anchor}>

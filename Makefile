@@ -22,6 +22,7 @@ help:
 	@echo make build    Build Windows signed packages or the macOS/Linux application directory
 	@echo make install  Build and install on Windows, macOS or Ubuntu/Debian/HamoniKR
 	@echo make install SILENT=0  Show the Windows setup wizard instead of silent installation
+	@echo   Windows: after installing, copies the build to BRIGHTTERM_DEPLOY_DIR from .env - see .env.example
 	@echo make deb      Build a Linux deb package, ARCH=arm64 for ARM64
 	@echo make test     Build and run Linux tests
 	@echo make android-build  Build the Android debug APK
@@ -40,6 +41,7 @@ build: deps
 
 install: build
 	powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-windows.ps1 $(if $(filter 1,$(SILENT)),-Silent,)
+	node scripts/deploy-build.mjs
 else ifeq ($(HOST_OS),Darwin)
 build: deps
 	node scripts/prepare-macos-signing.cjs
