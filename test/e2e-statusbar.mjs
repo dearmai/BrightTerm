@@ -38,8 +38,8 @@ try {
   assert.match(await page.locator('.statusbar .sb-session').textContent(), /Metrics A/)
   await page.waitForFunction(() => /[0-9]+분/.test(document.querySelector('.sb-uptime')?.textContent || ''))
   // Split and focus each actual terminal textarea, including keyboard-driven focus.
-  await page.locator('.sidebar [data-host="metrics-1"]').hover()
-  await page.locator('.sidebar [data-host="metrics-1"] button[title="분할로 연결"]').click()
+  await page.locator('.sidebar [data-host="metrics-1"]').click({ button: 'right' })
+  await page.locator('.ctx', { hasText: '오른쪽으로 분할해 연결' }).click()
   await page.waitForFunction(() => document.querySelectorAll('.pane').length === 2)
   const panes = page.locator('.pane')
   for (const index of [0, 1, 0]) {

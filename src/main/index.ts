@@ -20,10 +20,11 @@ import { checkUpdate, startUpdateCheck, updateInfo } from './update'
 import { gitSync } from './gitSync'
 import { applySshHost, scheduleSshConfigSync, sshConfigStatus, syncSshConfig } from './sshConfigSync'
 import { listPublicKeys, installPublicKey, checkTmux } from './sshKeys'
+import { testConnection } from './connTest'
 import { handleLaunch, takeLaunches } from './launch'
 import { registerRdp, rdpCount } from './rdp'
 import { MAX_SNIPPET_FILE_BYTES, mergeSnippets, parseSnippets, serializeSnippets } from './snippetsFile'
-import type { AdhocTarget, CredentialInput, GitSyncConfig, Group, Host, ImportCandidate, StoreData } from '@shared/types'
+import type { AdhocTarget, CredentialInput, CredentialSecret, GitSyncConfig, Group, Host, ImportCandidate, StoreData } from '@shared/types'
 
 /** electron.vite.config.ts 가 빌드할 때 넣는다 */
 declare const __BUILD_ID__: string
@@ -187,6 +188,7 @@ function registerIpc(): void {
   handle('sshkey:list', () => listPublicKeys())
   handle('sshkey:install', (hostId: string, pubPath: string) => installPublicKey(hostId, pubPath))
   handle('persist:check', (host: Host) => checkTmux(host))
+  handle('host:test', (host: Host, secret?: CredentialSecret) => testConnection(host, secret))
   handle('sshconfig:status', () => sshConfigStatus())
   handle('sshconfig:sync', () => syncSshConfig())
   handle('sshconfig:apply', (host: Host) => applySshHost(host))

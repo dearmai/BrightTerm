@@ -18,7 +18,7 @@ const call = (channel, ...args) => page.evaluate(({ channel, args }) => window.b
 
 async function openAuth(id) {
   await page.locator(`.sidebar [data-host="${id}"]`).click()
-  await page.keyboard.press('F2')
+  await page.keyboard.press('F4')
   await page.locator('.mtabs button', { hasText: '인증' }).click()
 }
 /** 눈 버튼을 누르면 볼트에서 읽어 채운다 — 채워질 때까지 기다린 뒤 값 */

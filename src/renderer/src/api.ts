@@ -94,6 +94,10 @@ export const api = {
   persist: {
     check: (host: Host) => bt.call<TmuxCheck>('persist:check', host)
   },
+  host: {
+    /** 서버 편집 창의 연결 테스트 — secret 은 아직 저장하지 않은 비밀번호·키 */
+    test: (host: Host, secret?: CredentialSecret) => bt.call<{ ms: number; detail: string }>('host:test', host, secret)
+  },
   sftp: {
     home: (id: string) => bt.call<string>('sftp:home', id),
     list: (id: string, path: string) => bt.call<{ path: string; entries: SftpEntry[] }>('sftp:list', id, path),

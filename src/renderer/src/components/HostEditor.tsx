@@ -80,6 +80,17 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   const [h, setH] = useState<Host>(() => initial ? structuredClone(initial) : newHost(groupId ?? null))
   const [tab, setTab] = useState<'basic' | 'auth' | 'term' | 'adv' | 'fw' | 'rdp'>('basic')
   const [idleHelpOpen, setIdleHelpOpen] = useState(false)
+  /** 폴더 선택 옆에서 바로 만드는 새 폴더 이름 — null 이면 입력란을 닫은 상태 */
+  const [newFolder, setNewFolder] = useState<string | null>(null)
+  const addFolder = (): void => {
+    const name = newFolder?.trim()
+    if (!name) return
+    const parentId = h.groupId ?? null
+    const g: Group = { id: crypto.randomUUID(), parentId, name, sort: groups.length, env: 'none' }
+    useApp.getState().upsertGroup(g)
+    set('groupId', g.id)
+    setNewFolder(null)
+  }
   const idleHelpRef = useRef<HTMLSpanElement>(null)
   const idleHelpButtonRef = useRef<HTMLButtonElement>(null)
   const dismissIdleHelp = (): void => {
@@ -185,6 +196,26 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
       setCheckErr(`확인 실패: ${(e as Error).message}`)
     } finally {
       setChecking(false)
+    }
+  }
+
+  /** 연결 테스트 — 저장하지 않은 설정·비밀번호로 접속만 해 보고 끊는다 */
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const testConn = async (): Promise<void> => {
+    setTesting(true)
+    setTestResult(null)
+    const secret = h.protocol !== 'ssh' ? undefined
+      : h.authType === 'password' && password ? { password }
+      : h.authType === 'key' && keyText ? { privateKey: keyText, passphrase: passphrase || undefined }
+      : undefined
+    try {
+      const r = await api.host.test({ ...h, host: h.host.trim(), username: h.username.trim(), alias: h.alias.trim() || h.host.trim() }, secret)
+      setTestResult({ ok: true, text: `${r.detail} · ${r.ms}ms` })
+    } catch (e) {
+      setTestResult({ ok: false, text: `연결 실패: ${(e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}` })
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -303,7 +334,13 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
   return (
     <Modal title={isNew ? '새 서버' : `서버 편집 · ${initial?.alias}`} onClose={idleHelpOpen ? dismissIdleHelp : close}
       foot={<>
-        {err && <span className="left err">{err}</span>}
+        {err ? <span className="left err">{err}</span>
+          : testResult && <span className={`left test-result${testResult.ok ? '' : ' err'}`} style={testResult.ok ? { color: 'var(--ok)' } : undefined} title={testResult.text}>{testResult.text}</span>}
+        {(h.protocol === 'ssh' || h.protocol === 'telnet') && (
+          <button className="btn" disabled={testing || !h.host.trim()} onClick={testConn} title={h.protocol === 'ssh' ? '저장하지 않고 접속·로그인만 해 봅니다' : '저장하지 않고 포트 연결만 해 봅니다'}>
+            <RefreshCw size={13} className={testing ? 'spin' : undefined} />{testing ? '테스트 중...' : '연결 테스트'}
+          </button>
+        )}
         <button className="btn" onClick={close}>취소</button>
         <button className="btn" onClick={() => save(false)}>저장</button>
         {rdpCapable(h) && <button className="btn" onClick={() => save('rdp')}>저장 후 RDP 연결</button>}
@@ -434,11 +471,24 @@ export function HostEditor({ host: initial, groupId }: { host?: Host; groupId?: 
               </div>
             )}
             <div className="grid2">
-              <Field label="폴더">
-                <select className="select" value={h.groupId ?? ''} onChange={(e) => set('groupId', e.target.value || null)}>
-                  <option value="">(최상위)</option>
-                  {flatGroups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
-                </select>
+              <Field label="폴더" hint={newFolder !== null ? `${h.groupId ? groupPath(groups, h.groupId) : '최상위'} 아래에 만듭니다` : undefined}>
+                {newFolder === null ? (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select className="select" style={{ flex: 1, minWidth: 0 }} value={h.groupId ?? ''} onChange={(e) => set('groupId', e.target.value || null)}>
+                      <option value="">(최상위)</option>
+                      {flatGroups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+                    </select>
+                    <button className="btn" onClick={() => setNewFolder('')} title="새 폴더 만들기"><Plus size={14} /></button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input className="input" style={{ flex: 1, minWidth: 0 }} autoFocus value={newFolder} placeholder="새 폴더 이름"
+                      onChange={(e) => setNewFolder(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addFolder() } }} />
+                    <button className="btn primary" onClick={addFolder} disabled={!newFolder.trim()} title="만들기"><Check size={14} /></button>
+                    <button className="btn" onClick={() => setNewFolder(null)} title="취소"><X size={14} /></button>
+                  </div>
+                )}
               </Field>
               <Field label="태그 (쉼표로 구분)">
                 <input className="input" value={h.tags.join(', ')} onChange={(e) => set('tags', e.target.value.split(',').map((t) => t.trim()).filter(Boolean))} placeholder="web, nginx" />

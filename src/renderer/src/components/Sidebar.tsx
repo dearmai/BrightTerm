@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, ChevronDown, Folder, FolderOpen, Search, Plus, FolderPlus, Download, Star, Terminal, SquareTerminal, Cpu, Radio, Clock, SplitSquareHorizontal, Play, KeyRound, Layers, ArrowLeftRight, MonitorUp } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Search, Plus, FolderPlus, Download, Star, Terminal, SquareTerminal, Cpu, Radio, Clock, Play, Pencil, Layers, ArrowLeftRight, MonitorUp } from 'lucide-react'
 import { useApp, newHost } from '../state'
 import { ENV_COLORS, ENV_LABELS, type Group, type Host, type SessionForward } from '@shared/types'
 import { panes } from '../layout'
@@ -138,7 +138,7 @@ export function Sidebar(): JSX.Element {
       { label: '아래로 분할해 연결', onClick: () => st().openHost(h.id, 'col') },
       ...(h.persist && (h.protocol === 'ssh' || h.protocol === 'local') ? [{ label: '세션 유지 없이 연결 (일반 접속)', onClick: () => st().openHost(h.id, 'tab', undefined, 'none') }] : []),
       { separator: true },
-      { label: '편집', shortcut: 'F2', onClick: () => useApp.setState({ dialog: { kind: 'host', host: h } }) },
+      { label: '편집', shortcut: 'F4', onClick: () => useApp.setState({ dialog: { kind: 'host', host: h } }) },
       { label: '복제', onClick: () => st().upsertHost({ ...structuredClone(h), id: crypto.randomUUID(), alias: h.alias + ' (복사본)', lastUsedAt: undefined }) },
       { label: h.favorite ? '즐겨찾기 해제' : '즐겨찾기', onClick: () => st().upsertHost({ ...h, favorite: !h.favorite }) },
       ...(loginsWithPassword(h) ? [{ label: 'SSH 키 등록…', onClick: () => useApp.setState({ dialog: { kind: 'sshKey', hostId: h.id } }) }] : []),
@@ -218,13 +218,17 @@ export function Sidebar(): JSX.Element {
       return
     }
     const h = hosts.find((h) => h.id === row?.dataset.server)
-    if (!h || e.altKey || !['Enter', 'F2', 'Delete'].includes(e.key)) return
+    if (!h || e.altKey || !['Enter', 'F4', 'Delete'].includes(e.key)) return
     if (e.key !== 'Enter' && !plain) return
     e.preventDefault()
     e.stopPropagation()
     if (e.repeat) return
-    if (e.key === 'Enter') st().openHost(h.id, modKey(e) ? 'row' : e.shiftKey ? 'col' : 'tab')
-    if (e.key === 'F2') useApp.setState({ dialog: { kind: 'host', host: h } })
+    if (e.key === 'Enter') {
+      // 접속 중인 서버에서 그냥 Enter 는 새로 접속하지 않고 그 터미널로 간다 — 분할(Ctrl/Shift+Enter)은 그대로 새 접속
+      if (plain && openIds.has(h.id) && st().revealHost(h.id)) requestAnimationFrame(() => { const id = st().focusedSession()?.id; if (id) focusSession(id) })
+      else st().openHost(h.id, modKey(e) ? 'row' : e.shiftKey ? 'col' : 'tab')
+    }
+    if (e.key === 'F4') useApp.setState({ dialog: { kind: 'host', host: h } })
     if (e.key === 'Delete') {
       st().confirm({ title: '서버 삭제', message: `"${h.alias}"을(를) 삭제할까요?`, okText: '삭제', danger: true }).then((ok) => ok && st().removeHosts([h.id]))
     }
@@ -254,8 +258,9 @@ export function Sidebar(): JSX.Element {
         data-host={section ? undefined : h.id}
         onClick={(e) => {
           selectRow(e.currentTarget)
-          // 이미 그 창이 선택돼 있으면 상태가 안 바뀌어 포커스가 사이드바에 남는다 — 키 입력(특히 Enter=새로 열기)이 새지 않게 터미널로 직접 옮긴다
-          if (st().revealHost(h.id)) requestAnimationFrame(() => { const id = st().focusedSession()?.id; if (id) focusSession(id) })
+          // 접속 중인 서버는 그 창을 보여 주되 포커스는 목록에 둔다 — F4·Delete 가 이 서버에 적용되게.
+          // 탭이 바뀌면 Workspace 가 다음 프레임에 터미널로 포커스를 옮기므로 그 뒤에 되찾는다
+          if (st().revealHost(h.id)) requestAnimationFrame(() => requestAnimationFrame(() => treeRef.current?.focus({ preventScroll: true })))
         }}
         onDoubleClick={() => { if (!openIds.has(h.id)) st().openHost(h.id) }}
         onContextMenu={(e) => hostMenu(e, h)}
@@ -273,10 +278,7 @@ export function Sidebar(): JSX.Element {
           <ArrowLeftRight size={13} aria-hidden="true" />
         </span>}
         <span className="n-hover">
-          {loginsWithPassword(h) && <button className="ibtn sm" title="SSH 키 등록" onClick={(e) => { e.stopPropagation(); useApp.setState({ dialog: { kind: 'sshKey', hostId: h.id } }) }}><KeyRound size={13} /></button>}
-          <button className="ibtn sm" title="분할로 연결" onClick={(e) => { e.stopPropagation(); st().openHost(h.id, 'row') }}><SplitSquareHorizontal size={13} /></button>
-          {rdpCapable(h) && <button className="ibtn sm" title="원격 데스크톱(RDP) 연결" onClick={(e) => { e.stopPropagation(); void st().openRdp(h.id) }}><MonitorUp size={13} /></button>}
-          <button className="ibtn sm" title={h.rdp?.primary && rdpCapable(h) ? '원격 데스크톱(RDP) 연결' : '연결'} onClick={(e) => { e.stopPropagation(); st().openHost(h.id) }}><Play size={13} /></button>
+          <button className="ibtn sm" title="서버 편집 (F4)" onClick={(e) => { e.stopPropagation(); useApp.setState({ dialog: { kind: 'host', host: h } }) }}><Pencil size={13} /></button>
         </span>
       </div>
     )

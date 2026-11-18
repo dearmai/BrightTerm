@@ -93,7 +93,7 @@ try {
   if (process.env.BT_SCREENSHOT) await page.screenshot({ path: process.env.BT_SCREENSHOT.replace(/\.png$/, '-settings.png') })
   await page.keyboard.press('Escape')
   await page.locator('.sidebar [data-host="logged"]').click()
-  await page.keyboard.press('F2')
+  await page.keyboard.press('F4')
   await page.locator('.mtabs button', { hasText: '고급' }).click()
   await page.getByText('로그 고급 설정').scrollIntoViewIfNeeded()
   assert.equal(await page.getByLabel('저장 폴더').inputValue(), custom)
