@@ -13,8 +13,9 @@
 | 개인 키 + 인증서 | 빌드 PC의 현재 사용자 인증서 저장소 `Cert:\CurrentUser\My` (`certmgr.msc` → 개인 → 인증서) | **비공개** |
 | 개인 키 백업(.pfx) | `-BackupPfx`로 만든 파일. 저장소 밖의 안전한 곳 | **비공개** |
 | 공개 인증서(.cer) | `build/codesign/BrightTerm-codesign.cer` (저장소에 커밋됨), 반입 폴더 | 공개해도 됨 |
-| 대상 PC 등록 스크립트 | `build/codesign/install-cert.cmd` | 공개해도 됨 |
-| 서명 설정 | `electron-builder.win-signed.yml` — `certificateSha1` 지문으로 저장소에서 지정 | 비밀 없음 |
+| 대상 PC 등록 스크립트 | `build/codesign/install-cert.cmd`, `install-cert.sh`(Git Bash·WSL) | 공개해도 됨 |
+| 배포 폴더 | `.env`의 `BRIGHTTERM_DEPLOY_DIR` — make install 이 빌드본, 서명한 인증서 `BrightTerm-codesign-<지문 앞 8자>.cer`, 등록 스크립트를 넣음 | 공개해도 됨 |
+| 서명 설정 | `electron-builder.win-signed.cjs` — 기본 지문(`DEFAULT_SHA1`), PC 별로 `.env`의 `BRIGHTTERM_CODESIGN_SHA1`로 덮어씀 | 비밀 없음 |
 
 - 개인 키는 설정 파일이나 저장소, 환경변수 어디에도 두지 않습니다. electron-builder 는 signtool 로 인증서 저장소에서 키를 꺼내 서명합니다.
 - `.gitignore`에 `*.pfx`가 있어 백업 파일이 실수로 커밋되지 않습니다.
@@ -61,6 +62,29 @@ npm run dist:win:signed
 - 복원한 PC 에서 다시 내보낼 일이 없다면 `Import-PfxCertificate`에 `-Exportable`을 주지 않습니다(기본값). 그러면 키가 내보내기 불가로 들어갑니다.
 - 다 쓴 PC 에서는 인증서를 지웁니다: `certmgr.msc` → 개인 → 인증서에서 삭제하거나 `Remove-Item Cert:\CurrentUser\My\<지문>`.
 
+## 빌드 PC 마다 인증서가 다를 때
+
+백업을 복원하지 않고 PC 마다 따로 만든 인증서로 서명할 수도 있습니다. 그 PC 의 저장소 루트 `.env`(커밋하지 않음)에 지문을 적습니다. 환경 변수 `BRIGHTTERM_CODESIGN_SHA1`이 있으면 그 값이 먼저입니다.
+
+```ini
+BRIGHTTERM_CODESIGN_SHA1=07848F6B01D73F5D7C2F3DAF3648B38868DE0FC9
+```
+
+- 비워 두면 `electron-builder.win-signed.cjs`의 `DEFAULT_SHA1`(위 "현재 인증서")을 씁니다. 빌드 로그의 `code signing certificate sha1=...` 줄에서 어떤 지문을 썼는지 볼 수 있습니다.
+- 대상 PC 는 **서명에 쓴 인증서마다** `.cer`를 등록해야 합니다. 저장소의 `BrightTerm-codesign.cer`는 기본 인증서뿐이므로, 다른 PC 의 인증서는 `Export-Certificate -Cert Cert:\CurrentUser\My\<지문> -FilePath <저장소 밖 경로>.cer`로 내보내 따로 배포합니다. 그 PC 에서 `codesign-cert.ps1`을 실행하면 저장소의 `.cer`가 그 PC 의 것으로 바뀌니, 커밋하지 않도록 주의합니다.
+- 인증서가 늘어날수록 관리할 개인 키도 늘어납니다. 가능하면 백업을 복원해 하나로 맞추는 편이 낫습니다.
+
+## 배포 폴더로 인증서 배포
+
+Windows `make install` 은 빌드본을 `.env`의 `BRIGHTTERM_DEPLOY_DIR`(예: OneDrive 폴더)로 복사하면서 다음도 함께 넣습니다.
+
+- `BrightTerm-codesign-<지문 앞 8자>.cer` — Setup exe 에 실제로 서명된 인증서(공개 인증서만). 지문마다 파일이 따로라 빌드 PC 마다 인증서가 달라도 모두 쌓입니다. 내용이 같으면 다시 쓰지 않습니다.
+- `install-cert.cmd`, `install-cert.sh` — 같은 폴더의 `BrightTerm-codesign*.cer`를 모두 Root·TrustedPublisher 에 등록합니다. 관리자 권한이면 PC 전체, 아니면 현재 사용자에게만 등록합니다.
+  - `.cmd`: 탐색기에서 더블클릭하거나 관리자 명령 프롬프트에서 실행합니다.
+  - `.sh`: Windows 의 Git Bash·MSYS2·Cygwin·WSL 에서 `bash install-cert.sh`로 실행합니다. 코드 서명 신뢰는 Windows 저장소에 들어가므로 `certutil.exe`를 부르며, Linux·macOS 에서는 할 일이 없어 안내만 하고 멈춥니다.
+- 현재 사용자 Root 저장소에 넣을 때 Windows 가 확인 창을 띄웁니다. "예"를 눌러야 등록됩니다.
+- 더 이상 쓰지 않는 인증서의 `.cer`는 배포 폴더에서 직접 지웁니다(스크립트가 지우지 않습니다).
+
 ## 잃어버렸을 때
 
 백업 없이 키를 잃은 경우입니다(PC 교체, 프로필 삭제 등).
@@ -71,7 +95,7 @@ npm run dist:win:signed
   2. 곧바로 `-BackupPfx`로 백업합니다.
   3. 새 `.cer`를 대상 PC 에 등록합니다(`install-cert.cmd` 또는 GPO). 예전 인증서는 그대로 두어도 됩니다.
   4. 이 문서의 "현재 인증서" 표를 고칩니다.
-  5. `electron-builder.win-signed.yml`의 `certificateSha1`도 새 인증서 지문으로 바꿉니다.
+  5. `electron-builder.win-signed.cjs`의 `DEFAULT_SHA1`도 새 인증서 지문으로 바꿉니다.
 
 ## 유출됐을 때
 
@@ -97,6 +121,6 @@ npm run dist:win:signed
 ## 참고
 
 - 인증서 만들기·내보내기·백업: `scripts/codesign-cert.ps1`
-- 서명 빌드 설정: `electron-builder.win-signed.yml`
+- 서명 빌드 설정: `electron-builder.win-signed.cjs`
 - 대상 PC 등록: `build/codesign/install-cert.cmd`
 - 변경 내역: [Windows 코드 서명 (셀프 인증서, 사내 배포용)](./CHANGELOG.md#windows-코드-서명-셀프-인증서-사내-배포용)

@@ -1,5 +1,34 @@
 # 작업내역서
 
+## 2026-11-18 — SSH 키 등록 실패 팝업 표시, PC 별 서명 인증서, 배포 폴더로 인증서 배포
+
+### 요청 및 변경
+
+- SSH 키 등록 실패를 토스트가 아닌 키 등록 팝업 안에 그대로 보이도록 요청받았다(`SshKeyDialog.tsx`). 실패하면 팝업을 닫지 않고 키 목록 아래에 `notice danger` 로 "키 등록 실패"와 오류 메시지를 보인다. 다시 등록하거나 다른 키를 고르면 지운다. 성공·이미 등록됨은 전처럼 토스트 후 닫는다.
+- 이 PC(ser6)에서 `make install` 이 `Cannot find certificate Dany Kim` 으로 서명 단계에서 실패했다. 설정의 지문(`32FA25DC…`)은 2026-11-13 VM 에서 새로 만든 인증서이고, 이 PC 에는 그 개인 키가 없고 예전 인증서(`07848F6B…`, 2026-10-24)만 있었다. 사용자가 "PC 별 지문을 .env 로" 방식을 골랐다.
+  - `electron-builder.win-signed.yml` → `electron-builder.win-signed.cjs`. 지문은 환경 변수 → `.env` 의 `BRIGHTTERM_CODESIGN_SHA1` → 기본값(`DEFAULT_SHA1`, 32FA…) 순서로 정하고, 빌드 로그에 쓴 지문을 한 줄 찍는다. 형식이 틀리면 빌드를 멈춘다.
+  - `.env` 읽기를 `scripts/read-env.cjs` 로 빼서 서명 설정과 `deploy-build.mjs` 가 함께 쓴다.
+- 이 PC 의 `.env`(커밋하지 않음)에 `BRIGHTTERM_DEPLOY_DIR=C:\Users\Rinjae\OneDrive\Program\BrightTerm`, `BRIGHTTERM_CODESIGN_SHA1=07848F6B…` 를 적었다.
+- 배포 폴더에 인증서와 등록 스크립트도 넣도록 요청받았다(.cmd, .sh 제공). `deploy-build.mjs` 가 복사한 Setup exe 의 서명 인증서를 꺼내 `BrightTerm-codesign-<지문 앞 8자>.cer` 로 쓰고(내용이 같으면 그대로), `build/codesign/install-cert.cmd`·`install-cert.sh` 를 복사한다. 실패해도 빌드본 배포는 끝났으므로 경고만 한다.
+  - `install-cert.cmd` 는 같은 폴더의 `BrightTerm-codesign*.cer` 를 모두 Root·TrustedPublisher 에 등록하도록 바꿨다(관리자면 PC 전체, 아니면 현재 사용자).
+  - `install-cert.sh` 는 Git Bash·MSYS2·Cygwin·WSL 에서 `cygpath`/`wslpath` 로 경로를 바꿔 `certutil.exe` 를 부른다. Linux·macOS 에서는 안내 후 종료한다.
+  - `.gitattributes` 에 `*.cmd eol=crlf`, `*.sh eol=lf` 를 두었다.
+- 문서: `docs/codesign.md` 에 "빌드 PC 마다 인증서가 다를 때", "배포 폴더로 인증서 배포" 절, `.env.example` 에 `BRIGHTTERM_CODESIGN_SHA1` 설명.
+
+### 직접 검증한 결과
+
+- `make install` 전체 실행: 빌드 → 모든 exe 가 `07848F6B…` 로 서명 → 무인 설치 → OneDrive 폴더로 Setup·Portable 복사·이력 기록까지 성공.
+- `node scripts/deploy-build.mjs` 다시 실행: 배포 폴더에 `BrightTerm-codesign-07848F6B.cer`(지문 07848F6B01D73F5D7C2F3DAF3648B38868DE0FC9 확인), `install-cert.cmd`, `install-cert.sh` 가 생김. `install-cert.sh` 는 `bash -n` 문법 검사만 통과.
+- `tsc --noEmit` 에서 `SshKeyDialog.tsx` 오류 없음(기존 `RdpView.tsx` 의 `@devolutions/iron-remote-desktop` 모듈 오류는 그대로).
+- 이 PC 에서 서명 상태는 `UnknownError` — 이 PC 가 자체 인증서를 루트로 신뢰하지 않아서로 보인다.
+
+### 검증 범위
+
+- `install-cert.cmd`·`.sh` 로 실제 인증서 등록과, 등록 뒤 '확인된 게시자'로 보이는지는 실행하지 않았다(인증서 저장소를 바꾸므로 사용자 확인 필요).
+- VM 빌드 PC 에서 기본 지문으로 다시 빌드해 보지 않았다.
+- SSH 키 등록 실패 팝업은 앱에서 실패를 재현해 보지 않았다.
+- 대상 PC 는 두 인증서(32FA…, 07848F6B…)를 모두 등록해야 두 빌드 PC 의 빌드를 신뢰한다.
+
 ## 2026-11-18 — 폴더 입력 Esc 수정, make install 뒤 빌드본 배포 폴더 복사
 
 ### 요청 및 변경

@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "electron-vite preview",
     "dist:win": "npm run notices && node scripts/build-bridge.mjs && electron-vite build && electron-builder --win --x64",
-    "dist:win:signed": "npm run notices && node scripts/build-bridge.mjs && electron-vite build && electron-builder --win --x64 -c electron-builder.win-signed.yml",
+    "dist:win:signed": "npm run notices && node scripts/build-bridge.mjs && electron-vite build && electron-builder --win --x64 -c electron-builder.win-signed.cjs",
     "dist:dir": "npm run notices && node scripts/build-bridge.mjs && electron-vite build && electron-builder --win --x64 --dir",
     "dist:mac": "npm run notices && electron-vite build && electron-builder --mac",
     "dist:mac:dir": "npm run notices && electron-vite build && electron-builder --mac --dir",

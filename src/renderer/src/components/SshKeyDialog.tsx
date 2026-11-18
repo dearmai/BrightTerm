@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { KeyRound } from 'lucide-react'
+import { AlertCircle, KeyRound } from 'lucide-react'
 import { useApp } from '../state'
 import { api } from '../api'
 import { Modal } from './ui'
@@ -11,6 +11,7 @@ export function SshKeyDialog({ hostId }: { hostId: string }): JSX.Element {
   const [keys, setKeys] = useState<LocalPublicKey[] | null>(null)
   const [sel, setSel] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
   const close = (): void => useApp.setState({ dialog: null })
   const st = useApp.getState
 
@@ -30,12 +31,13 @@ export function SshKeyDialog({ hostId }: { hostId: string }): JSX.Element {
   const install = async (): Promise<void> => {
     if (!host || !key) return
     setBusy(true)
+    setErr(null)
     try {
       const r = await api.sshKey.install(host.id, key.path)
       st().toast(r === 'added' ? 'ok' : 'info', r === 'added' ? `${host.alias}에 ${key.name} 키를 등록했습니다` : `${host.alias}에 ${key.name} 키가 이미 등록돼 있어 건너뛰었습니다`)
       close()
     } catch (e) {
-      st().toast('error', `키 등록 실패: ${(e as Error).message}`)
+      setErr((e as Error).message)
     } finally {
       setBusy(false)
     }
@@ -65,7 +67,7 @@ export function SshKeyDialog({ hostId }: { hostId: string }): JSX.Element {
           <div className="import-list">
             {keys.map((k) => (
               <label key={k.path} className="key-row">
-                <input type="radio" name="sshkey" checked={sel === k.path} onChange={() => setSel(k.path)} />
+                <input type="radio" name="sshkey" checked={sel === k.path} onChange={() => { setSel(k.path); setErr(null) }} />
                 <span className="key-main">
                   <span><b>{k.name}</b> <span className="muted">{k.type}{k.comment ? ` · ${k.comment}` : ''}</span></span>
                   <span className="key-fp">{k.fingerprint}</span>
@@ -73,6 +75,12 @@ export function SshKeyDialog({ hostId }: { hostId: string }): JSX.Element {
                 {!k.hasPrivate && <span className="pill" title="같은 이름의 개인 키 파일이 ~/.ssh 에 없습니다">개인 키 없음</span>}
               </label>
             ))}
+          </div>
+        )}
+        {err && (
+          <div className="notice danger" role="alert">
+            <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ minWidth: 0, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}><b>키 등록 실패</b><br />{err}</div>
           </div>
         )}
         {key && !key.hasPrivate && <div className="notice warn"><div>이 PC 에는 <b>{key.name.slice(0, -4)}</b> 개인 키가 없어서, 등록해도 이 PC 에서는 이 키로 로그인할 수 없습니다.</div></div>}
